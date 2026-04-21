@@ -2,10 +2,17 @@
  * Renders the Parts of one assistant message in order. The streaming
  * boundary indicator is drawn by the Timeline row (not here) so this
  * component stays dumb.
+ *
+ * Consecutive context-only tool calls (read / grep / glob / list)
+ * collapse into one ContextGroupCard — Phase 3.3 port from OpenCode's
+ * message-part.tsx:696-761.
  */
 
 import type { AssistantMessage, Part } from "@superset/chat/shared";
+import { useMemo } from "react";
 import { renderPart } from "../Parts";
+import { ContextGroupCard } from "./ContextGroupCard";
+import { groupContextRuns } from "./groupContextRuns";
 
 export function AssistantParts({
 	message,
@@ -29,11 +36,28 @@ export function AssistantParts({
 			</div>
 		);
 	}
+	const grouped = useMemo(() => groupContextRuns(parts), [parts]);
+
 	return (
 		<div data-message-id={message.id} className="my-2 space-y-1">
-			{parts.map((p) => (
-				<div key={p.id}>{renderPart(p, message, streaming)}</div>
-			))}
+			{grouped.map((entry, idx) => {
+				if (entry.kind === "single") {
+					return (
+						<div key={entry.part.id}>
+							{renderPart(entry.part, message, streaming)}
+						</div>
+					);
+				}
+				// Key stable across re-renders by joining the run's part ids.
+				const groupKey = entry.parts.map((p) => p.id).join(":") || `g${idx}`;
+				return (
+					<ContextGroupCard
+						key={groupKey}
+						parts={entry.parts}
+						message={message}
+					/>
+				);
+			})}
 		</div>
 	);
 }

@@ -7,8 +7,9 @@
  * See apps/desktop/plans/20260421-v2-chat-refactor-phased-plan.md.
  */
 
-import type { Part, UserMessage } from "@superset/chat/shared";
+import type { ImagePart, Part, UserMessage } from "@superset/chat/shared";
 import { workspaceTrpc } from "@superset/workspace-client";
+import type { PendingAttachment } from "./components/Composer/Editor";
 import { useCallback, useEffect, useState } from "react";
 import { useChatDisplay as useWorkspaceChatDisplay } from "../../hooks/useWorkspaceChatDisplay";
 import { useChatStore } from "../../store";
@@ -149,7 +150,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
 	const rollbackOptimistic = useChatStore((s) => s.rollbackOptimistic);
 
 	const submitToAgent = useCallback(
-		async (sessionIdForSend: string, text: string) => {
+		async (
+			sessionIdForSend: string,
+			text: string,
+			attachments: PendingAttachment[] = [],
+		) => {
 			// Optimistic user message so the Timeline shows it instantly.
 			// The dual-write will replace it with the server's canonical
 			// user message on the next poll (applySessionSnapshot's
@@ -162,21 +167,44 @@ export function ChatSurface(props: ChatSurfaceProps) {
 				role: "user",
 				time: { created: now },
 			};
-			const textPart: Part = {
-				id: `${optId}:p0`,
-				messageID: optId,
-				sessionID: sessionIdForSend,
-				type: "text",
-				text,
-				time: { start: now, end: now },
-			};
-			addOptimistic(sessionIdForSend, userMessage, [textPart]);
+			const parts: Part[] = [];
+			if (text) {
+				parts.push({
+					id: `${optId}:p0`,
+					messageID: optId,
+					sessionID: sessionIdForSend,
+					type: "text",
+					text,
+					time: { start: now, end: now },
+				});
+			}
+			attachments.forEach((att, idx) => {
+				const imgPart: ImagePart = {
+					id: `${optId}:p${idx + 1}`,
+					messageID: optId,
+					sessionID: sessionIdForSend,
+					type: "image",
+					mime: att.mediaType,
+					url: `data:${att.mediaType};base64,${att.data}`,
+					filename: att.filename,
+					time: { start: now, end: now },
+				};
+				parts.push(imgPart);
+			});
+			addOptimistic(sessionIdForSend, userMessage, parts);
 
 			try {
 				await sendMessageMutation.mutateAsync({
 					sessionId: sessionIdForSend,
 					workspaceId,
-					payload: { content: text },
+					payload: {
+						content: text,
+						files: attachments.map((att) => ({
+							data: att.data,
+							mediaType: att.mediaType,
+							filename: att.filename ?? "pasted-image",
+						})),
+					},
 				});
 			} catch (error) {
 				rollbackOptimistic(sessionIdForSend, optId);
@@ -188,17 +216,21 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
 	const getOrCreateSession = props.getOrCreateSession;
 	const onComposerSubmit = useCallback(
-		async (text: string) => {
+		async (text: string, attachments: PendingAttachment[]) => {
 			// Create session lazily if we don't have one yet — mirrors
 			// the legacy pane, which also creates on first send.
 			const ensuredSessionId = await getOrCreateSession();
 
 			// If the agent is currently working, queue instead of sending.
+			// Queueing doesn't carry attachments for now — Phase 7 follow-up
+			// extends FollowupQueueItem with a payload slot.
 			if (isRunning) {
-				enqueueFollowup(ensuredSessionId, text);
+				if (text.trim()) {
+					enqueueFollowup(ensuredSessionId, text);
+				}
 				return;
 			}
-			await submitToAgent(ensuredSessionId, text);
+			await submitToAgent(ensuredSessionId, text, attachments);
 		},
 		[getOrCreateSession, isRunning, enqueueFollowup, submitToAgent],
 	);

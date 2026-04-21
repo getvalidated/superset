@@ -12,11 +12,19 @@
 import type { ToolPart } from "@superset/chat/shared";
 import type { ComponentType } from "react";
 import { GenericTool } from "./GenericTool";
+import { ApplyPatchTool } from "./tools/ApplyPatchTool";
 import { EditTool } from "./tools/EditTool";
+import { QuestionTool } from "./tools/QuestionTool";
 import { ReadTool } from "./tools/ReadTool";
 import { GlobTool, GrepTool, ListTool } from "./tools/SearchTool";
 import { ShellTool } from "./tools/ShellTool";
+import { TaskTool } from "./tools/TaskTool";
 import { TodoTool } from "./tools/TodoTool";
+import {
+	CodeSearchTool,
+	WebFetchTool,
+	WebSearchTool,
+} from "./tools/WebTool";
 import { WriteTool } from "./tools/WriteTool";
 
 export type ToolRenderer = ComponentType<{ part: ToolPart }>;
@@ -50,6 +58,26 @@ const REGISTRY: Record<string, ToolRenderer> = {
 	todo: TodoTool,
 	todowrite: TodoTool,
 	todo_write: TodoTool,
+	question: QuestionTool,
+	ask: QuestionTool,
+
+	// Multi-file patches
+	apply_patch: ApplyPatchTool,
+	applypatch: ApplyPatchTool,
+	patch: ApplyPatchTool,
+
+	// Subagents / tasks
+	task: TaskTool,
+	subagent: TaskTool,
+	dispatch_agent: TaskTool,
+
+	// Web / search over external sources
+	web_fetch: WebFetchTool,
+	webfetch: WebFetchTool,
+	fetch: WebFetchTool,
+	web_search: WebSearchTool,
+	websearch: WebSearchTool,
+	code_search_web: CodeSearchTool,
 };
 
 /**

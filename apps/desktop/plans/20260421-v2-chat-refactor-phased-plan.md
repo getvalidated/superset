@@ -149,28 +149,29 @@ Priority order (by user impact):
 3. [x] `WriteTool` — FileDiff slot in text mode.
 4. [x] `ReadTool` — Markdown output with loaded-files list. _(Scrollable pre for now; markdown render can come with the context group.)_
 5. [x] `GrepTool`, `GlobTool`, `ListTool` — shared `BasicMarkdownTool` parent. _(Shared as `SearchLikeTool` in `tools/SearchTool.tsx`.)_
-6. [ ] `ApplyPatchTool` — multi-file Radix Accordion with sticky headers + lazy content. _(Deferred — rarely fires in current provider lineup; falls back to GenericTool.)_
+6. [x] `ApplyPatchTool` — multi-file Radix Accordion with sticky headers + lazy content.
 7. [x] `TodoTool` — checkbox list, default open, strike-through on done.
-8. [ ] `QuestionTool` — renders only when answered (pending is in QuestionDock, Phase 4). _(Deferred — QuestionDock arrives in Phase 4 first.)_
-9. [ ] `TaskTool` — subagent card. Click opens child session. _(Deferred — waits for subagent wiring.)_
-10. [ ] `WebFetchTool`, `WebSearchTool`, `CodeSearchTool` — link rows. _(Deferred — fall back to GenericTool.)_
+8. [x] `QuestionTool` — renders only when answered (pending is in QuestionDock, Phase 4).
+9. [x] `TaskTool` — subagent card. _(Shows description + rolled-up summary. Click-to-navigate-child-session deferred to Phase 7.3 when subagent store wiring lands.)_
+10. [x] `WebFetchTool`, `WebSearchTool`, `CodeSearchTool` — link rows.
 
 ### 3.3 Context grouping (week 2 days 4–5)
-- [ ] Consecutive Read/Glob/Grep/List calls collapse into one summary card. _(Deferred — dogfood first.)_
-- [ ] `ToolCountSummary.tsx` + `ToolCountLabel.tsx` (simple counts initially; `AnimatedNumber` deferred to Phase 8).
-- [ ] `Timeline.logic.ts` grouping algorithm — port from `message-part.tsx:696-761`.
+- [x] Consecutive Read/Glob/Grep/List calls collapse into one summary card. _(Via `Turn/groupContextRuns.ts` + `Turn/ContextGroupCard.tsx`; runs of 2+ adjacent context tools collapse; single context tools render normally.)_
+- [x] `ToolCountSummary.tsx` + `ToolCountLabel.tsx` — simple counts baked into `ContextGroupCard`'s subtitle. `AnimatedNumber` stays deferred to Phase 8.
+- [x] Grouping algorithm lives at `Turn/groupContextRuns.ts` (per-assistant-message, not per-turn — cleaner than OpenCode's placement).
 
 ### 3.4 Markdown pipeline
 - [x] `Markdown.tsx` + `MarkdownStream.tsx` + `PacedMarkdown.tsx` per `20260421-v2-chat-opencode-ui-components.md` §5 (React reconciliation replaces morphdom).
 - [x] Pace constant = 24 ms; snap chunks to whitespace.
-- [x] `ReasoningPart.tsx` — extracted heading collapse + full expand behind `settings.showReasoningSummaries`. _(Collapse + expand live; heading extraction + the settings flag land when reasoning parts start arriving from the server.)_
+- [x] `ReasoningPart.tsx` — extracted heading collapse + full expand behind `settings.showReasoningSummaries`. _(Heading extraction via `Parts/reasoningHeading.ts`; prefers markdown heading, then bold-lead, then first line truncated to 80 chars. The settings gate can come later.)_
 
 **Exit criteria:**
 - Side-by-side screenshot comparison: new chat looks comparable to OpenCode for every tool type we've seen in the last 30 days of team sessions. _(Ready to review.)_
 - **"Show more work" test:** on a session that previously collapsed 8 tool calls into one `ThinkingMessage`, every tool call now renders inline with clear status. This is the t3code "faster feel" win. ✅ **Each tool call now renders its own card — confirmed.**
 - Visual regression screenshots committed for each tool renderer. _(TODO — takes a real session to capture.)_
 
-✅ **Phase 3 foundation + markdown pipeline complete — 2026-04-21.** Context-group card + ApplyPatch + Task + Question tools deferred.
+✅ **Phase 3 foundation + markdown pipeline complete — 2026-04-21.**
+✅ **Phase 3 tail (ApplyPatch, Task, Question, Web fetch/search, context grouping, reasoning heading) complete — 2026-04-21 (continuation).**
 
 ---
 
@@ -208,17 +209,18 @@ Priority order (by user impact):
 - [x] `Composer/Composer.tsx` — plain textarea + send + stop, wired to `commands.sendMessage` / `commands.stop`. Enter submits, Shift+Enter newlines. Disabled while any blocking dock is open. _(Landed 2026-04-21. Lets us dogfood the new Timeline/Docks end-to-end while §§5.1–5.4 build out the polished editor.)_
 
 ### 5.1 Editor core (week 1)
-- [ ] `Composer/Editor/Editor.tsx` — Tiptap with custom nodes: `mention`, `file`, `image`, `agent`.
-- [ ] `Composer/Editor/mentionNode.ts`, `fileNode.ts`, `imageNode.ts`, `agentNode.ts` — ProseMirror node specs.
-- [ ] `Composer/utils/buildRequestParts.ts` — walks the Tiptap doc tree, produces `Part[]`. Round-trip tests against OpenCode's `build-request-parts.test.ts` scenarios adapted to our data shape.
-- [ ] `Composer/Editor/slashPopover.ts` — Tiptap suggestion extension, fed from `chat.getSlashCommands` + client specials (`/new`, `/stop`, `/model`, `/mcp`).
-- [ ] Mention popover — Tiptap suggestion backed by file search (reuse existing).
+- [x] `Composer/Editor/Editor.tsx` — Tiptap base (Document/Paragraph/Text/HardBreak/History/Placeholder). Image paste handler intercepts clipboard image data and emits `PendingAttachment` via callback — fixes the macOS screencapture "`/var/folders/…/Screenshot.png`" bug.
+- [ ] Custom nodes: `mention`, `file`, `agent`. _(Deferred — Phase 5.1 follow-up. `image` is handled at the composer layer via `AttachmentRow` / `PendingAttachment`, not as an inline editor node.)_
+- [ ] `Composer/utils/buildRequestParts.ts` — walks the Tiptap doc tree, produces `Part[]`. _(Deferred — composer currently sends `{ content: editor.getText(), files: attachments }` which matches the legacy server contract.)_
+- [ ] `Composer/Editor/slashPopover.ts` — Tiptap suggestion extension. _(Deferred.)_
+- [ ] Mention popover — Tiptap suggestion backed by file search. _(Deferred.)_
 
 ### 5.2 Supporting surfaces
-- [ ] `Composer/ContextChips.tsx` — context items above editor.
-- [ ] `Composer/AttachmentRow.tsx` — image thumbnails, file chips, above editor, not interleaved in doc so clearing input doesn't lose them.
-- [ ] `Composer/utils/paste.ts` — images → image nodes, files → file nodes, text → text.
-- [ ] `Composer/utils/attachments.ts` — upload state, progress, cancel. Unified path regardless of whether we have a sessionID yet.
+- [ ] `Composer/ContextChips.tsx` — context items above editor. _(Deferred — pending mention + file-ref flows.)_
+- [x] `Composer/AttachmentRow.tsx` — image thumbnails above editor (not interleaved in doc so clearing input doesn't lose them). Remove-button per attachment.
+- [x] `Composer/Editor/attachments.ts` — pure helpers (`blobToBase64`, `stripDataUrlPrefix`, `newAttachmentId`) + `PendingAttachment` type. Tested.
+- [ ] `Composer/utils/paste.ts` — images handled; files/text handled natively by Tiptap. _(Non-image file paste deferred.)_
+- [ ] `Composer/utils/attachments.ts` — upload state, progress, cancel. _(Deferred — attachments inline as base64 in the current mutation payload; real upload pipeline is follow-up.)_
 
 ### 5.3 Draft persistence (t3code port) (week 2 days 1–3)
 - [x] `Composer/draftStore.ts` — Zustand with `persist` middleware → localStorage, 300 ms debounce.
