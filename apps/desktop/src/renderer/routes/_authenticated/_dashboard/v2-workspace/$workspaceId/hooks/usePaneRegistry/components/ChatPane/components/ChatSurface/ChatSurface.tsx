@@ -28,6 +28,7 @@ import { Composer } from "./components/Composer";
 import { DocksStack } from "./components/Docks";
 import { FollowupDock } from "./components/Docks/FollowupDock";
 import { Timeline } from "./components/Timeline";
+import { useChatStream } from "./hooks/useChatStream/useChatStream";
 import { useFollowupDrain } from "./hooks/useFollowupDrain/useFollowupDrain";
 
 export interface ChatSurfaceProps {
@@ -47,6 +48,19 @@ export interface ChatSurfaceProps {
 
 export function ChatSurface(props: ChatSurfaceProps) {
 	const isDev = process.env.NODE_ENV === "development";
+
+	// Phase 6 streaming subscription. No-op until host-service exposes
+	// chat.streamSession + chat.getSnapshot — passing undefined transport
+	// bindings keeps the hook inert, so the dual-write polling path
+	// remains authoritative. When the server lands, inject the subscribe
+	// and fetchSnapshot functions here (wrappers around
+	// workspaceTrpc.chat.streamSession.subscribe and
+	// workspaceTrpc.chat.getSnapshot.query) to flip transports.
+	useChatStream({
+		sessionId: props.sessionId,
+		subscribe: undefined,
+		fetchSnapshot: undefined,
+	});
 
 	// Pull the legacy display hook so we can drive mutations from the new
 	// docks. The dual-write bridges (wired inside useWorkspaceChatDisplay)

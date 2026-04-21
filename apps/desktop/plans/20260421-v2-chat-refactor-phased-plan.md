@@ -251,28 +251,35 @@ Priority order (by user impact):
 
 ## Phase 6 — Streaming transport (1 week)
 
-**Goal:** replace polling with tRPC observable subscription. Recovery coordinator becomes live. This is where the chat stops feeling polled.
+**Goal:** replace polling with a tRPC subscription. Recovery coordinator becomes live. This is where the chat stops feeling polled.
 
-### 6.1 Server side
-- [ ] Add `chat.streamSession` subscription using `observable` (per `apps/desktop/AGENTS.md`).
-- [ ] Emits `ChatStreamEvent` with sequence numbers.
-- [ ] Dual channels per `20260421-chat-implementations-compared.md` §10 #10: `sessionShell` (sidebar summaries) + `sessionDetail` (active session).
-- [ ] Event generator sits on the existing chat service — translates its token/tool events into our event union.
+Implementation spec for server-side: `20260421-v2-chat-phase6-server-spec.md`.
 
-### 6.2 Client side
-- [ ] `packages/chat/src/client/stream.ts` — subscribes via tRPC, pipes events through `recovery.classify()`, then `chatStore.applyStreamEvent`.
-- [ ] On gap: `chat.getSnapshot` + replay from `latestSequence`, exponential backoff, progress tracking.
-- [ ] `useWorkspaceChatDisplay` polling loop: kept but **demoted** to reconnect-fallback only (triggered by recovery when stream disconnects).
-- [ ] `PacedMarkdown` continues to smooth stream cadence; it's now reacting to real sub-second deltas instead of 250 ms bursts.
+### 6.1 Server side (spec complete, implementation pending)
+- [ ] Add `chat.streamSession` subscription — async generator over tRPC WebSocket (host-service is HTTP/WS, not Electron IPC, so observables aren't required here). See spec §4.1.
+- [ ] `chat.getSnapshot` query for bootstrap + recovery. See spec §4.2.
+- [ ] Emits `ChatStreamEvent` with per-session sequence numbers.
+- [ ] Event translator — map mastracode harness events → `ChatStreamEvent` incrementally. Start with `agent_start/end`, `message_appended`, `text_delta` (80% of visible chat); layer in the rest. See spec §4.4.
+- [ ] WebSocket adapter on hono + `splitLink` on the client. See spec §4.5.
+- [ ] Dual channels (sessionShell + sessionDetail) — defer until single-channel MVP is validated.
+
+### 6.2 Client side — ✅ **shipped**
+- [x] `packages/chat/src/client/stream.ts` — subscribes via injected transport, pipes events through `recovery.classify()`, then sink.applyEvent. Transport-agnostic, 9 tests.
+- [x] On gap: refetch snapshot + re-classify buffered events. Keeps deferred events buffered across recovery cycles when a gap persists.
+- [x] `useChatStream` React hook — hooked up in `ChatSurface.tsx`, currently inert (undefined transport) until server ships.
+- [ ] `useWorkspaceChatDisplay` polling loop: demoted to reconnect-fallback only. _(Flipping this is a Phase 6 cutover task once server ships.)_
+- [x] `PacedMarkdown` continues to smooth stream cadence — ready to react to real sub-second deltas instead of 250 ms bursts.
 
 ### 6.3 Observability
-- [ ] Log (dev-only) `recovery.phase` transitions and `sequence.gap` events with counts.
-- [ ] Health badge in the dev debug panel: "connected: N events / s, seq: X, gap: Y".
+- [x] Logger hook exposed on `startStream`; ChatSurface wires dev-only console logs for bootstrap/recovery/errors/close.
+- [ ] Health badge in the dev debug panel: "connected: N events / s, seq: X, gap: Y". _(Minor follow-up — ChatStoreDebug has room.)_
 
-**Exit criteria:**
+**Exit criteria (unchanged):**
 - Streaming text feels instant (token latency <100 ms end-to-end on the LAN).
 - Kill the WebSocket / IPC mid-stream → recovery brings the UI back to consistent state with zero lost events.
 - Network tab shows 0 polls/sec during active streaming; fallback polls only on disconnect.
+
+✅ **Phase 6 client shipped — 2026-04-21.** Server-side tracked in `20260421-v2-chat-phase6-server-spec.md`; estimated 1–2 days for an MVP.
 
 ---
 

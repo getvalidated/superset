@@ -42,3 +42,15 @@ export {
 	type LegacyToolCallContent,
 	type LegacyToolResultContent,
 } from "./adapters/fromLegacy";
+export {
+	type SessionSnapshotResult,
+	startStream,
+	type StartStreamOptions,
+	type StreamEventSink,
+	type StreamFetchSnapshot,
+	type StreamHandle,
+	type StreamLogger,
+	type StreamSubscribe,
+	type StreamSubscribeHandle,
+	type StreamSubscribeOptions,
+} from "./stream";
