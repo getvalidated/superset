@@ -1,6 +1,8 @@
 import type { RendererContext } from "@superset/panes";
 import { useCallback } from "react";
+import { useChatPreferencesStore } from "renderer/stores/chat-preferences";
 import type { ChatPaneData, PaneViewerData } from "../../../../types";
+import { ChatSurface } from "./components/ChatSurface";
 import { SessionSelector } from "./components/SessionSelector";
 import { ChatPaneInterface as WorkspaceChatInterface } from "./components/WorkspaceChatInterface";
 import { useWorkspaceChatController } from "./hooks/useWorkspaceChatController";
@@ -50,6 +52,10 @@ export function ChatPane({
 		workspaceId,
 	});
 
+	const chatV2OpencodeRebuild = useChatPreferencesStore(
+		(state) => state.chatV2OpencodeRebuild,
+	);
+
 	return (
 		<div className="flex h-full w-full min-h-0 flex-col">
 			<div className="border-b border-border px-4 py-3">
@@ -64,17 +70,28 @@ export function ChatPane({
 			</div>
 
 			<div className="min-h-0 flex-1">
-				<WorkspaceChatInterface
-					getOrCreateSession={getOrCreateSession}
-					initialLaunchConfig={initialLaunchConfig}
-					onConsumeLaunchConfig={onConsumeLaunchConfig}
-					isFocused={ctx.isActive}
-					onResetSession={handleNewChat}
-					sessionId={sessionId}
-					workspaceId={workspaceId}
-					organizationId={organizationId}
-					cwd={workspacePath}
-				/>
+				{chatV2OpencodeRebuild ? (
+					<ChatSurface
+						sessionId={sessionId}
+						workspaceId={workspaceId}
+						workspacePath={workspacePath}
+						organizationId={organizationId}
+						getOrCreateSession={getOrCreateSession}
+						onNewChat={handleNewChat}
+					/>
+				) : (
+					<WorkspaceChatInterface
+						getOrCreateSession={getOrCreateSession}
+						initialLaunchConfig={initialLaunchConfig}
+						onConsumeLaunchConfig={onConsumeLaunchConfig}
+						isFocused={ctx.isActive}
+						onResetSession={handleNewChat}
+						sessionId={sessionId}
+						workspaceId={workspaceId}
+						organizationId={organizationId}
+						cwd={workspacePath}
+					/>
+				)}
 			</div>
 		</div>
 	);

@@ -3,6 +3,9 @@ import { workspaceTrpc } from "@superset/workspace-client";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { hasAnsweredQuestionToolCall } from "renderer/components/Chat/ChatInterface/utils/messageHelpers";
+import type { LegacyMessage } from "@superset/chat/client";
+import { useDualWriteFromLegacy } from "../../store/useDualWriteFromLegacy";
+import { useDualWriteDocksFromLegacy } from "../../store/useDualWriteDocksFromLegacy";
 
 interface UseChatDisplayOptions {
 	sessionId: string | null;
@@ -205,6 +208,47 @@ export function useChatDisplay(options: UseChatDisplayOptions) {
 			isRunning,
 		});
 	}, [historicalMessages, optimisticUserMessage, currentMessage, isRunning]);
+
+	// Phase 1 dual-write: shadow the legacy message stream into the new
+	// v2 chat store. We feed `messages` (historicalMessages + legacy's
+	// optimistic user message, active-assistant-turn stripped) plus the
+	// in-flight `currentMessage`, so the new Timeline reflects exactly
+	// what legacy renders — no 250 ms poll-delay dead window after hit
+	// send. `activeMessageId` is the latest USER id while the session is
+	// busy so selectTurns can flag `turn.active` and the Timeline's
+	// "Thinking…" row fires. Plan §1.2.
+	const dualWriteMessages = useMemo(() => {
+		if (!messages) return undefined;
+		if (!currentMessage || currentMessage.role !== "assistant") return messages;
+		return [...messages, currentMessage];
+	}, [messages, currentMessage]);
+
+	const activeUserMessageId = useMemo<string | null>(() => {
+		if (!isRunning) return null;
+		const list = messages ?? [];
+		for (let i = list.length - 1; i >= 0; i -= 1) {
+			const m = list[i];
+			if (m?.role === "user") return m.id;
+		}
+		return null;
+	}, [messages, isRunning]);
+
+	useDualWriteFromLegacy({
+		sessionId,
+		historicalMessages: dualWriteMessages as unknown as
+			| readonly LegacyMessage[]
+			| undefined,
+		isRunning,
+		activeMessageId: activeUserMessageId,
+	});
+
+	// Phase 4 dock bridge: mirror pendingApproval / pendingQuestion /
+	// pendingPlanApproval into the new store.docks map so the new
+	// DocksStack can render them. Plan §4.3.
+	useDualWriteDocksFromLegacy({
+		sessionId,
+		legacy: displayState as unknown as import("../../store/useDualWriteDocksFromLegacy").LegacyDockState | null,
+	});
 
 	const commands = useMemo(
 		() => ({
