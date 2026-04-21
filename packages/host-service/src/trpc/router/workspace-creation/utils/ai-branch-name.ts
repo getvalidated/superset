@@ -3,7 +3,7 @@ import { getSmallModel } from "@superset/chat/server/shared";
 import { deduplicateBranchName } from "./sanitize-branch";
 
 const BRANCH_NAME_INSTRUCTIONS =
-	"Generate a concise git branch name (2-4 words, kebab-case, descriptive). Return ONLY the branch name, nothing else.";
+	"Generate a concise git branch name (2-4 words, kebab-case, descriptive, 20 characters or less). Return ONLY the branch name, nothing else.";
 
 const MAX_BRANCH_LENGTH = 100;
 
