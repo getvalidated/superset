@@ -354,9 +354,9 @@ export const HOTKEYS_REGISTRY = {
 	},
 	PREV_TAB: {
 		key: {
-			mac: "meta+alt+left",
-			windows: "ctrl+shift+alt+left",
-			linux: "ctrl+shift+alt+left",
+			mac: "meta+left",
+			windows: "ctrl+shift+left",
+			linux: "ctrl+shift+left",
 		},
 		label: "Previous Tab",
 		category: "Terminal",
@@ -364,9 +364,9 @@ export const HOTKEYS_REGISTRY = {
 	},
 	NEXT_TAB: {
 		key: {
-			mac: "meta+alt+right",
-			windows: "ctrl+shift+alt+right",
-			linux: "ctrl+shift+alt+right",
+			mac: "meta+right",
+			windows: "ctrl+shift+right",
+			linux: "ctrl+shift+right",
 		},
 		label: "Next Tab",
 		category: "Terminal",
