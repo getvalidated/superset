@@ -13,6 +13,7 @@ export interface V2UserPreferencesApi {
 	preferences: V2UserPreferencesRow;
 	setFileLinks: (next: LinkTierMap) => void;
 	setUrlLinks: (next: LinkTierMap) => void;
+	setRightSidebarOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 export function useV2UserPreferences(): V2UserPreferencesApi {
@@ -57,5 +58,26 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		[upsertTierMap],
 	);
 
-	return { preferences, setFileLinks, setUrlLinks };
+	const setRightSidebarOpen = useCallback(
+		(next: boolean | ((prev: boolean) => boolean)) => {
+			const existing = collections.v2UserPreferences.get(
+				V2_USER_PREFERENCES_ID,
+			);
+			const prev = existing?.rightSidebarOpen ?? false;
+			const value = typeof next === "function" ? next(prev) : next;
+			if (!existing) {
+				collections.v2UserPreferences.insert({
+					...DEFAULT_V2_USER_PREFERENCES,
+					rightSidebarOpen: value,
+				});
+				return;
+			}
+			collections.v2UserPreferences.update(V2_USER_PREFERENCES_ID, (draft) => {
+				draft.rightSidebarOpen = value;
+			});
+		},
+		[collections],
+	);
+
+	return { preferences, setFileLinks, setUrlLinks, setRightSidebarOpen };
 }
