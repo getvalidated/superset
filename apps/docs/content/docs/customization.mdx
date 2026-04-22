@@ -34,6 +34,28 @@ Settings → Behavior → File open mode
 
 Preview pane reuse works in both modes—this setting only affects the fallback when no reusable pane exists.
 
+## Link Click Behavior
+
+Control what happens when you click file paths and URLs in the terminal and markdown.
+
+Settings → Links
+
+Map each click tier independently:
+
+- **Click** — plain click
+- **⌘-click** — modifier click
+- **⌘⇧-click** — double-modifier click
+
+Available actions per tier:
+
+- **Do nothing** — ignore that tier; the click is a no-op
+- **Open in pane** — open in a file viewer or in-app browser pane
+- **Open externally** — open in your default editor or system browser
+
+Picking an action already bound to another tier demotes that tier to **Do nothing** automatically.
+
+Folder links always reveal in the sidebar (⌘) or open externally (⌘⇧) regardless of this setting.
+
 ## Terminal Presets
 
 Save terminal configurations (commands, environment) as presets for quick access.
