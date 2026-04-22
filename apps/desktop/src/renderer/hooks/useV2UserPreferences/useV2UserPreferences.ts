@@ -9,11 +9,14 @@ import {
 	type V2UserPreferencesRow,
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 
+export type RightSidebarTab = V2UserPreferencesRow["rightSidebarTab"];
+
 export interface V2UserPreferencesApi {
 	preferences: V2UserPreferencesRow;
 	setFileLinks: (next: LinkTierMap) => void;
 	setUrlLinks: (next: LinkTierMap) => void;
 	setRightSidebarOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
+	setRightSidebarTab: (next: RightSidebarTab) => void;
 }
 
 export function useV2UserPreferences(): V2UserPreferencesApi {
@@ -79,5 +82,30 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		[collections],
 	);
 
-	return { preferences, setFileLinks, setUrlLinks, setRightSidebarOpen };
+	const setRightSidebarTab = useCallback(
+		(next: RightSidebarTab) => {
+			const existing = collections.v2UserPreferences.get(
+				V2_USER_PREFERENCES_ID,
+			);
+			if (!existing) {
+				collections.v2UserPreferences.insert({
+					...DEFAULT_V2_USER_PREFERENCES,
+					rightSidebarTab: next,
+				});
+				return;
+			}
+			collections.v2UserPreferences.update(V2_USER_PREFERENCES_ID, (draft) => {
+				draft.rightSidebarTab = next;
+			});
+		},
+		[collections],
+	);
+
+	return {
+		preferences,
+		setFileLinks,
+		setUrlLinks,
+		setRightSidebarOpen,
+		setRightSidebarTab,
+	};
 }

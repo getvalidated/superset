@@ -7,7 +7,6 @@ import {
 import { useCallback, useRef } from "react";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { V2TerminalPresetRow } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 import type { StoreApi } from "zustand";
 import type {
@@ -20,19 +19,16 @@ import type {
 
 export function useWorkspaceHotkeys({
 	store,
-	workspaceId,
 	matchedPresets,
 	executePreset,
 	paneRegistry,
 }: {
 	store: StoreApi<WorkspaceStore<PaneViewerData>>;
-	workspaceId: string;
 	matchedPresets: V2TerminalPresetRow[];
 	executePreset: (preset: V2TerminalPresetRow) => void;
 	paneRegistry: PaneRegistry<PaneViewerData>;
 }) {
-	const collections = useCollections();
-	const { setRightSidebarOpen } = useV2UserPreferences();
+	const { setRightSidebarOpen, setRightSidebarTab } = useV2UserPreferences();
 
 	useHotkey("TOGGLE_SIDEBAR", () => {
 		setRightSidebarOpen((prev) => !prev);
@@ -72,11 +68,7 @@ export function useWorkspaceHotkeys({
 
 	useHotkey("OPEN_DIFF_VIEWER", () => {
 		setRightSidebarOpen(true);
-		if (collections.v2WorkspaceLocalState.get(workspaceId)) {
-			collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-				draft.sidebarState.activeTab = "changes";
-			});
-		}
+		setRightSidebarTab("changes");
 
 		const state = store.getState();
 		for (const tab of state.tabs) {

@@ -111,9 +111,11 @@ function WorkspaceContent({
 	terminalId?: string;
 	chatSessionId?: string;
 }) {
-	const collections = useCollections();
-	const { preferences: v2UserPreferences, setRightSidebarOpen } =
-		useV2UserPreferences();
+	const {
+		preferences: v2UserPreferences,
+		setRightSidebarOpen,
+		setRightSidebarTab,
+	} = useV2UserPreferences();
 	const { store } = useV2WorkspacePaneLayout({
 		projectId,
 		workspaceId,
@@ -221,13 +223,11 @@ function WorkspaceContent({
 	const revealPath = useCallback(
 		(path: string, options?: { isDirectory?: boolean }) => {
 			setRightSidebarOpen(true);
-			collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-				draft.sidebarState.activeTab = "files";
-			});
+			setRightSidebarTab("files");
 			setSelectedFilePath(path);
 			setPendingReveal({ path, isDirectory: options?.isDirectory === true });
 		},
-		[collections, workspaceId, setRightSidebarOpen],
+		[setRightSidebarOpen, setRightSidebarTab],
 	);
 
 	const paneRegistry = usePaneRegistry(workspaceId, {
@@ -373,7 +373,6 @@ function WorkspaceContent({
 
 	useWorkspaceHotkeys({
 		store,
-		workspaceId,
 		matchedPresets,
 		executePreset,
 		paneRegistry,

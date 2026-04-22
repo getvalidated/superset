@@ -36,7 +36,6 @@ export const workspaceLocalStateSchema = z.object({
 		tabOrder: z.number().int().default(0),
 		sectionId: z.string().uuid().nullable().default(null),
 		changesFilter: changesFilterSchema.default({ kind: "all" }),
-		activeTab: z.enum(["changes", "files"]).default("changes"),
 		changesSubtab: z.enum(["diffs", "review"]).default("diffs"),
 	}),
 	paneLayout: paneWorkspaceStateSchema,
@@ -238,6 +237,7 @@ export const v2UserPreferencesSchema = z.object({
 	fileLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
 	urlLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
 	rightSidebarOpen: z.boolean().default(false),
+	rightSidebarTab: z.enum(["changes", "files"]).default("changes"),
 });
 
 export type V2UserPreferencesRow = z.infer<typeof v2UserPreferencesSchema>;
@@ -249,4 +249,5 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	fileLinks: DEFAULT_LINK_TIER_MAP,
 	urlLinks: DEFAULT_LINK_TIER_MAP,
 	rightSidebarOpen: false,
+	rightSidebarTab: "changes",
 };
