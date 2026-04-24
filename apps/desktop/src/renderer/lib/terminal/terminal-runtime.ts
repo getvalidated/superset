@@ -28,7 +28,7 @@ const DEFAULT_ROWS = 32;
 // sidesteps this by suppressing all super/Cmd chords on macOS before the
 // encoder runs (ghostty/src/input/key_encode.zig:534-545). We do the same via
 // shouldBubbleClipboardShortcut's Mac branch.
-function createKeyEventHandler(terminal: XTerm) {
+export function createKeyEventHandler(terminal: XTerm) {
 	const platform =
 		typeof navigator !== "undefined" ? navigator.platform.toLowerCase() : "";
 	const isMac = platform.includes("mac");
@@ -36,6 +36,19 @@ function createKeyEventHandler(terminal: XTerm) {
 
 	return (event: KeyboardEvent): boolean => {
 		if (resolveHotkeyFromEvent(event) !== null) return false;
+
+		if (isShiftEnter(event)) {
+			if (event.type === "keydown") {
+				event.preventDefault();
+				// ESC+CR matches Option+Enter and is what Claude Code / other TUIs
+				// recognize as "insert newline". xterm's kitty protocol should emit
+				// `\x1b[13;2u` instead, but @xterm/xterm 6.1.0-beta.197 has incomplete
+				// kitty support and sends bare `\r` — indistinguishable from Enter.
+				// Mirrors v1 helpers.ts:setupKeyboardHandler. (#3706)
+				terminal.input("\x1b\r", true);
+			}
+			return false;
+		}
 
 		const translation = translateLineEditChord(event, { isMac, isWindows });
 		if (translation !== null) {
@@ -71,6 +84,16 @@ function createKeyEventHandler(terminal: XTerm) {
 
 		return true;
 	};
+}
+
+function isShiftEnter(event: KeyboardEvent): boolean {
+	return (
+		event.key === "Enter" &&
+		event.shiftKey &&
+		!event.metaKey &&
+		!event.ctrlKey &&
+		!event.altKey
+	);
 }
 
 /** True when `mod` is the only non-shift modifier held. */
