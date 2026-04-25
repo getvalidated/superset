@@ -125,7 +125,6 @@ function findAnswerForQuestion({
 	return undefined;
 }
 
-
 function toSingleQuestion(
 	args: Record<string, unknown>,
 ): QuestionToolQuestion[] {
