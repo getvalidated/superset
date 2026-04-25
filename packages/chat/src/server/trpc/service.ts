@@ -357,17 +357,32 @@ export class ChatRuntimeService {
 								input.sessionId,
 								input.cwd,
 							);
-							const response = await runtime.harness.respondToQuestion(
-								input.payload,
-							);
-							runtime.answeredQuestionIds.add(input.payload.questionId);
-							if (
-								runtime.pendingSandboxQuestion?.questionId ===
-								input.payload.questionId
-							) {
+							const questionId = input.payload.questionId;
+							const wasAlreadyAnswered =
+								runtime.answeredQuestionIds.has(questionId);
+							const previousSandboxQuestion = runtime.pendingSandboxQuestion;
+							const clearsSandboxQuestion =
+								previousSandboxQuestion?.questionId === questionId;
+
+							runtime.answeredQuestionIds.add(questionId);
+							if (clearsSandboxQuestion) {
 								runtime.pendingSandboxQuestion = null;
 							}
-							return response;
+
+							try {
+								return await runtime.harness.respondToQuestion(input.payload);
+							} catch (error) {
+								if (!wasAlreadyAnswered) {
+									runtime.answeredQuestionIds.delete(questionId);
+								}
+								if (
+									clearsSandboxQuestion &&
+									runtime.pendingSandboxQuestion === null
+								) {
+									runtime.pendingSandboxQuestion = previousSandboxQuestion;
+								}
+								throw error;
+							}
 						}),
 				}),
 
