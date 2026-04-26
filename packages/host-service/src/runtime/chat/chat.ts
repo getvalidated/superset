@@ -309,13 +309,18 @@ async function restartRuntimeFromUserMessage(
 	await runtime.harness.sendMessage(input.payload);
 }
 
+interface InflightRuntimeCreation {
+	workspaceId: string;
+	promise: Promise<RuntimeSession>;
+}
+
 export class ChatRuntimeManager {
 	private readonly db: HostDb;
 	private readonly runtimeResolver: ModelProviderRuntimeResolver;
 	private readonly runtimes = new Map<string, RuntimeSession>();
 	private readonly runtimeCreations = new Map<
 		string,
-		Promise<RuntimeSession>
+		InflightRuntimeCreation
 	>();
 
 	constructor(options: ChatRuntimeManagerOptions) {
@@ -441,14 +446,37 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 
 		const inflight = this.runtimeCreations.get(sessionId);
 		if (inflight) {
-			return inflight;
+			if (inflight.workspaceId !== workspaceId) {
+				throw new Error(
+					`Session ${sessionId} is already being created for workspace ${inflight.workspaceId}`,
+				);
+			}
+			return inflight.promise;
 		}
 
-		const creation = this.createRuntime(sessionId, workspaceId).finally(() => {
+		const promise = this.createRuntime(sessionId, workspaceId).finally(() => {
 			this.runtimeCreations.delete(sessionId);
 		});
-		this.runtimeCreations.set(sessionId, creation);
-		return creation;
+		this.runtimeCreations.set(sessionId, { workspaceId, promise });
+		return promise;
+	}
+
+	/**
+	 * Tear down the in-memory runtime for a session. Aborts any in-flight work,
+	 * removes the runtime from the manager's map, and is a no-op for unknown
+	 * session ids. Should be called after the cloud session row is deleted, or
+	 * when a workspace is deleted.
+	 */
+	async disposeRuntime(sessionId: string): Promise<void> {
+		const runtime = this.runtimes.get(sessionId);
+		if (!runtime) return;
+
+		try {
+			runtime.harness.abort();
+		} catch {
+			// best-effort — proceed with cleanup even if abort fails
+		}
+		this.runtimes.delete(sessionId);
 	}
 
 	async getDisplayState(input: {
@@ -504,6 +532,69 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 			input.workspaceId,
 		);
 		return runtime.harness.listMessages();
+	}
+
+	/**
+	 * Single server-side observation that returns both displayState and messages
+	 * from one runtime acquisition. This avoids the dual-poll race between
+	 * independent getDisplayState / listMessages queries on the client.
+	 *
+	 * Note: not a fully locked atomic snapshot — listMessages() is async, so
+	 * harness state can change between the displayState read and the messages
+	 * read. This still removes the *client-side* two-query race, which is the
+	 * one that caused mismatched message/display state.
+	 */
+	async getSnapshot(input: {
+		sessionId: string;
+		workspaceId: string;
+	}): Promise<{
+		displayState: ChatDisplayState;
+		messages: RuntimeMessages;
+		observedAt: number;
+	}> {
+		const runtime = await this.getOrCreateRuntime(
+			input.sessionId,
+			input.workspaceId,
+		);
+		const displayStateRaw = runtime.harness.getDisplayState();
+		const messages = await runtime.harness.listMessages();
+		const observedAt = Date.now();
+
+		const currentMessage = displayStateRaw.currentMessage as {
+			role?: string;
+			errorMessage?: string;
+		} | null;
+		const currentMessageError =
+			currentMessage?.role === "assistant" &&
+			typeof currentMessage.errorMessage === "string" &&
+			currentMessage.errorMessage.trim()
+				? currentMessage.errorMessage.trim()
+				: null;
+
+		const displayState: ChatDisplayState = {
+			...displayStateRaw,
+			pendingQuestion:
+				displayStateRaw.pendingQuestion ??
+				(runtime.pendingSandboxQuestion
+					? {
+							questionId: runtime.pendingSandboxQuestion.questionId,
+							question: `Grant sandbox access to "${runtime.pendingSandboxQuestion.path}"?`,
+							options: [
+								{
+									label: "Yes",
+									description: `Allow access. Reason: ${runtime.pendingSandboxQuestion.reason}`,
+								},
+								{
+									label: "No",
+									description: "Deny access.",
+								},
+							],
+						}
+					: null),
+			errorMessage: currentMessageError ?? runtime.lastErrorMessage,
+		};
+
+		return { displayState, messages, observedAt };
 	}
 
 	async sendMessage(

@@ -41,6 +41,12 @@ export const chatRouter = router({
 			return ctx.runtime.chat.listMessages(input);
 		}),
 
+	getSnapshot: protectedProcedure
+		.input(sessionInput)
+		.query(({ ctx, input }) => {
+			return ctx.runtime.chat.getSnapshot(input);
+		}),
+
 	sendMessage: protectedProcedure
 		.input(
 			sessionInput.extend({
@@ -48,8 +54,22 @@ export const chatRouter = router({
 				metadata: messageMetadataSchema,
 			}),
 		)
-		.mutation(({ ctx, input }) => {
-			return ctx.runtime.chat.sendMessage(input);
+		.mutation(async ({ ctx, input }) => {
+			const result = await ctx.runtime.chat.sendMessage(input);
+			// Fire-and-forget cloud lastActiveAt update so the session selector
+			// keeps reordering after activity. Failures here must not block the
+			// turn — the user already sees their message land via the snapshot.
+			void ctx.api.chat.updateSession
+				.mutate({ sessionId: input.sessionId, lastActiveAt: new Date() })
+				.catch(() => {});
+			return result;
+		}),
+
+	endSession: protectedProcedure
+		.input(sessionInput)
+		.mutation(async ({ ctx, input }) => {
+			await ctx.runtime.chat.disposeRuntime(input.sessionId);
+			return { ok: true };
 		}),
 
 	restartFromMessage: protectedProcedure

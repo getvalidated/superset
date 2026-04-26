@@ -72,6 +72,7 @@ export function useWorkspaceChatController({
 		session?.session?.activeOrganizationId,
 	);
 	const collections = useCollections();
+	const endSessionMutation = workspaceTrpc.chat.endSession.useMutation();
 
 	const { data: workspace } = workspaceTrpc.workspace.get.useQuery(
 		{ id: workspaceId },
@@ -105,6 +106,11 @@ export function useWorkspaceChatController({
 	const handleDeleteSession = useCallback(
 		async (sessionIdToDelete: string) => {
 			await deleteSessionRecord(sessionIdToDelete);
+			// Tear down the host-service in-memory runtime so it doesn't leak.
+			// Failures here must not block the user-visible delete.
+			void endSessionMutation
+				.mutateAsync({ sessionId: sessionIdToDelete, workspaceId })
+				.catch(() => {});
 			posthog.capture("chat_session_deleted", {
 				workspace_id: workspaceId,
 				session_id: sessionIdToDelete,
@@ -114,7 +120,13 @@ export function useWorkspaceChatController({
 				onSessionIdChange(null);
 			}
 		},
-		[onSessionIdChange, organizationId, sessionId, workspaceId],
+		[
+			endSessionMutation,
+			onSessionIdChange,
+			organizationId,
+			sessionId,
+			workspaceId,
+		],
 	);
 
 	const getOrCreateSession = useCallback(async (): Promise<string> => {
