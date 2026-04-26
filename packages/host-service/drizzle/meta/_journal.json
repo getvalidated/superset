@@ -29,6 +29,13 @@
       "when": 1776814372609,
       "tag": "0003_workspace_upstream_ref",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777166326688,
+      "tag": "0004_add_host_agent_configs",
+      "breakpoints": true
     }
   ]
 }

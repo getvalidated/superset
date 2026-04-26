@@ -48,6 +48,10 @@
 			"types": "./src/agent-custom.ts",
 			"default": "./src/agent-custom.ts"
 		},
+		"./host-agent-config": {
+			"types": "./src/host-agent-config.ts",
+			"default": "./src/host-agent-config.ts"
+		},
 		"./billing": {
 			"types": "./src/billing.ts",
 			"default": "./src/billing.ts"

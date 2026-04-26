@@ -16,28 +16,12 @@ import type {
 	DashboardSidebarWorkspace,
 } from "../../types";
 
-// Sits above every real workspace so the pending row lines up with the real one,
-// which is inserted via getPrependTabOrder.
-const PENDING_WORKSPACE_TAB_ORDER = Number.MIN_SAFE_INTEGER;
-
 export function useDashboardSidebarData() {
 	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId, activeHostUrl } = useLocalHostService();
 	const { toggleProjectCollapsed } = useDashboardSidebarState();
 
-	// Query pending workspaces from the local collection
-	const { data: pendingWorkspaces = [] } = useLiveQuery(
-		(q) =>
-			q.from({ pw: collections.pendingWorkspaces }).select(({ pw }) => ({
-				id: pw.id,
-				projectId: pw.projectId,
-				name: pw.name,
-				branchName: pw.branchName,
-				status: pw.status,
-			})),
-		[collections],
-	);
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
 		: (session?.session?.activeOrganizationId ?? null);
@@ -285,44 +269,6 @@ export function useDashboardSidebarData() {
 			});
 		}
 
-		// Inject pending workspaces (creating / failed)
-		for (const pw of pendingWorkspaces) {
-			if (pw.status === "succeeded") continue; // will appear as a real workspace
-			const project = projectsById.get(pw.projectId);
-			if (!project) continue;
-
-			const pendingItem: DashboardSidebarWorkspace = {
-				id: pw.id,
-				projectId: pw.projectId,
-				hostId: "",
-				hostType: "local-device",
-				hostIsOnline: null,
-				accentColor: null,
-				name: pw.name,
-				branch: pw.branchName,
-				pullRequest: null,
-				repoUrl:
-					project.githubOwner && project.githubRepoName
-						? `https://github.com/${project.githubOwner}/${project.githubRepoName}`
-						: null,
-				branchExistsOnRemote: false,
-				previewUrl: null,
-				needsRebase: null,
-				behindCount: null,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-				creationStatus: pw.status,
-			};
-
-			project.childEntries.push({
-				tabOrder: PENDING_WORKSPACE_TAB_ORDER,
-				child: {
-					type: "workspace",
-					workspace: pendingItem,
-				},
-			});
-		}
-
 		return sidebarProjects.flatMap((project) => {
 			const resolvedProject = projectsById.get(project.id);
 			if (!resolvedProject) return [];
@@ -361,7 +307,6 @@ export function useDashboardSidebarData() {
 	}, [
 		machineId,
 		localPullRequestsByWorkspaceId,
-		pendingWorkspaces,
 		sidebarProjects,
 		sidebarSections,
 		sidebarWorkspaces,
