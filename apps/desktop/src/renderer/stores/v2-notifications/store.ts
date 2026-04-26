@@ -48,7 +48,6 @@ export interface V2NotificationState {
 		occurredAt?: number,
 	) => void;
 	setManualUnread: (workspaceId: string) => void;
-	clearManualUnread: (workspaceId: string) => void;
 	clearSourceStatus: (
 		source: V2NotificationSourceInput,
 		workspaceId?: string,
@@ -109,14 +108,6 @@ export const useV2NotificationStore = create<V2NotificationState>()((set) => ({
 				getV2ManualNotificationSource(workspaceId),
 				workspaceId,
 				"review",
-			);
-	},
-	clearManualUnread: (workspaceId) => {
-		useV2NotificationStore
-			.getState()
-			.clearSourceStatus(
-				getV2ManualNotificationSource(workspaceId),
-				workspaceId,
 			);
 	},
 	clearSourceStatus: (source, workspaceId) => {
@@ -311,16 +302,19 @@ export function useV2WorkspaceNotificationStatus(workspaceId: string) {
 	);
 }
 
-export function selectV2WorkspaceIsManuallyUnread(workspaceId: string) {
-	const sourceKey = getV2NotificationSourceKey(
-		getV2ManualNotificationSource(workspaceId),
-	);
-	return (state: V2NotificationState) =>
-		state.sources[sourceKey]?.workspaceId === workspaceId;
+export function selectV2WorkspaceIsUnread(workspaceId: string) {
+	return (state: V2NotificationState) => {
+		for (const entry of Object.values(state.sources)) {
+			if (entry.workspaceId === workspaceId && entry.status === "review") {
+				return true;
+			}
+		}
+		return false;
+	};
 }
 
-export function useV2WorkspaceIsManuallyUnread(workspaceId: string) {
-	return useV2NotificationStore(selectV2WorkspaceIsManuallyUnread(workspaceId));
+export function useV2WorkspaceIsUnread(workspaceId: string) {
+	return useV2NotificationStore(selectV2WorkspaceIsUnread(workspaceId));
 }
 
 export function useV2TabNotificationStatus(

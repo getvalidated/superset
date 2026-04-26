@@ -36,7 +36,7 @@ interface DashboardSidebarWorkspaceContextMenuProps {
 	projectId: string;
 	isInSection?: boolean;
 	isLocalWorkspace: boolean;
-	isManuallyUnread: boolean;
+	isUnread: boolean;
 	onHoverCardOpen?: () => void;
 	onCreateSection: () => void;
 	onMoveToSection: (sectionId: string | null) => void;
@@ -54,7 +54,7 @@ export function DashboardSidebarWorkspaceContextMenu({
 	projectId,
 	isInSection,
 	isLocalWorkspace,
-	isManuallyUnread,
+	isUnread,
 	onHoverCardOpen,
 	hoverCardContent,
 	onCreateSection,
@@ -112,7 +112,7 @@ export function DashboardSidebarWorkspaceContextMenu({
 			</ContextMenuItem>
 			<ContextMenuSeparator />
 			<ContextMenuItem onSelect={onToggleUnread}>
-				{isManuallyUnread ? (
+				{isUnread ? (
 					<>
 						<LuEye className="size-4 mr-2" />
 						Mark as Read

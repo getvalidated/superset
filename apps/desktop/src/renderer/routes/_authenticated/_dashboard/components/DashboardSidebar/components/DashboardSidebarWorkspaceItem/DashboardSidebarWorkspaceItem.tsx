@@ -49,7 +49,7 @@ export function DashboardSidebarWorkspaceItem({
 		handleToggleUnread,
 		isActive,
 		isDeleteDialogOpen,
-		isManuallyUnread,
+		isUnread,
 		isRenaming,
 		moveWorkspaceToSection,
 		renameValue,
@@ -112,7 +112,7 @@ export function DashboardSidebarWorkspaceItem({
 						<DashboardSidebarWorkspaceContextMenu
 							projectId={projectId}
 							isInSection={isInSection}
-							isManuallyUnread={isManuallyUnread}
+							isUnread={isUnread}
 							onHoverCardOpen={
 								hostType === "local-device" ? onHoverCardOpen : undefined
 							}
@@ -180,7 +180,7 @@ export function DashboardSidebarWorkspaceItem({
 					<DashboardSidebarWorkspaceContextMenu
 						projectId={projectId}
 						isInSection={isInSection}
-						isManuallyUnread={isManuallyUnread}
+						isUnread={isUnread}
 						onHoverCardOpen={
 							hostType === "local-device" ? onHoverCardOpen : undefined
 						}

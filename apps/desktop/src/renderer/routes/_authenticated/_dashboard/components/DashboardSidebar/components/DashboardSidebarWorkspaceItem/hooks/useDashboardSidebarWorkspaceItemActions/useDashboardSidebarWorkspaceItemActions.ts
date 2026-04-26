@@ -11,7 +11,7 @@ import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/h
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import {
 	useV2NotificationStore,
-	useV2WorkspaceIsManuallyUnread,
+	useV2WorkspaceIsUnread,
 } from "renderer/stores/v2-notifications";
 
 interface UseDashboardSidebarWorkspaceItemActionsOptions {
@@ -38,8 +38,7 @@ export function useDashboardSidebarWorkspaceItemActions({
 		(s) => s.clearWorkspaceAttention,
 	);
 	const setManualUnread = useV2NotificationStore((s) => s.setManualUnread);
-	const clearManualUnread = useV2NotificationStore((s) => s.clearManualUnread);
-	const isManuallyUnread = useV2WorkspaceIsManuallyUnread(workspaceId);
+	const isUnread = useV2WorkspaceIsUnread(workspaceId);
 	const { createSection, moveWorkspaceToSection, removeWorkspaceFromSidebar } =
 		useDashboardSidebarState();
 
@@ -135,8 +134,8 @@ export function useDashboardSidebarWorkspaceItemActions({
 	};
 
 	const handleToggleUnread = () => {
-		if (isManuallyUnread) {
-			clearManualUnread(workspaceId);
+		if (isUnread) {
+			clearWorkspaceAttention(workspaceId);
 		} else {
 			setManualUnread(workspaceId);
 		}
@@ -169,8 +168,8 @@ export function useDashboardSidebarWorkspaceItemActions({
 		handleToggleUnread,
 		isActive,
 		isDeleteDialogOpen,
-		isManuallyUnread,
 		isRenaming,
+		isUnread,
 		moveWorkspaceToSection,
 		renameValue,
 		setIsDeleteDialogOpen,
