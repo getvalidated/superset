@@ -30,7 +30,6 @@ import type { LinkedIssue } from "./types";
 import { getErrorMessage } from "./utils/getErrorMessage";
 
 interface ChatInputFooterProps {
-	sessionId: string | null;
 	workspaceId: string;
 	cwd: string;
 	isFocused: boolean;
@@ -64,7 +63,6 @@ interface ChatInputFooterProps {
 }
 
 export function ChatInputFooter({
-	sessionId,
 	workspaceId,
 	cwd,
 	isFocused,
@@ -206,7 +204,6 @@ export function ChatInputFooter({
 									onRemove={removeLinkedIssue}
 								/>
 								<SlashCommandPreview
-									sessionId={sessionId}
 									workspaceId={workspaceId}
 									slashCommands={slashCommands}
 								/>

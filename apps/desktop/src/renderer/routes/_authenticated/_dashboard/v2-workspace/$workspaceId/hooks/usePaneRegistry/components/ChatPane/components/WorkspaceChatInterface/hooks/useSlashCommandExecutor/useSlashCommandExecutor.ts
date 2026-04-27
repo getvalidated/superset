@@ -60,21 +60,6 @@ export function useSlashCommandExecutor({
 				return { handled: false, nextText: text };
 			}
 
-			if (!sessionId) {
-				if (text === "/new" || text === "/clear") {
-					onClearError();
-					await onResetSession();
-					toast.success(
-						text === "/clear"
-							? "Context cleared in a new chat session"
-							: "Started a new chat session",
-					);
-					return { handled: true, nextText: "" };
-				}
-
-				return { handled: false, nextText: text };
-			}
-
 			try {
 				const [commandNameRaw, ...rest] = text.slice(1).split(/\s+/);
 				const commandName = commandNameRaw?.toLowerCase() ?? "";
@@ -170,8 +155,8 @@ export function useSlashCommandExecutor({
 					default: {
 						// Custom slash command — resolve via host-service so prompts
 						// from .claude/commands and .agents/commands get substituted.
+						// Workspace-scoped: works whether or not a session exists yet.
 						const resolved = await resolveSlashCommandMutateAsync({
-							sessionId,
 							workspaceId,
 							text,
 						});

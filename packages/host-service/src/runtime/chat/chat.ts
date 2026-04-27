@@ -794,10 +794,7 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 		return workspace.worktreePath;
 	}
 
-	async getSlashCommands(input: {
-		sessionId: string;
-		workspaceId: string;
-	}): Promise<
+	async getSlashCommands(input: { workspaceId: string }): Promise<
 		Array<{
 			name: string;
 			aliases: string[];
@@ -816,20 +813,12 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 		}));
 	}
 
-	async resolveSlashCommand(input: {
-		sessionId: string;
-		workspaceId: string;
-		text: string;
-	}) {
+	async resolveSlashCommand(input: { workspaceId: string; text: string }) {
 		const cwd = this.resolveWorkspaceCwd(input.workspaceId);
 		return resolveSlashCommandFromCwd(cwd, input.text);
 	}
 
-	async previewSlashCommand(input: {
-		sessionId: string;
-		workspaceId: string;
-		text: string;
-	}) {
+	async previewSlashCommand(input: { workspaceId: string; text: string }) {
 		return this.resolveSlashCommand(input);
 	}
 

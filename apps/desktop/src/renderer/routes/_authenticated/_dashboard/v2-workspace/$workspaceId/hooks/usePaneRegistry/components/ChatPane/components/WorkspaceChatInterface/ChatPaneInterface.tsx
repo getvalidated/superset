@@ -118,7 +118,6 @@ function ChatUploadFooter({
 	return (
 		<ChatInputFooter
 			{...footerProps}
-			sessionId={sessionId}
 			workspaceId={workspaceId}
 			submitDisabled={sessionId ? isUploading : false}
 			renderAttachment={renderAttachment}
@@ -262,9 +261,8 @@ export function ChatPaneInterface({
 
 	const { data: slashCommands = [] } =
 		workspaceTrpc.chat.getSlashCommands.useQuery(
-			{ sessionId: sessionId ?? "", workspaceId },
+			{ workspaceId },
 			{
-				enabled: Boolean(sessionId),
 				select: (commands) =>
 					commands.map((command) => ({
 						...command,

@@ -8,6 +8,13 @@ const sessionInput = z.object({
 	workspaceId: z.uuid(),
 });
 
+// Slash-command discovery / preview / resolve are workspace-scoped, not
+// session-scoped — they only need a workspaceId so they work in fresh
+// chats before the first message creates a session.
+const workspaceSlashInput = z.object({
+	workspaceId: z.uuid(),
+});
+
 const sendMessagePayloadSchema = z.object({
 	content: z.string(),
 	files: z
@@ -130,14 +137,14 @@ export const chatRouter = router({
 		}),
 
 	getSlashCommands: protectedProcedure
-		.input(sessionInput)
+		.input(workspaceSlashInput)
 		.query(({ ctx, input }) => {
 			return ctx.runtime.chat.getSlashCommands(input);
 		}),
 
 	resolveSlashCommand: protectedProcedure
 		.input(
-			sessionInput.extend({
+			workspaceSlashInput.extend({
 				text: z.string(),
 			}),
 		)
@@ -147,7 +154,7 @@ export const chatRouter = router({
 
 	previewSlashCommand: protectedProcedure
 		.input(
-			sessionInput.extend({
+			workspaceSlashInput.extend({
 				text: z.string(),
 			}),
 		)
