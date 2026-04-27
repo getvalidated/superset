@@ -19,12 +19,14 @@ export {
 	LocalModelProvider,
 } from "./providers/model-providers";
 export {
-	createGuardedHandler,
+	closeHostServiceServer,
 	installHostServiceProcessGuards,
 	reportHostServiceError,
 	runHostServiceBackgroundTask,
+	runHostServiceMain,
 } from "./resilience";
 export type { GitCredentialProvider, GitFactory } from "./runtime/git";
+export { startHostServiceServer } from "./server";
 export type { TeardownFailureCause } from "./trpc/error-types";
 export type { AppRouter } from "./trpc/router";
 export type { ApiClient, HostServiceContext } from "./types";

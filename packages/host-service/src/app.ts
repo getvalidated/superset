@@ -153,12 +153,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		trpcServer({
 			router: appRouter,
 			createContext: async (_opts, c) => {
-				let isAuthenticated = false;
-				try {
-					isAuthenticated = await providers.hostAuth.validate(c.req.raw);
-				} catch (error) {
-					reportHostServiceError("tRPC auth validation failed", error);
-				}
+				const isAuthenticated = await providers.hostAuth.validate(c.req.raw);
 				return {
 					git,
 					github,

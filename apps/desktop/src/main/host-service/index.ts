@@ -5,16 +5,17 @@
  * The coordinator polls health.check to know when it's ready.
  */
 
-import { serve } from "@hono/node-server";
 import {
+	closeHostServiceServer,
 	createApp,
-	installHostServiceProcessGuards,
 	JwtApiAuthProvider,
 	LocalGitCredentialProvider,
 	LocalModelProvider,
 	PskHostAuthProvider,
 	reportHostServiceError,
 	runHostServiceBackgroundTask,
+	runHostServiceMain,
+	startHostServiceServer,
 } from "@superset/host-service";
 import {
 	initTerminalBaseEnv,
@@ -22,8 +23,6 @@ import {
 } from "@superset/host-service/terminal-env";
 import { connectRelay } from "@superset/host-service/tunnel";
 import { writeManifest } from "main/lib/host-service-manifest";
-
-const STARTUP_RETRY_DELAY_MS = 5_000;
 
 async function main(): Promise<void> {
 	const { env } = await import("./env");
@@ -55,9 +54,14 @@ async function main(): Promise<void> {
 	});
 
 	const startedAt = Date.now();
-	const server = serve(
-		{ fetch: app.fetch, port: env.HOST_SERVICE_PORT, hostname: "127.0.0.1" },
-		(info: { port: number }) => {
+	const server = await startHostServiceServer({
+		options: {
+			fetch: app.fetch,
+			port: env.HOST_SERVICE_PORT,
+			hostname: "127.0.0.1",
+		},
+		injectWebSocket,
+		onListen: (info) => {
 			if (env.ORGANIZATION_ID) {
 				try {
 					writeManifest({
@@ -68,7 +72,7 @@ async function main(): Promise<void> {
 						organizationId: env.ORGANIZATION_ID,
 					});
 				} catch (error) {
-					console.error("[host-service] Failed to write manifest:", error);
+					reportHostServiceError("failed to write manifest", error);
 				}
 			}
 
@@ -86,23 +90,11 @@ async function main(): Promise<void> {
 				);
 			}
 		},
-	);
-	server.on("error", (error) => {
-		reportHostServiceError("server error", error);
 	});
-	try {
-		injectWebSocket(server);
-	} catch (error) {
-		reportHostServiceError("websocket injection failed", error);
-	}
 
 	// Manifest lifecycle belongs to the coordinator, not the child.
 	const shutdown = () => {
-		try {
-			server.close();
-		} catch (error) {
-			reportHostServiceError("server close failed", error);
-		}
+		closeHostServiceServer(server);
 		process.exit(0);
 	};
 
@@ -110,13 +102,4 @@ async function main(): Promise<void> {
 	process.on("SIGINT", shutdown);
 }
 
-installHostServiceProcessGuards();
-
-function startWithRetry(): void {
-	void main().catch((error) => {
-		reportHostServiceError("failed to start", error);
-		setTimeout(startWithRetry, STARTUP_RETRY_DELAY_MS);
-	});
-}
-
-startWithRetry();
+runHostServiceMain(main);

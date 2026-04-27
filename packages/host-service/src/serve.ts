@@ -1,18 +1,12 @@
-import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { JwtApiAuthProvider } from "./providers/auth";
 import { LocalGitCredentialProvider } from "./providers/git";
 import { PskHostAuthProvider } from "./providers/host-auth";
 import { LocalModelProvider } from "./providers/model-providers";
-import {
-	installHostServiceProcessGuards,
-	reportHostServiceError,
-	runHostServiceBackgroundTask,
-} from "./resilience";
+import { runHostServiceBackgroundTask, runHostServiceMain } from "./resilience";
+import { startHostServiceServer } from "./server";
 import { initTerminalBaseEnv, resolveTerminalBaseEnv } from "./terminal/env";
 import { connectRelay } from "./tunnel";
-
-const STARTUP_RETRY_DELAY_MS = 5_000;
 
 async function main(): Promise<void> {
 	const { env } = await import("./env");
@@ -40,40 +34,27 @@ async function main(): Promise<void> {
 		},
 	});
 
-	const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-		console.log(`[host-service] listening on http://localhost:${info.port}`);
+	await startHostServiceServer({
+		options: { fetch: app.fetch, port: env.PORT },
+		injectWebSocket,
+		onListen: (info) => {
+			console.log(`[host-service] listening on http://localhost:${info.port}`);
 
-		if (env.RELAY_URL) {
-			const relayUrl = env.RELAY_URL;
-			runHostServiceBackgroundTask("relay startup failed", () =>
-				connectRelay({
-					api,
-					relayUrl,
-					localPort: info.port,
-					organizationId: env.ORGANIZATION_ID,
-					authProvider,
-					hostServiceSecret: env.HOST_SERVICE_SECRET,
-				}),
-			);
-		}
-	});
-	server.on("error", (error) => {
-		reportHostServiceError("server error", error);
-	});
-	try {
-		injectWebSocket(server);
-	} catch (error) {
-		reportHostServiceError("websocket injection failed", error);
-	}
-}
-
-installHostServiceProcessGuards();
-
-function startWithRetry(): void {
-	void main().catch((error) => {
-		reportHostServiceError("failed to start", error);
-		setTimeout(startWithRetry, STARTUP_RETRY_DELAY_MS);
+			if (env.RELAY_URL) {
+				const relayUrl = env.RELAY_URL;
+				runHostServiceBackgroundTask("relay startup failed", () =>
+					connectRelay({
+						api,
+						relayUrl,
+						localPort: info.port,
+						organizationId: env.ORGANIZATION_ID,
+						authProvider,
+						hostServiceSecret: env.HOST_SERVICE_SECRET,
+					}),
+				);
+			}
+		},
 	});
 }
 
-startWithRetry();
+runHostServiceMain(main);
