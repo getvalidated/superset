@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDiffStats } from "renderer/hooks/host-service/useDiffStats";
 import { useDashboardSidebarHover } from "../../providers/DashboardSidebarHoverProvider";
 import { DashboardSidebarWorkspaceHoverCardContent } from "../DashboardSidebarWorkspaceItem/components/DashboardSidebarWorkspaceHoverCardContent";
+import "./DashboardSidebarHoverCardOverlay.css";
 
 type Measurable = { getBoundingClientRect(): DOMRect };
 
