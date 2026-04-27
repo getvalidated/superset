@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useDiffStats } from "renderer/hooks/host-service/useDiffStats";
 import { useDeletingWorkspaces } from "renderer/routes/_authenticated/providers/DeletingWorkspacesProvider";
+import { useV2WorkspaceNotificationStatus } from "renderer/stores/v2-notifications";
 import type { DashboardSidebarWorkspace } from "../../types";
 import { DashboardSidebarDeleteDialog } from "../DashboardSidebarDeleteDialog";
 import { DashboardSidebarCollapsedWorkspaceButton } from "./components/DashboardSidebarCollapsedWorkspaceButton";
@@ -29,11 +30,13 @@ export function DashboardSidebarWorkspaceItem({
 		projectId,
 		accentColor = null,
 		hostType,
+		hostIsOnline,
 		name,
 		branch,
 		creationStatus,
 	} = workspace;
 	const diffStats = useDiffStats(id);
+	const workspaceStatus = useV2WorkspaceNotificationStatus(id);
 	const {
 		cancelRename,
 		handleClick,
@@ -42,11 +45,13 @@ export function DashboardSidebarWorkspaceItem({
 		handleCreateSection,
 		handleDeleted,
 		handleOpenInFinder,
+		handleRemoveFromSidebar,
+		handleToggleUnread,
 		isActive,
 		isDeleteDialogOpen,
+		isUnread,
 		isRenaming,
 		moveWorkspaceToSection,
-		removeWorkspaceFromSidebar,
 		renameValue,
 		setIsDeleteDialogOpen,
 		setRenameValue,
@@ -85,7 +90,9 @@ export function DashboardSidebarWorkspaceItem({
 				)}
 				<DashboardSidebarCollapsedWorkspaceButton
 					hostType={hostType}
+					hostIsOnline={hostIsOnline}
 					isActive={isActive}
+					workspaceStatus={workspaceStatus}
 					onClick={isPending ? handlePendingClick : handleClick}
 					creationStatus={creationStatus}
 					disabled={isPending}
@@ -105,6 +112,7 @@ export function DashboardSidebarWorkspaceItem({
 						<DashboardSidebarWorkspaceContextMenu
 							projectId={projectId}
 							isInSection={isInSection}
+							isUnread={isUnread}
 							onHoverCardOpen={
 								hostType === "local-device" ? onHoverCardOpen : undefined
 							}
@@ -122,9 +130,10 @@ export function DashboardSidebarWorkspaceItem({
 							onOpenInFinder={handleOpenInFinder}
 							onCopyPath={handleCopyPath}
 							onCopyBranchName={handleCopyBranchName}
-							onRemoveFromSidebar={() => removeWorkspaceFromSidebar(id)}
+							onRemoveFromSidebar={handleRemoveFromSidebar}
 							onRename={startRename}
 							onDelete={() => setIsDeleteDialogOpen(true)}
+							onToggleUnread={handleToggleUnread}
 						>
 							{content}
 						</DashboardSidebarWorkspaceContextMenu>
@@ -152,6 +161,7 @@ export function DashboardSidebarWorkspaceItem({
 			renameValue={renameValue}
 			shortcutLabel={shortcutLabel}
 			diffStats={isPending ? null : diffStats}
+			workspaceStatus={workspaceStatus}
 			onClick={isPending ? handlePendingClick : handleClick}
 			onDoubleClick={isPending ? undefined : startRename}
 			onDeleteClick={() => setIsDeleteDialogOpen(true)}
@@ -170,6 +180,7 @@ export function DashboardSidebarWorkspaceItem({
 					<DashboardSidebarWorkspaceContextMenu
 						projectId={projectId}
 						isInSection={isInSection}
+						isUnread={isUnread}
 						onHoverCardOpen={
 							hostType === "local-device" ? onHoverCardOpen : undefined
 						}
@@ -187,9 +198,10 @@ export function DashboardSidebarWorkspaceItem({
 						onOpenInFinder={handleOpenInFinder}
 						onCopyPath={handleCopyPath}
 						onCopyBranchName={handleCopyBranchName}
-						onRemoveFromSidebar={() => removeWorkspaceFromSidebar(id)}
+						onRemoveFromSidebar={handleRemoveFromSidebar}
 						onRename={startRename}
 						onDelete={() => setIsDeleteDialogOpen(true)}
+						onToggleUnread={handleToggleUnread}
 					>
 						{expandedContent}
 					</DashboardSidebarWorkspaceContextMenu>

@@ -4,9 +4,9 @@ import {
 	type PaneRegistry,
 	type WorkspaceStore,
 } from "@superset/panes";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { V2TerminalPresetRow } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 import type { StoreApi } from "zustand";
 import type {
@@ -19,24 +19,23 @@ import type {
 
 export function useWorkspaceHotkeys({
 	store,
-	workspaceId,
 	matchedPresets,
 	executePreset,
 	paneRegistry,
 }: {
 	store: StoreApi<WorkspaceStore<PaneViewerData>>;
-	workspaceId: string;
 	matchedPresets: V2TerminalPresetRow[];
 	executePreset: (preset: V2TerminalPresetRow) => void;
 	paneRegistry: PaneRegistry<PaneViewerData>;
 }) {
-	const collections = useCollections();
+	const { setRightSidebarOpen, setRightSidebarTab } = useV2UserPreferences();
+	const visiblePresets = useMemo(
+		() => matchedPresets.filter((preset) => preset.pinnedToBar !== false),
+		[matchedPresets],
+	);
 
 	useHotkey("TOGGLE_SIDEBAR", () => {
-		if (!collections.v2WorkspaceLocalState.get(workspaceId)) return;
-		collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-			draft.rightSidebarOpen = !draft.rightSidebarOpen;
-		});
+		setRightSidebarOpen((prev) => !prev);
 	});
 
 	// --- Tab creation ---
@@ -72,12 +71,8 @@ export function useWorkspaceHotkeys({
 	});
 
 	useHotkey("OPEN_DIFF_VIEWER", () => {
-		if (collections.v2WorkspaceLocalState.get(workspaceId)) {
-			collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-				draft.rightSidebarOpen = true;
-				draft.sidebarState.activeTab = "changes";
-			});
-		}
+		setRightSidebarOpen(true);
+		setRightSidebarTab("changes");
 
 		const state = store.getState();
 		for (const tab of state.tabs) {
@@ -289,10 +284,10 @@ export function useWorkspaceHotkeys({
 
 	const openPresetByIndex = useCallback(
 		(index: number) => {
-			const preset = matchedPresets[index];
+			const preset = visiblePresets[index];
 			if (preset) executePreset(preset);
 		},
-		[matchedPresets, executePreset],
+		[visiblePresets, executePreset],
 	);
 
 	useHotkey("OPEN_PRESET_1", () => openPresetByIndex(0));

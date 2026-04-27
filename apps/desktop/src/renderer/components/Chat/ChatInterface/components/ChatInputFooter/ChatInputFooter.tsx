@@ -50,6 +50,7 @@ interface ChatInputFooterProps {
 	pendingQuestion?: {
 		questionId: string;
 		question: string;
+		description?: string;
 		options?: { label: string; description?: string }[];
 	} | null;
 	isQuestionSubmitting?: boolean;
