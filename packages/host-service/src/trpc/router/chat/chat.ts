@@ -68,7 +68,7 @@ export const chatRouter = router({
 	endSession: protectedProcedure
 		.input(sessionInput)
 		.mutation(async ({ ctx, input }) => {
-			await ctx.runtime.chat.disposeRuntime(input.sessionId);
+			await ctx.runtime.chat.disposeRuntime(input.sessionId, input.workspaceId);
 			return { ok: true };
 		}),
 

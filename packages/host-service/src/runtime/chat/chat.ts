@@ -556,31 +556,63 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 	}
 
 	/**
-	 * Tear down the in-memory runtime for a session. Aborts any in-flight work,
-	 * removes the runtime from the manager's map, and is a no-op for unknown
-	 * session ids. Should be called after the cloud session row is deleted, or
-	 * when a workspace is deleted.
+	 * Tear down the in-memory runtime for a session. Aborts any in-flight
+	 * work, disconnects MCP servers, removes the runtime from the manager's
+	 * map, and is a no-op for unknown session ids. Should be called after
+	 * the cloud session row is deleted, or when a workspace is deleted.
+	 *
+	 * Validates `workspaceId` against the runtime / in-flight creation so a
+	 * caller can't dispose a session bound to a different workspace.
+	 *
+	 * If a creation is in-flight for this session, awaits it first so the
+	 * just-created runtime doesn't get inserted into `runtimes` after we
+	 * delete from it (which would leak).
 	 */
-	async disposeRuntime(sessionId: string): Promise<void> {
+	async disposeRuntime(sessionId: string, workspaceId: string): Promise<void> {
+		const inflight = this.runtimeCreations.get(sessionId);
+		if (inflight) {
+			if (inflight.workspaceId !== workspaceId) {
+				throw new Error(
+					`Session ${sessionId} is being created for workspace ${inflight.workspaceId}`,
+				);
+			}
+			try {
+				await inflight.promise;
+			} catch {
+				// Creation failed — nothing to dispose.
+				return;
+			}
+		}
+
 		const runtime = this.runtimes.get(sessionId);
 		if (!runtime) return;
+
+		if (runtime.workspaceId !== workspaceId) {
+			throw new Error(
+				`Session ${sessionId} is bound to workspace ${runtime.workspaceId}`,
+			);
+		}
 
 		try {
 			runtime.harness.abort();
 		} catch {
 			// best-effort — proceed with cleanup even if abort fails
 		}
+		try {
+			await runtime.mcpManager?.disconnect();
+		} catch {
+			// best-effort — MCP servers may already be disconnected
+		}
 		this.runtimes.delete(sessionId);
 	}
 
-	async getDisplayState(input: {
-		sessionId: string;
-		workspaceId: string;
-	}): Promise<ChatDisplayState> {
-		const runtime = await this.getOrCreateRuntime(
-			input.sessionId,
-			input.workspaceId,
-		);
+	/**
+	 * Shape the harness's raw display state into the shape the renderer
+	 * expects. Both getDisplayState and getSnapshot must apply the same
+	 * shaping — keep this the single source of truth so the two functions
+	 * cannot drift.
+	 */
+	private buildDisplayState(runtime: RuntimeSession): ChatDisplayState {
 		const displayState = runtime.harness.getDisplayState();
 		const currentMessage = displayState.currentMessage as {
 			role?: string;
@@ -623,6 +655,17 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 		};
 	}
 
+	async getDisplayState(input: {
+		sessionId: string;
+		workspaceId: string;
+	}): Promise<ChatDisplayState> {
+		const runtime = await this.getOrCreateRuntime(
+			input.sessionId,
+			input.workspaceId,
+		);
+		return this.buildDisplayState(runtime);
+	}
+
 	async listMessages(input: {
 		sessionId: string;
 		workspaceId: string;
@@ -656,44 +699,9 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 			input.sessionId,
 			input.workspaceId,
 		);
-		const displayStateRaw = runtime.harness.getDisplayState();
+		const displayState = this.buildDisplayState(runtime);
 		const messages = await runtime.harness.listMessages();
 		const observedAt = Date.now();
-
-		const currentMessage = displayStateRaw.currentMessage as {
-			role?: string;
-			errorMessage?: string;
-		} | null;
-		const currentMessageError =
-			currentMessage?.role === "assistant" &&
-			typeof currentMessage.errorMessage === "string" &&
-			currentMessage.errorMessage.trim()
-				? currentMessage.errorMessage.trim()
-				: null;
-
-		const displayState: ChatDisplayState = {
-			...displayStateRaw,
-			pendingQuestion:
-				displayStateRaw.pendingQuestion ??
-				(runtime.pendingSandboxQuestion
-					? {
-							questionId: runtime.pendingSandboxQuestion.questionId,
-							question: `Grant sandbox access to "${runtime.pendingSandboxQuestion.path}"?`,
-							options: [
-								{
-									label: "Yes",
-									description: `Allow access. Reason: ${runtime.pendingSandboxQuestion.reason}`,
-								},
-								{
-									label: "No",
-									description: "Deny access.",
-								},
-							],
-						}
-					: null),
-			errorMessage: currentMessageError ?? runtime.lastErrorMessage,
-		};
-
 		return { displayState, messages, observedAt };
 	}
 
