@@ -59,6 +59,7 @@ export function useMigrateV1DataToV2({
 		? MOCK_ORG_ID
 		: (session?.session?.activeOrganizationId ?? null);
 	const attemptedRef = useRef<string | null>(null);
+	const isRunningRef = useRef(false);
 
 	const runMigration = useCallback(
 		async ({ manual }: { manual: boolean }): Promise<MigrationRunResult> => {
@@ -71,7 +72,7 @@ export function useMigrateV1DataToV2({
 			if (!activeHostUrl) {
 				return { completed: false, reason: "Host service is not ready" };
 			}
-			if (isRunning) {
+			if (isRunningRef.current) {
 				return { completed: false, reason: "Migration is already running" };
 			}
 
@@ -94,6 +95,7 @@ export function useMigrateV1DataToV2({
 
 			attemptedRef.current = organizationId;
 			sessionStorage.setItem(attemptKey, "1");
+			isRunningRef.current = true;
 			setIsRunning(true);
 
 			try {
@@ -133,10 +135,11 @@ export function useMigrateV1DataToV2({
 				const reason = err instanceof Error ? err.message : String(err);
 				return { completed: false, reason };
 			} finally {
+				isRunningRef.current = false;
 				setIsRunning(false);
 			}
 		},
-		[activeHostUrl, collections, isRunning, isV2CloudEnabled, organizationId],
+		[activeHostUrl, collections, isV2CloudEnabled, organizationId],
 	);
 
 	useEffect(() => {

@@ -61,6 +61,40 @@ function persistLocalWorkspace(
 		.run();
 }
 
+function deleteLocalWorkspaceConflicts(
+	ctx: HostServiceContext,
+	args: {
+		projectId: string;
+		worktreePath: string;
+		branch: string;
+		keepWorkspaceId: string;
+	},
+): void {
+	const branchConflict = ctx.db.query.workspaces
+		.findFirst({
+			where: and(
+				eq(workspaces.projectId, args.projectId),
+				eq(workspaces.branch, args.branch),
+			),
+		})
+		.sync();
+	if (branchConflict && branchConflict.id !== args.keepWorkspaceId) {
+		deleteLocalWorkspace(ctx, branchConflict.id);
+	}
+
+	const pathConflict = ctx.db.query.workspaces
+		.findFirst({
+			where: and(
+				eq(workspaces.projectId, args.projectId),
+				eq(workspaces.worktreePath, args.worktreePath),
+			),
+		})
+		.sync();
+	if (pathConflict && pathConflict.id !== args.keepWorkspaceId) {
+		deleteLocalWorkspace(ctx, pathConflict.id);
+	}
+}
+
 async function getHostWorkspace(
 	ctx: HostServiceContext,
 	workspaceId: string,
@@ -142,6 +176,12 @@ export const adopt = protectedProcedure
 			);
 			if (existingCloud) {
 				await recordBaseBranch(git, branch, input.baseBranch);
+				deleteLocalWorkspaceConflicts(ctx, {
+					projectId: input.projectId,
+					worktreePath,
+					branch,
+					keepWorkspaceId: existingCloud.id,
+				});
 				try {
 					persistLocalWorkspace(ctx, {
 						id: existingCloud.id,
@@ -180,16 +220,14 @@ export const adopt = protectedProcedure
 			deleteLocalWorkspace(ctx, existingLocal.id);
 		}
 
-		const existingLocalByPath = existingLocal
-			? null
-			: ctx.db.query.workspaces
-					.findFirst({
-						where: and(
-							eq(workspaces.projectId, input.projectId),
-							eq(workspaces.worktreePath, worktreePath),
-						),
-					})
-					.sync();
+		const existingLocalByPath = ctx.db.query.workspaces
+			.findFirst({
+				where: and(
+					eq(workspaces.projectId, input.projectId),
+					eq(workspaces.worktreePath, worktreePath),
+				),
+			})
+			.sync();
 		if (existingLocalByPath) {
 			const existingCloud = await getHostWorkspace(ctx, existingLocalByPath.id);
 			if (existingCloud) {
@@ -259,17 +297,12 @@ export const adopt = protectedProcedure
 		// Replace any stale local row for this (project, branch) — its
 		// id likely points at a deleted cloud row. The new cloudRow.id
 		// is the authoritative mapping.
-		const stale = ctx.db.query.workspaces
-			.findFirst({
-				where: and(
-					eq(workspaces.projectId, input.projectId),
-					eq(workspaces.branch, branch),
-				),
-			})
-			.sync();
-		if (stale && stale.id !== cloudRow.id) {
-			ctx.db.delete(workspaces).where(eq(workspaces.id, stale.id)).run();
-		}
+		deleteLocalWorkspaceConflicts(ctx, {
+			projectId: input.projectId,
+			worktreePath,
+			branch,
+			keepWorkspaceId: cloudRow.id,
+		});
 
 		try {
 			persistLocalWorkspace(ctx, {

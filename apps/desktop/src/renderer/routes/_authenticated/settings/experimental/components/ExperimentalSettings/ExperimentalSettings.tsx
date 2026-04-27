@@ -124,13 +124,21 @@ function formatMigrationSuccess(summary: {
 		summary.projectsLinked +
 		summary.projectsErrored +
 		summary.workspacesCreated +
-		summary.workspacesSkipped +
 		summary.workspacesErrored;
 	if (summary.errors.length > 0) {
 		const first = summary.errors[0];
 		return `Migration completed with ${summary.errors.length} error${
 			summary.errors.length === 1 ? "" : "s"
 		}: ${first.name}: ${first.message}`;
+	}
+	if (
+		summary.projectsCreated + summary.projectsLinked === 0 &&
+		summary.workspacesCreated === 0 &&
+		summary.workspacesSkipped > 0
+	) {
+		return `Migration run completed: ${summary.workspacesSkipped} workspace${
+			summary.workspacesSkipped === 1 ? "" : "s"
+		} skipped`;
 	}
 	if (changed === 0) return "Migration run completed: nothing to update";
 	return `Migration run completed: ${summary.projectsCreated + summary.projectsLinked} project${

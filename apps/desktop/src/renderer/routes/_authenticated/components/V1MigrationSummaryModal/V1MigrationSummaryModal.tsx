@@ -1,4 +1,3 @@
-import { COMPANY } from "@superset/shared/constants";
 import { Badge } from "@superset/ui/badge";
 import { Button } from "@superset/ui/button";
 import {
@@ -287,7 +286,6 @@ function ResultsPage({
 	onToggleSection,
 	onDismiss,
 }: ResultsPageProps) {
-	const openUrl = electronTrpc.external.openUrl.useMutation();
 	const copyText = electronTrpc.external.copyText.useMutation();
 	const [isSendingSupportReport, setIsSendingSupportReport] = useState(false);
 	const projectsTotal = summary.projects.filter(
@@ -321,15 +319,14 @@ function ResultsPage({
 			console.warn("[v1-migration] Failed to send support report:", error);
 			try {
 				await copyText.mutateAsync(report);
-				toast.success("Migration details copied for your email");
+				toast.success("Migration details copied to clipboard");
 			} catch (copyError) {
 				console.warn(
 					"[v1-migration] Failed to copy support report:",
 					copyError,
 				);
-				toast.error("Could not send or copy migration details");
+				toast.error("Could not send migration details");
 			}
-			openUrl.mutate(buildMigrationSupportMailto());
 		} finally {
 			setIsSendingSupportReport(false);
 		}
@@ -345,9 +342,7 @@ function ResultsPage({
 					Ran into issues?{" "}
 					<button
 						type="button"
-						disabled={
-							isSendingSupportReport || copyText.isPending || openUrl.isPending
-						}
+						disabled={isSendingSupportReport || copyText.isPending}
 						onClick={() => {
 							void contactSupport();
 						}}
@@ -464,11 +459,6 @@ function countByStatus<T extends { status: string }>(
 	return `${count} ${label}`;
 }
 
-function buildMigrationSupportMailto(): string {
-	const subject = encodeURIComponent("Superset V1 to V2 migration issue");
-	return `${COMPANY.MAIL_TO}?subject=${subject}`;
-}
-
 function buildMigrationSupportReport(summary: MigrationSummary): string {
 	const lines = [
 		"Hi Superset team,",
@@ -484,17 +474,8 @@ function buildMigrationSupportReport(summary: MigrationSummary): string {
 		...summary.errors.map(
 			(error) => `${error.kind}: ${error.name} - ${error.message}`,
 		),
-		...summary.projects
-			.filter((project) => project.status === "error")
-			.map(
-				(project) =>
-					`project: ${project.name} - ${project.reason ?? "unknown error"}`,
-			),
 		...summary.workspaces
-			.filter(
-				(workspace) =>
-					workspace.status === "error" || workspace.status === "skipped",
-			)
+			.filter((workspace) => workspace.status === "skipped")
 			.map(
 				(workspace) =>
 					`workspace: ${workspace.name} (${workspace.branch}) - ${workspace.reason ?? workspace.status}`,

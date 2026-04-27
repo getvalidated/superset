@@ -52,6 +52,10 @@ async function assertSupportReportRateLimit({
 	}
 }
 
+function sanitizeEmailBodyLine(value: string): string {
+	return value.replace(/[\r\n]+/g, " ").trim();
+}
+
 export const supportRouter = createTRPCRouter({
 	sendMigrationReport: protectedProcedure
 		.input(
@@ -62,7 +66,8 @@ export const supportRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const organizationId = ctx.activeOrganizationId;
 			const user = ctx.session.user;
-			const userLabel = user.name ? `${user.name} <${user.email}>` : user.email;
+			const safeName = user.name ? sanitizeEmailBodyLine(user.name) : "";
+			const userLabel = safeName ? `${safeName} <${user.email}>` : user.email;
 
 			await assertSupportReportRateLimit({
 				userId: user.id,

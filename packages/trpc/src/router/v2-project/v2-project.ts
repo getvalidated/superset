@@ -300,16 +300,13 @@ export const v2ProjectRouter = {
 				});
 			}
 			const project = await dbWs.query.v2Projects.findFirst({
-				columns: { id: true, organizationId: true },
-				where: eq(v2Projects.id, input.id),
+				columns: { id: true },
+				where: and(
+					eq(v2Projects.id, input.id),
+					eq(v2Projects.organizationId, input.organizationId),
+				),
 			});
 			if (!project) return { success: true, alreadyGone: true as const };
-			if (project.organizationId !== input.organizationId) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Project not found in this organization",
-				});
-			}
 			await dbWs.delete(v2Projects).where(eq(v2Projects.id, project.id));
 			return { success: true, alreadyGone: false as const };
 		}),

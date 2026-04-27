@@ -35,11 +35,7 @@ function slugWithSuffix(baseSlug: string, attempt: number): string {
 function isSlugConflict(err: unknown): boolean {
 	const message = err instanceof Error ? err.message : String(err);
 	const lower = message.toLowerCase();
-	return (
-		lower.includes("v2_projects_org_slug_unique") ||
-		lower.includes("duplicate key") ||
-		lower.includes("unique constraint")
-	);
+	return lower.includes("v2_projects_org_slug_unique");
 }
 
 async function createCloudProjectWithSlugRetry(
