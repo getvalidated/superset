@@ -285,32 +285,6 @@ export const v2ProjectRouter = {
 			return updated;
 		}),
 
-	deleteFromHost: jwtProcedure
-		.input(
-			z.object({
-				organizationId: z.string().uuid(),
-				id: z.string().uuid(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			if (!ctx.organizationIds.includes(input.organizationId)) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Not a member of this organization",
-				});
-			}
-			const project = await dbWs.query.v2Projects.findFirst({
-				columns: { id: true },
-				where: and(
-					eq(v2Projects.id, input.id),
-					eq(v2Projects.organizationId, input.organizationId),
-				),
-			});
-			if (!project) return { success: true, alreadyGone: true as const };
-			await dbWs.delete(v2Projects).where(eq(v2Projects.id, project.id));
-			return { success: true, alreadyGone: false as const };
-		}),
-
 	update: protectedProcedure
 		.input(
 			z.object({

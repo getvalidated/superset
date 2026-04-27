@@ -2,11 +2,7 @@ import { rmSync } from "node:fs";
 import { TRPCError } from "@trpc/server";
 import type { HostServiceContext } from "../../../types";
 import { persistLocalProject } from "./utils/persist-project";
-import {
-	cloneRepoInto,
-	type ResolvedRepo,
-	resolveLocalRepo,
-} from "./utils/resolve-repo";
+import { cloneRepoInto, resolveLocalRepo } from "./utils/resolve-repo";
 
 function slugifyProjectName(name: string): string {
 	const slug = name
@@ -60,30 +56,10 @@ async function createCloudProjectWithSlugRetry(
 	throw lastError;
 }
 
-async function persistProjectOrRollbackCloud(
-	ctx: HostServiceContext,
-	projectId: string,
-	resolved: ResolvedRepo,
-) {
-	try {
-		persistLocalProject(ctx, projectId, resolved);
-	} catch (err) {
-		await ctx.api.v2Project.deleteFromHost
-			.mutate({ organizationId: ctx.organizationId, id: projectId })
-			.catch((cleanupErr) => {
-				console.warn(
-					"[project.create] failed to rollback cloud project after local persistence error",
-					{ projectId, cleanupErr },
-				);
-			});
-		throw err;
-	}
-}
-
 /**
  * Clone first so clone-time failures (bad URL, auth, network, dir
- * collision) leave no cloud state behind; rollback the local clone on
- * cloud failure. Mirrors workspace.create's local-first-then-cloud order.
+ * collision) leave no cloud state behind. The local clone can be removed
+ * if later steps fail, but cloud projects are durable once created.
  */
 export async function createFromClone(
 	ctx: HostServiceContext,
@@ -95,7 +71,7 @@ export async function createFromClone(
 			name: args.name,
 			repoCloneUrl: args.url,
 		});
-		await persistProjectOrRollbackCloud(ctx, cloudProject.id, resolved);
+		persistLocalProject(ctx, cloudProject.id, resolved);
 		return { projectId: cloudProject.id, repoPath: resolved.repoPath };
 	} catch (err) {
 		try {
@@ -119,6 +95,6 @@ export async function createFromImportLocal(
 		name: args.name,
 		repoCloneUrl: resolved.parsed?.url,
 	});
-	await persistProjectOrRollbackCloud(ctx, cloudProject.id, resolved);
+	persistLocalProject(ctx, cloudProject.id, resolved);
 	return { projectId: cloudProject.id, repoPath: resolved.repoPath };
 }
