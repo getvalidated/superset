@@ -11,6 +11,7 @@ import {
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { V2WorkspaceLoadingView } from "./components/V2WorkspaceLoadingView";
 import { WorkspaceNotFoundState } from "./components/WorkspaceNotFoundState";
 import { WorkspaceTrpcProvider } from "./providers/WorkspaceTrpcProvider";
 
@@ -41,6 +42,7 @@ function V2WorkspaceLayout() {
 				.where(({ v2Workspaces }) => eq(v2Workspaces.id, workspaceId ?? ""))
 				.select(({ v2Workspaces, hosts }) => ({
 					id: v2Workspaces.id,
+					name: v2Workspaces.name,
 					organizationId: v2Workspaces.organizationId,
 					hostId: v2Workspaces.hostId,
 					hostMachineId: hosts?.machineId ?? null,
@@ -67,8 +69,12 @@ function V2WorkspaceLayout() {
 		ensureWorkspaceInSidebar(workspace.id, workspace.projectId);
 	}, [ensureWorkspaceInSidebar, workspace]);
 
-	if (!workspaceId || !isReady) {
+	if (!workspaceId) {
 		return null;
+	}
+
+	if (!isReady) {
+		return <V2WorkspaceLoadingView workspaceName={workspace?.name} />;
 	}
 
 	if (!workspace || !hostUrl) {
