@@ -5,13 +5,18 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
+	CommandSeparator,
 } from "@superset/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
+import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { HiCheck, HiChevronUpDown } from "react-icons/hi2";
-import { LuTriangleAlert } from "react-icons/lu";
+import { HiCheck, HiChevronUpDown, HiMiniPlus } from "react-icons/hi2";
+import { LuFolderInput, LuTriangleAlert } from "react-icons/lu";
+import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
 import { ProjectThumbnail } from "renderer/routes/_authenticated/components/ProjectThumbnail";
+import { useOpenNewProjectModal } from "renderer/stores/add-repository-modal";
 import type { ProjectOption } from "../../types";
 import { FormPickerTrigger } from "../FormPickerTrigger";
 
@@ -27,6 +32,37 @@ export function ProjectPickerPill({
 	onSelectProject,
 }: ProjectPickerPillProps) {
 	const [open, setOpen] = useState(false);
+	const openNewProject = useOpenNewProjectModal();
+	const navigate = useNavigate();
+	const folderImport = useFolderFirstImport({
+		onError: (message) => {
+			toast.error(`Import failed: ${message}`);
+		},
+		onMultipleProjects: ({ candidates }) => {
+			toast.error("Import failed", {
+				description: `Multiple projects use this repository (${candidates.length}). Choose the project in settings to set it up on this device.`,
+				action: {
+					label: "Open Projects",
+					onClick: () => navigate({ to: "/settings/projects" }),
+				},
+			});
+		},
+	});
+
+	const handleCreateNewProject = async () => {
+		setOpen(false);
+		const result = await openNewProject();
+		if (result) onSelectProject(result.projectId);
+	};
+
+	const handleImportProject = async () => {
+		setOpen(false);
+		const result = await folderImport.start();
+		if (result) {
+			toast.success("Project ready — open it from the sidebar.");
+			onSelectProject(result.projectId);
+		}
+	};
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -82,6 +118,17 @@ export function ProjectPickerPill({
 									)}
 								</CommandItem>
 							))}
+						</CommandGroup>
+						<CommandSeparator alwaysRender />
+						<CommandGroup forceMount>
+							<CommandItem forceMount onSelect={handleCreateNewProject}>
+								<HiMiniPlus className="size-4" />
+								Create new project
+							</CommandItem>
+							<CommandItem forceMount onSelect={handleImportProject}>
+								<LuFolderInput className="size-4" />
+								Import project
+							</CommandItem>
 						</CommandGroup>
 					</CommandList>
 				</Command>

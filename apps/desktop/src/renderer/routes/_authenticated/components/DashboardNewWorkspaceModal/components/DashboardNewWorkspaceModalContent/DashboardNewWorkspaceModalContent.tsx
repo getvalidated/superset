@@ -76,10 +76,12 @@ export function DashboardNewWorkspaceModalContent({
 
 	const areProjectsReady = v2Projects !== undefined;
 	const appliedPreSelectionRef = useRef<string | null>(null);
+	const hasInitializedSelectionRef = useRef(false);
 
 	useEffect(() => {
 		if (!isOpen) {
 			appliedPreSelectionRef.current = null;
+			hasInitializedSelectionRef.current = false;
 		}
 	}, [isOpen]);
 
@@ -96,6 +98,7 @@ export function DashboardNewWorkspaceModalContent({
 			);
 			if (hasPreSelectedProject) {
 				appliedPreSelectionRef.current = preSelectedProjectId;
+				hasInitializedSelectionRef.current = true;
 				if (preSelectedProjectId !== draft.selectedProjectId) {
 					updateDraft({ selectedProjectId: preSelectedProjectId });
 				}
@@ -105,12 +108,18 @@ export function DashboardNewWorkspaceModalContent({
 
 		if (!areProjectsReady) return;
 
+		// Only auto-pick a default once. After init, leave the user's selection
+		// alone — including freshly created projects that may not be in the live
+		// query yet (they'll appear momentarily and the picker will show them).
+		if (hasInitializedSelectionRef.current) return;
+
 		const hasSelectedProject = recentProjects.some(
 			(project) => project.id === draft.selectedProjectId,
 		);
 		if (!hasSelectedProject) {
 			updateDraft({ selectedProjectId: recentProjects[0]?.id ?? null });
 		}
+		hasInitializedSelectionRef.current = true;
 	}, [
 		draft.selectedProjectId,
 		areProjectsReady,

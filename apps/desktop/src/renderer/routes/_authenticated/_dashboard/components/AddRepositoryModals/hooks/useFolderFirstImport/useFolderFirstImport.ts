@@ -2,17 +2,16 @@ import { useCallback } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { getBaseName } from "renderer/lib/pathBasename";
-import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
+import {
+	type ProjectSetupResult,
+	useFinalizeProjectSetup,
+} from "renderer/react-query/projects";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 
-interface ProjectSetupResult {
-	projectId: string;
-	repoPath: string;
-	mainWorkspaceId: string | null;
-}
+export type { ProjectSetupResult };
 
 export interface UseFolderFirstImportResult {
-	start: () => Promise<void>;
+	start: () => Promise<ProjectSetupResult | null>;
 }
 
 interface MatchingProject {
@@ -21,27 +20,13 @@ interface MatchingProject {
 }
 
 export function useFolderFirstImport(options?: {
-	onSuccess?: (result: ProjectSetupResult) => void;
 	onError?: (message: string) => void;
 	onMultipleProjects?: (input: { candidates: MatchingProject[] }) => void;
 }): UseFolderFirstImportResult {
 	const { activeHostUrl } = useLocalHostService();
-	const { ensureProjectInSidebar, ensureWorkspaceInSidebar } =
-		useDashboardSidebarState();
+	const finalizeSetup = useFinalizeProjectSetup();
 	const selectDirectory = electronTrpc.window.selectDirectory.useMutation();
-	const { onError, onMultipleProjects, onSuccess } = options ?? {};
-
-	const reportSuccess = useCallback(
-		(result: ProjectSetupResult) => {
-			if (result.mainWorkspaceId) {
-				ensureWorkspaceInSidebar(result.mainWorkspaceId, result.projectId);
-			} else {
-				ensureProjectInSidebar(result.projectId);
-			}
-			onSuccess?.(result);
-		},
-		[ensureProjectInSidebar, ensureWorkspaceInSidebar, onSuccess],
-	);
+	const { onError, onMultipleProjects } = options ?? {};
 
 	const reportError = useCallback(
 		(message: string) => {
@@ -50,10 +35,10 @@ export function useFolderFirstImport(options?: {
 		[onError],
 	);
 
-	const start = useCallback(async () => {
+	const start = useCallback(async (): Promise<ProjectSetupResult | null> => {
 		if (!activeHostUrl) {
 			reportError("Host service not available");
-			return;
+			return null;
 		}
 
 		let repoPath: string;
@@ -61,11 +46,11 @@ export function useFolderFirstImport(options?: {
 			const picked = await selectDirectory.mutateAsync({
 				title: "Import existing folder",
 			});
-			if (picked.canceled || !picked.path) return;
+			if (picked.canceled || !picked.path) return null;
 			repoPath = picked.path;
 		} catch (err) {
 			reportError(err instanceof Error ? err.message : String(err));
-			return;
+			return null;
 		}
 
 		const client = getHostServiceClientByUrl(activeHostUrl);
@@ -75,7 +60,7 @@ export function useFolderFirstImport(options?: {
 			candidates = response.candidates;
 		} catch (err) {
 			reportError(err instanceof Error ? err.message : String(err));
-			return;
+			return null;
 		}
 
 		const [only, ...rest] = candidates;
@@ -87,35 +72,38 @@ export function useFolderFirstImport(options?: {
 					`Multiple projects use this repository (${candidates.length}). Open the project you want from settings to set it up on this device.`,
 				);
 			}
-			return;
+			return null;
 		}
 
 		try {
+			let result: ProjectSetupResult;
 			if (only) {
-				const result = await client.project.setup.mutate({
+				const setupResult = await client.project.setup.mutate({
 					projectId: only.id,
 					mode: { kind: "import", repoPath },
 				});
-				reportSuccess({
+				result = {
 					projectId: only.id,
-					repoPath: result.repoPath,
-					mainWorkspaceId: result.mainWorkspaceId,
-				});
+					repoPath: setupResult.repoPath,
+					mainWorkspaceId: setupResult.mainWorkspaceId,
+				};
 			} else {
-				const result = await client.project.create.mutate({
+				result = await client.project.create.mutate({
 					name: getBaseName(repoPath),
 					mode: { kind: "importLocal", repoPath },
 				});
-				reportSuccess(result);
 			}
+			finalizeSetup(activeHostUrl, result);
+			return result;
 		} catch (err) {
 			reportError(err instanceof Error ? err.message : String(err));
+			return null;
 		}
 	}, [
 		activeHostUrl,
+		finalizeSetup,
 		onMultipleProjects,
 		reportError,
-		reportSuccess,
 		selectDirectory,
 	]);
 
