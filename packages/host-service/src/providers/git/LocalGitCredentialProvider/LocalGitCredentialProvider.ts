@@ -2,17 +2,32 @@ import { execFile } from "node:child_process";
 import type { GitCredentialProvider } from "../../../runtime/git/types";
 
 const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+// Cache null (no-token) results too. Without this, a background poller that
+// runs every 10s (PullRequestRuntimeManager) will re-invoke `git credential
+// fill` on every tick, which on macOS triggers the `git-credential-osxkeychain`
+// helper and pops a Keychain access modal at the same cadence. We accept a
+// short delay before recovering once the user actually configures credentials.
+const NULL_TOKEN_CACHE_TTL_MS = 60 * 1000;
+
+type TokenFetcher = (
+	host: string,
+	env: Record<string, string>,
+) => Promise<string | null>;
 
 export class LocalGitCredentialProvider implements GitCredentialProvider {
 	private envResolver: () => Promise<Record<string, string>>;
-	private cachedToken: { token: string; expiresAt: number } | null = null;
+	private tokenFetcher: TokenFetcher;
+	private cachedToken: { token: string | null; expiresAt: number } | null =
+		null;
 	private inflight: Promise<string | null> | null = null;
 
 	constructor(
 		envResolver: () => Promise<Record<string, string>> = async () =>
 			process.env as Record<string, string>,
+		tokenFetcher: TokenFetcher = fetchTokenViaGitCredential,
 	) {
 		this.envResolver = envResolver;
+		this.tokenFetcher = tokenFetcher;
 	}
 
 	async getCredentials(
@@ -31,40 +46,44 @@ export class LocalGitCredentialProvider implements GitCredentialProvider {
 
 		if (this.inflight) return this.inflight;
 
-		const promise = this.fetchTokenViaGitCredential(host).finally(() => {
+		const promise = this.resolveToken(host).finally(() => {
 			this.inflight = null;
 		});
 		this.inflight = promise;
 		return promise;
 	}
 
-	private async fetchTokenViaGitCredential(
-		host: string,
-	): Promise<string | null> {
+	private async resolveToken(host: string): Promise<string | null> {
 		const env = await this.envResolver();
-		return new Promise((resolve) => {
-			const child = execFile(
-				"git",
-				["credential", "fill"],
-				{ timeout: 10_000, env },
-				(error, stdout) => {
-					if (error) {
-						resolve(null);
-						return;
-					}
-					const match = stdout.match(/^password=(.+)$/m);
-					const token = match?.[1]?.trim() ?? null;
-					if (token) {
-						this.cachedToken = {
-							token,
-							expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
-						};
-					}
-					resolve(token);
-				},
-			);
-			child.stdin?.write(`protocol=https\nhost=${host}\n\n`);
-			child.stdin?.end();
-		});
+		const token = await this.tokenFetcher(host, env);
+		this.cachedToken = {
+			token,
+			expiresAt:
+				Date.now() + (token ? TOKEN_CACHE_TTL_MS : NULL_TOKEN_CACHE_TTL_MS),
+		};
+		return token;
 	}
+}
+
+function fetchTokenViaGitCredential(
+	host: string,
+	env: Record<string, string>,
+): Promise<string | null> {
+	return new Promise((resolve) => {
+		const child = execFile(
+			"git",
+			["credential", "fill"],
+			{ timeout: 10_000, env },
+			(error, stdout) => {
+				if (error) {
+					resolve(null);
+					return;
+				}
+				const match = stdout.match(/^password=(.+)$/m);
+				resolve(match?.[1]?.trim() ?? null);
+			},
+		);
+		child.stdin?.write(`protocol=https\nhost=${host}\n\n`);
+		child.stdin?.end();
+	});
 }
