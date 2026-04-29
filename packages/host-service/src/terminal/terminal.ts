@@ -11,7 +11,7 @@ import {
 	scanForTerminalTitle,
 	type TerminalTitleScanState,
 } from "@superset/shared/terminal-title-scanner";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { Hono } from "hono";
 import { type IPty, spawn } from "node-pty";
 import type { HostDb } from "../db";
@@ -51,6 +51,7 @@ function getHostAgentHookUrl(): string {
 
 type TerminalClientMessage =
 	| { type: "input"; data: string }
+	| { type: "initialCommand"; data: string }
 	| { type: "resize"; cols: number; rows: number }
 	| { type: "dispose" };
 
@@ -114,6 +115,7 @@ interface TerminalSession {
 	shellReadyPromise: Promise<void>;
 	shellReadyTimeoutId: ReturnType<typeof setTimeout> | null;
 	scanState: ShellReadyScanState;
+	initialCommandQueued: boolean;
 }
 
 /** PTY lifetime is independent of socket lifetime — sockets detach/reattach freely. */
@@ -250,6 +252,22 @@ function resolveShellReady(
 	}
 }
 
+function queueInitialCommand(
+	session: TerminalSession,
+	initialCommand: string,
+): void {
+	if (session.initialCommandQueued) return;
+	session.initialCommandQueued = true;
+	const cmd = initialCommand.endsWith("\n")
+		? initialCommand
+		: `${initialCommand}\n`;
+	session.shellReadyPromise.then(() => {
+		if (!session.exited) {
+			session.pty.write(cmd);
+		}
+	});
+}
+
 /**
  * Kills the PTY (if live) and marks the DB row disposed. Safe to call even
  * when there's no in-memory session — e.g. for zombie `active` rows left
@@ -300,7 +318,7 @@ export function disposeSessionsByWorkspaceId(
 		.where(
 			and(
 				eq(terminalSessions.originWorkspaceId, workspaceId),
-				eq(terminalSessions.status, "active"),
+				ne(terminalSessions.status, "disposed"),
 			),
 		)
 		.all();
@@ -448,6 +466,7 @@ export function createTerminalSessionInternal({
 		shellReadyPromise,
 		shellReadyTimeoutId: null,
 		scanState: createScanState(),
+		initialCommandQueued: false,
 	};
 	sessions.set(terminalId, session);
 	portManager.upsertSession(terminalId, workspaceId, pty.pid);
@@ -513,14 +532,7 @@ export function createTerminalSessionInternal({
 	});
 
 	if (initialCommand) {
-		const cmd = initialCommand.endsWith("\n")
-			? initialCommand
-			: `${initialCommand}\n`;
-		session.shellReadyPromise.then(() => {
-			if (!session.exited) {
-				pty.write(cmd);
-			}
-		});
+		queueInitialCommand(session, initialCommand);
 	}
 
 	return session;
@@ -596,13 +608,13 @@ export function registerWorkspaceTerminalRoute({
 
 					const existing = sessions.get(terminalId);
 					if (!existing) {
-						// Session must be created via tRPC terminal.ensureSession before connecting.
-						// Fall back to query params for backwards compatibility with v1 callers.
+						// V2 callers can create a session by opening the WebSocket with
+						// workspaceId; this keeps terminal attach out of tRPC request queues.
 						const workspaceId = c.req.query("workspaceId") ?? null;
 						if (!workspaceId) {
 							sendMessage(ws, {
 								type: "error",
-								message: `Terminal session "${terminalId}" not found; use terminal.ensureSession or workspaceId.`,
+								message: `Terminal session "${terminalId}" not found; open with workspaceId or create it before connecting.`,
 							});
 							ws.close(1011, "Terminal session not found");
 							return;
@@ -675,6 +687,11 @@ export function registerWorkspaceTerminalRoute({
 
 					if (message.type === "input") {
 						session.pty.write(message.data);
+						return;
+					}
+
+					if (message.type === "initialCommand") {
+						queueInitialCommand(session, message.data);
 						return;
 					}
 
