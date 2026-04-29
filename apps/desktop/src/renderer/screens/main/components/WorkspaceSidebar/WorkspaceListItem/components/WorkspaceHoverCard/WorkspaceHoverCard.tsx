@@ -12,7 +12,7 @@ import {
 import { useHotkeyDisplay } from "renderer/hotkeys";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { usePRStatus } from "renderer/screens/main/hooks";
-import { useLocalDiffStats } from "renderer/screens/main/hooks/useLocalDiffStats";
+import type { LocalDiffStats } from "renderer/screens/main/hooks/useLocalDiffStats";
 import { STROKE_WIDTH } from "../../../constants";
 import { ChecksList } from "./components/ChecksList";
 import { ChecksSummary } from "./components/ChecksSummary";
@@ -22,12 +22,14 @@ import { ReviewStatus } from "./components/ReviewStatus";
 interface WorkspaceHoverCardContentProps {
 	workspaceId: string;
 	workspaceAlias?: string;
+	diffStats?: LocalDiffStats | null;
 	onEditBranchClick?: (branchName: string) => void;
 }
 
 export function WorkspaceHoverCardContent({
 	workspaceId,
 	workspaceAlias,
+	diffStats,
 	onEditBranchClick,
 }: WorkspaceHoverCardContentProps) {
 	const { data: worktreeInfo } =
@@ -43,10 +45,6 @@ export function WorkspaceHoverCardContent({
 		previewUrl,
 		isLoading: isLoadingGithub,
 	} = usePRStatus({ workspaceId, surface: "workspace-hover-card" });
-
-	const diffStats = useLocalDiffStats({
-		worktreePath: worktreeInfo?.worktreePath ?? undefined,
-	});
 
 	const { keys: openPRDisplay } = useHotkeyDisplay("OPEN_PR");
 	const hasOpenPRShortcut = !(
@@ -65,6 +63,15 @@ export function WorkspaceHoverCardContent({
 				Open Preview
 			</a>
 		</Button>
+	) : null;
+
+	const diffStatsBadge = diffStats ? (
+		<div className="flex items-center gap-1.5 text-xs font-mono shrink-0">
+			<span className="text-emerald-500">+{diffStats.additions}</span>
+			<span className="text-destructive-foreground">
+				-{diffStats.deletions}
+			</span>
+		</div>
 	) : null;
 
 	const needsRebase = worktreeInfo?.gitStatus?.needsRebase;
@@ -170,14 +177,7 @@ export function WorkspaceHoverCardContent({
 								/>
 							)}
 						</div>
-						{diffStats && (
-							<div className="flex items-center gap-1.5 text-xs font-mono shrink-0">
-								<span className="text-emerald-500">+{diffStats.additions}</span>
-								<span className="text-destructive-foreground">
-									-{diffStats.deletions}
-								</span>
-							</div>
-						)}
+						{diffStatsBadge}
 					</div>
 
 					<p className="text-xs leading-relaxed line-clamp-2">{pr.title}</p>
@@ -215,10 +215,17 @@ export function WorkspaceHoverCardContent({
 				</div>
 			) : repoUrl ? (
 				<div className="pt-2 border-t border-border space-y-2">
-					<div className="text-xs text-muted-foreground">
-						No PR for this branch
+					<div className="flex items-center justify-between gap-2">
+						<div className="text-xs text-muted-foreground">
+							No PR for this branch
+						</div>
+						{diffStatsBadge}
 					</div>
 					{previewButton}
+				</div>
+			) : diffStatsBadge ? (
+				<div className="pt-2 border-t border-border flex items-center justify-end">
+					{diffStatsBadge}
 				</div>
 			) : null}
 		</div>

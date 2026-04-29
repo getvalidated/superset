@@ -282,7 +282,6 @@ export const createGitStatusProcedures = () => {
 				if (workspace.type === "branch") {
 					return {
 						worktreeName: workspace.name,
-						worktreePath: getWorkspacePath(workspace),
 						branchName: workspace.branch,
 						createdAt: workspace.createdAt,
 						gitStatus: null,
@@ -302,7 +301,6 @@ export const createGitStatusProcedures = () => {
 
 				return {
 					worktreeName,
-					worktreePath: worktree.path,
 					branchName,
 					createdAt: worktree.createdAt,
 					gitStatus: worktree.gitStatus ?? null,

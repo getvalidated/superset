@@ -254,6 +254,7 @@ export function WorkspaceListItem({
 				isActive={isActive}
 				isUnread={isUnread}
 				workspaceStatus={workspaceStatus}
+				diffStats={diffStats}
 				itemRef={collapsedItemRef}
 				showDeleteDialog={showDeleteDialog}
 				setShowDeleteDialog={setShowDeleteDialog}
@@ -456,6 +457,7 @@ export function WorkspaceListItem({
 				isUnread={isUnread}
 				workspaceStatus={workspaceStatus}
 				sections={sections}
+				diffStats={diffStats}
 				onRename={rename.startRename}
 				onOpenInFinder={handleOpenInFinder}
 				onOpenInEditor={handleOpenInEditor}

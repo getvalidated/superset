@@ -34,6 +34,7 @@ import {
 	useMoveWorkspaceToSection,
 } from "renderer/react-query/workspaces";
 import { createContextMenuDeleteDialogCoordinator } from "renderer/react-query/workspaces/useWorkspaceDeleteHandler";
+import type { LocalDiffStats } from "renderer/screens/main/hooks/useLocalDiffStats";
 import { useWorkspaceSelectionStore } from "renderer/stores/workspace-selection";
 import { STROKE_WIDTH } from "../constants";
 import { RenameBranchDialog, WorkspaceHoverCardContent } from "./components";
@@ -47,6 +48,7 @@ interface WorkspaceContextMenuProps {
 	isUnread: boolean;
 	workspaceStatus: string | null | undefined;
 	sections: { id: string; name: string }[];
+	diffStats?: LocalDiffStats | null;
 	onRename: () => void;
 	onOpenInFinder: () => void;
 	onOpenInEditor: () => void;
@@ -66,6 +68,7 @@ export function WorkspaceContextMenu({
 	isUnread,
 	workspaceStatus,
 	sections,
+	diffStats,
 	onRename,
 	onOpenInFinder,
 	onOpenInEditor,
@@ -252,6 +255,7 @@ export function WorkspaceContextMenu({
 				<WorkspaceHoverCardContent
 					workspaceId={id}
 					workspaceAlias={name}
+					diffStats={diffStats}
 					onEditBranchClick={setRenameBranchTarget}
 				/>
 			</HoverCardContent>
