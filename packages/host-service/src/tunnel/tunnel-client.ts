@@ -72,7 +72,11 @@ export class TunnelClient {
 
 			socket.onclose = () => {
 				this.socket = null;
-				this.cleanupChannels();
+				try {
+					this.cleanupChannels();
+				} catch (err) {
+					console.error("[host-service:tunnel] cleanupChannels threw:", err);
+				}
 				if (!this.closed) {
 					this.scheduleReconnect();
 				}
@@ -223,13 +227,22 @@ export class TunnelClient {
 		const localWs = this.localChannels.get(message.id);
 		if (localWs) {
 			this.localChannels.delete(message.id);
-			localWs.close(message.code ?? 1000);
+			try {
+				localWs.close(message.code ?? 1000);
+			} catch {
+				// invalid code from upstream; already closing
+			}
 		}
 	}
 
 	private cleanupChannels(): void {
 		for (const ws of this.localChannels.values()) {
-			ws.close(1001, "Tunnel disconnected");
+			// 1000 (Normal Closure) is the only standard code apps may emit per
+			// the WHATWG WebSocket spec; undici throws InvalidAccessError on
+			// reserved codes like 1001.
+			try {
+				ws.close(1000, "Tunnel disconnected");
+			} catch {}
 		}
 		this.localChannels.clear();
 	}
