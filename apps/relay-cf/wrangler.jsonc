@@ -1,0 +1,27 @@
+{
+	"name": "superset-relay",
+	"main": "src/worker.ts",
+	"compatibility_date": "2025-01-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "HOST_TUNNEL",
+				"class_name": "HostTunnel"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["HostTunnel"]
+		}
+	],
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1,
+		"logs": {
+			"invocation_logs": true
+		}
+	}
+}
