@@ -1,0 +1,96 @@
+---
+title: Getting Started
+description: Install the Superset TypeScript SDK and make your first API call.
+---
+
+<Callout type="warn">
+The SDK is in early alpha — the surface mirrors the [CLI](/docs/cli/getting-started) 1:1 and tracks it as the CLI evolves. Pin to an exact version while we iterate.
+</Callout>
+
+The Superset TypeScript SDK (`@superset_sh/sdk`) is a thin, typed wrapper around the same API the CLI talks to. Use it to drive workspaces, tasks, projects, hosts, and automations programmatically from Node, Bun, Deno, or browser code.
+
+## Install
+
+```bash
+npm install @superset_sh/sdk
+# or
+bun add @superset_sh/sdk
+```
+
+Zero runtime dependencies — the package is a single ESM/CJS bundle plus typings.
+
+## Authenticate
+
+You need two things:
+
+1. An **API key** (`sk_live_…`) — create one at [app.superset.sh/settings/api-keys](https://app.superset.sh/settings/api-keys).
+2. The **organization id** to scope requests to. Find it via `superset organization list` in the CLI, or in the URL when you're in an org's dashboard.
+
+```ts
+import Superset from '@superset_sh/sdk';
+
+const client = new Superset({
+  apiKey: process.env.SUPERSET_API_KEY,         // sk_live_…
+  organizationId: process.env.SUPERSET_ORG_ID,  // uuid
+});
+```
+
+Both can also be picked up from the environment automatically:
+
+| Constructor option | Env var | Required |
+| --- | --- | --- |
+| `apiKey` | `SUPERSET_API_KEY` | yes |
+| `organizationId` | `SUPERSET_ORGANIZATION_ID` | yes for org-scoped resources |
+| `baseURL` | `SUPERSET_BASE_URL` | no (defaults to `https://api.superset.sh`) |
+| `relayURL` | `SUPERSET_RELAY_URL` | no (defaults to `https://relay.superset.sh`) |
+| `timeout` | — | no (default 60s) |
+| `maxRetries` | — | no (default 2) |
+| `logLevel` | `SUPERSET_LOG` | no (default `warn`) |
+
+## First call
+
+```ts
+import Superset from '@superset_sh/sdk';
+
+const client = new Superset(); // reads env vars
+
+const tasks = await client.tasks.list({ assigneeMe: true, limit: 10 });
+for (const t of tasks) {
+  console.log(`${t.slug.padEnd(30)} ${t.priority.padEnd(6)} ${t.title}`);
+}
+```
+
+## Errors
+
+The SDK throws typed errors for any non-2xx response:
+
+```ts
+import Superset, { APIError, NotFoundError, RateLimitError } from '@superset_sh/sdk';
+
+try {
+  await client.tasks.retrieve(id);
+} catch (err) {
+  if (err instanceof NotFoundError)   { /* 404 */ }
+  if (err instanceof RateLimitError)  { /* 429 — backoff/retry already handled by maxRetries */ }
+  if (err instanceof APIError)        { /* anything else */ }
+}
+```
+
+`APIError` exposes `status`, `headers`, and the parsed JSON `error` body.
+
+## Two transport paths
+
+Most methods hit the API directly. A handful — `workspaces.create`, `workspaces.delete`, and `automations.run` — physically execute on a developer machine and route through the **relay tunnel**:
+
+```
+SDK ──HTTPS──▶ api.superset.sh           (tasks, projects, hosts, automations CRUD, list)
+SDK ──HTTPS──▶ relay.superset.sh ──WS──▶ host service  (workspace create/delete, automation dispatch)
+```
+
+The SDK transparently exchanges your API key for a short-lived JWT to talk to the relay. You don't need to manage tokens.
+
+The catch: a host has to be **online and tunneling** for relay calls to succeed. If the target machine is asleep or its host service isn't running, you'll get a `503 Host not connected`.
+
+## Next
+
+- [SDK Reference](/docs/sdk/reference) — full method signatures, params, and types.
