@@ -91,57 +91,92 @@ agents: [
 ],
 ```
 
-## Daily triage report
+## Burn down the P0 backlog overnight
 
-A scheduled job that posts your team's open high-priority tasks to Slack:
+Pick up every urgent task in the queue and spawn an agent on each one in parallel. Comes back the next morning with a branch and a comment per task.
 
-```ts title="daily-triage.ts"
+```ts title="burn-p0s.ts"
 import Superset from '@superset_sh/sdk';
 
 const client = new Superset();
+const HOST_ID = process.env.SUPERSET_HOST_ID!;
+const PROJECT_ID = process.env.SUPERSET_PROJECT_ID!; // see projects.list()
 
-const urgent = await client.tasks.list({ priority: 'urgent', limit: 50 });
-const high   = await client.tasks.list({ priority: 'high', limit: 50 });
+const p0s = await client.tasks.list({ priority: 'urgent', limit: 50 });
 
-const lines = [
-  `*Triage — ${new Date().toLocaleDateString()}*`,
-  ``,
-  `*Urgent (${urgent.length})*`,
-  ...urgent.map((t) => `• ${t.slug} — ${t.title} ${t.assigneeName ? `(${t.assigneeName})` : '_unassigned_'}`),
-  ``,
-  `*High (${high.length})*`,
-  ...high.map((t) => `• ${t.slug} — ${t.title} ${t.assigneeName ? `(${t.assigneeName})` : '_unassigned_'}`),
-];
+const dispatched = await Promise.all(
+  p0s.map((task) =>
+    client.workspaces.create({
+      hostId: HOST_ID,
+      projectId: PROJECT_ID,
+      name: task.slug,
+      branch: task.slug,
+      agents: [
+        {
+          agent: 'claude',
+          prompt: [
+            `Pick up task ${task.slug}: "${task.title}".`,
+            ``,
+            task.description ?? '(no description — read recent changes for context)',
+            ``,
+            `Investigate, make the fix, run the relevant tests, push the branch, and`,
+            `update task ${task.id} with a one-paragraph summary of what changed and why.`,
+            `If you can't make confident progress in ~30 minutes, leave a comment with`,
+            `where you got stuck and stop.`,
+          ].join('\n'),
+        },
+      ],
+    }),
+  ),
+);
 
-await fetch(process.env.SLACK_WEBHOOK_URL!, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ text: lines.join('\n') }),
-});
+console.log(`dispatched ${dispatched.length} agents across the P0 backlog`);
 ```
 
-Wire this up to Vercel Cron, GitHub Actions, or whatever scheduler you have. The denormalized fields on `TaskListItem` (`assigneeName`, `statusName`, …) mean you don't need follow-up calls for display.
+Run it from a daily cron on a beefy host and you wake up to a branch per bug. Ones the agent could fix have a PR-ready branch; ones it couldn't have a comment explaining why so a human picks up where the agent stopped.
 
-## Bulk reassign on a label
+## Sweep a refactor across every repo
 
-A one-off script you can run from your terminal:
+Internal API rename, dependency bump, lint rule rollout — anything that has to land identically in dozens of repos is a one-loop, fan-out problem:
 
-```ts title="reassign.ts"
+```ts title="sweep-rename-getUser.ts"
 import Superset from '@superset_sh/sdk';
 
 const client = new Superset();
+const HOST_ID = process.env.SUPERSET_HOST_ID!;
 
-const NEW_OWNER_ID = '<uuid>';
+const projects = await client.projects.list();
 
-const stale = await client.tasks.list({ search: 'flaky', limit: 500 });
+const wave = await Promise.all(
+  projects.map((p) =>
+    client.workspaces.create({
+      hostId: HOST_ID,
+      projectId: p.id,
+      name: `rename-getUser-${p.slug}`,
+      branch: 'refactor/rename-getUser',
+      agents: [
+        {
+          agent: 'claude',
+          prompt: [
+            `Rename every caller of \`getUser()\` to \`fetchUser()\` across this repo.`,
+            ``,
+            `1. Find call sites with grep.`,
+            `2. Update each one and re-run the test suite.`,
+            `3. If green, push the branch and open a draft PR titled`,
+            `   "refactor: rename getUser → fetchUser".`,
+            `4. If a repo doesn't actually use getUser, exit cleanly with a note.`,
+          ].join('\n'),
+        },
+      ],
+    }),
+  ),
+);
 
-for (const t of stale) {
-  await client.tasks.update({ id: t.id, assigneeId: NEW_OWNER_ID });
-  console.log(`reassigned ${t.slug} → ${NEW_OWNER_ID}`);
-}
+const totalAgents = wave.reduce((n, ws) => n + ws.agentRuns.length, 0);
+console.log(`fanned out ${totalAgents} agents across ${projects.length} repos`);
 ```
 
-`tasks.list` filters AND-combine, so layer in `priority`, `statusId`, `creatorMe`, etc. to narrow the query.
+Same loop works for "bump TypeScript to 5.7", "swap Sentry SDK for the new one", "add a `lint:strict` script to every package.json". Anything you'd otherwise farm out to a long Slack thread.
 
 ## On-demand agent dispatch from your tools
 
