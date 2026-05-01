@@ -58,6 +58,16 @@ export interface SpawnArgs {
   opencomputer?: {
     apiKey?: string;
     apiUrl?: string;
+    /**
+     * Pre-built snapshot name (`Snapshots.create({ name })`). When provided,
+     * the sandbox spawns from the saved checkpoint and the image manifest is
+     * not touched. Recommended for production — see scripts/build-snapshot.ts
+     * for the build-once flow.
+     *
+     * If omitted, the image is built on-demand from the manifest. Dev only;
+     * note that the OC build SSE stream may time out for slow steps.
+     */
+    snapshot?: string;
   };
   workspace: { name: string; branch: string };
   agent: { prompt: string; model?: string };
@@ -71,8 +81,9 @@ export async function spawnSupersetWorkspace(args: SpawnArgs) {
   // server resolves the image manifest by content hash and reuses cached
   // layers — only the volatile clone+install layer rebuilds on Superset main
   // commits.
+  const snapshot = args.opencomputer?.snapshot;
   const sandbox = await Sandbox.create({
-    image: supersetImage,
+    ...(snapshot ? { snapshot } : { image: supersetImage }),
     timeout: args.sandboxTimeoutSec ?? 3600,
     apiKey: args.opencomputer?.apiKey,
     apiUrl: args.opencomputer?.apiUrl,
