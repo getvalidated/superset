@@ -57,6 +57,7 @@ import {
 	AutomationLogsParams,
 	AutomationLogsResponse,
 	AutomationRun,
+	AutomationRunDispatched,
 	Automations,
 	AutomationUpdateParams,
 } from "./resources/automations";
@@ -207,6 +208,7 @@ export class Superset {
 	protected idempotencyHeader?: string;
 	private _options: ClientOptions;
 	private _jwtCache: { token: string; expiresAt: number } | null = null;
+	private _jwtInflight: Promise<string> | null = null;
 
 	/**
 	 * API Client for interfacing with the Superset API.
@@ -493,13 +495,16 @@ export class Superset {
 		const routingKey = `${this.organizationId}:${hostId}`;
 		const url = `${this.relayURL}/hosts/${routingKey}/trpc/${procedurePath}`;
 		const optsPromise = this._getJwt().then((jwt) => ({
-			body: { json: input ?? null },
-			headers: {
-				// Drop the API-key auth — relay only verifies JWTs.
-				"x-api-key": null,
-				Authorization: `Bearer ${jwt}`,
-			} as HeadersLike,
+			// Caller options first (timeout, retries, signal, etc.) — body and
+			// auth headers are then forced so per-call options can't strip the
+			// JWT or replace the tRPC envelope.
 			...options,
+			body: { json: input ?? null },
+			headers: buildHeaders([
+				options?.headers,
+				// Drop API-key auth (relay only verifies JWTs) and assert the JWT.
+				{ "x-api-key": null, Authorization: `Bearer ${jwt}` },
+			]),
 		}));
 		return this.post<TRPCEnvelope<Rsp>>(url, optsPromise)._thenUnwrap(
 			(r) => r.result.data.json,
@@ -527,12 +532,12 @@ export class Superset {
 		}
 		const url = `${this.relayURL}/hosts/${routingKey}/trpc/${procedurePath}`;
 		const optsPromise = this._getJwt().then((jwt) => ({
-			query: queryParams,
-			headers: {
-				"x-api-key": null,
-				Authorization: `Bearer ${jwt}`,
-			} as HeadersLike,
 			...options,
+			query: queryParams,
+			headers: buildHeaders([
+				options?.headers,
+				{ "x-api-key": null, Authorization: `Bearer ${jwt}` },
+			]),
 		}));
 		return this.get<TRPCEnvelope<Rsp>>(url, optsPromise)._thenUnwrap(
 			(r) => r.result.data.json,
@@ -542,13 +547,22 @@ export class Superset {
 	/**
 	 * Exchange the API key for a short-lived JWT (1h TTL on the server) and
 	 * cache it in memory. Refreshed 5 minutes before expiry to handle clock
-	 * skew.
+	 * skew. Concurrent host calls share a single in-flight exchange so we
+	 * don't fan out N token requests on a cold cache.
 	 */
 	private async _getJwt(): Promise<string> {
 		const now = Date.now();
 		if (this._jwtCache && this._jwtCache.expiresAt - 5 * 60_000 > now) {
 			return this._jwtCache.token;
 		}
+		if (this._jwtInflight) return this._jwtInflight;
+		this._jwtInflight = this._fetchJwt().finally(() => {
+			this._jwtInflight = null;
+		});
+		return this._jwtInflight;
+	}
+
+	private async _fetchJwt(): Promise<string> {
 		const headers: Record<string, string> =
 			this.apiKey.startsWith("sk_live_") || this.apiKey.startsWith("sk_test_")
 				? { "x-api-key": this.apiKey }
@@ -571,7 +585,10 @@ export class Superset {
 			throw new Errors.SupersetError("Auth token endpoint returned no token");
 		}
 		// Server issues 1h JWTs; cache for 55 minutes to be safe.
-		this._jwtCache = { token: body.token, expiresAt: now + 55 * 60_000 };
+		this._jwtCache = {
+			token: body.token,
+			expiresAt: Date.now() + 55 * 60_000,
+		};
 		return body.token;
 	}
 
@@ -1125,6 +1142,7 @@ export declare namespace Superset {
 		AutomationCreateParams,
 		AutomationUpdateParams,
 		AutomationRun,
+		AutomationRunDispatched,
 		AutomationLogsParams,
 		AutomationLogsResponse,
 		AgentConfig,

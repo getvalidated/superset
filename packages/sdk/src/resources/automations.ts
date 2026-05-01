@@ -73,8 +73,8 @@ export class Automations extends APIResource {
 	 *
 	 * Mirrors `superset automations run`.
 	 */
-	run(id: string, options?: RequestOptions): APIPromise<AutomationRun> {
-		return this._client.mutation<AutomationRun>(
+	run(id: string, options?: RequestOptions): APIPromise<AutomationRunDispatched> {
+		return this._client.mutation<AutomationRunDispatched>(
 			"automation.runNow",
 			{ id },
 			options,
@@ -239,6 +239,16 @@ export interface AutomationLogsParams {
 
 export type AutomationLogsResponse = Array<AutomationRun>;
 
+/**
+ * What `automations.run()` returns — the API gives back identifiers for the
+ * dispatched run, not the full `AutomationRun` row. Fetch the full row via
+ * `automations.logs(automationId)` if you need its status or hostId.
+ */
+export interface AutomationRunDispatched {
+	automationId: string;
+	runId: string;
+}
+
 export declare namespace Automations {
 	export type {
 		Automation,
@@ -246,6 +256,7 @@ export declare namespace Automations {
 		AutomationCreateParams,
 		AutomationUpdateParams,
 		AutomationRun,
+		AutomationRunDispatched,
 		AutomationLogsParams,
 		AutomationLogsResponse,
 		AgentConfig,

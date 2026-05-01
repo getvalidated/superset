@@ -16,7 +16,7 @@ A few things you might use it for:
 - **Provisioning** — spin up workspaces on a developer's machine when an issue is opened, a PR is reviewed, or a customer ticket lands.
 - **On-demand agents** — kick off a recurring automation off-schedule when a webhook fires.
 
-Everything is fully typed and works in Node, Bun, Deno, and modern browsers.
+Everything is fully typed and works in Node, Bun, and Deno. The bundle also runs in browsers, but **don't ship `sk_live_…` keys to a frontend** — they're long-lived and grant full org access. From the browser, talk to a thin server proxy that holds the key.
 
 ## Install
 

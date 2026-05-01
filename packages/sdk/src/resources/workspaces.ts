@@ -5,7 +5,7 @@ import type { RequestOptions } from "../internal/request-options";
 import type {
 	AgentConfig,
 	Automation,
-	AutomationRun,
+	AutomationRunDispatched,
 } from "./automations";
 
 /**
@@ -64,7 +64,7 @@ export class Workspaces extends APIResource {
 			return { ...ws, agentRuns: [] };
 		}
 
-		const agentRuns: AutomationRun[] = [];
+		const agentRuns: AutomationRunDispatched[] = [];
 		for (let i = 0; i < agents.length; i++) {
 			const spec = agents[i]!;
 			const agentId = spec.agent ?? "claude";
@@ -89,7 +89,7 @@ export class Workspaces extends APIResource {
 					mcpScope: spec.mcpScope ?? [],
 				},
 			);
-			const run = await this._client.mutation<AutomationRun>(
+			const run = await this._client.mutation<AutomationRunDispatched>(
 				"automation.runNow",
 				{ id: automation.id },
 			);
@@ -194,7 +194,7 @@ export interface WorkspaceAgentSpawn {
 
 export interface CreatedWorkspace extends HostWorkspace {
 	/** Dispatched runs, one per `agents[]` entry. Empty if no agents were spawned. */
-	agentRuns: AutomationRun[];
+	agentRuns: AutomationRunDispatched[];
 }
 
 export interface WorkspaceDeleteResult {

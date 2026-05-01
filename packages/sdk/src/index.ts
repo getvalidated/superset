@@ -30,6 +30,7 @@ export {
 	type AutomationLogsParams,
 	type AutomationLogsResponse,
 	type AutomationRun,
+	type AutomationRunDispatched,
 	Automations,
 	type AutomationUpdateParams,
 	type Host,
