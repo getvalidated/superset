@@ -21,6 +21,7 @@
 		"---Package TypeScript SDK---",
 		"sdk/getting-started",
 		"sdk/reference",
+		"sdk/advanced",
 		"---BookOpen Guides---",
 		"setup-teardown-scripts",
 		"use-with-ide",

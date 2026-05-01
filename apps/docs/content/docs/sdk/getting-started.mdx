@@ -20,11 +20,28 @@ Everything is fully typed and works in Node, Bun, Deno, and modern browsers.
 
 ## Install
 
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+<Tab value="npm">
 ```bash
 npm install @superset_sh/sdk
-# or
+```
+</Tab>
+<Tab value="pnpm">
+```bash
+pnpm add @superset_sh/sdk
+```
+</Tab>
+<Tab value="yarn">
+```bash
+yarn add @superset_sh/sdk
+```
+</Tab>
+<Tab value="bun">
+```bash
 bun add @superset_sh/sdk
 ```
+</Tab>
+</Tabs>
 
 We're under active development — the SDK follows the API as it grows, so **stay on the latest version** rather than pinning. New methods get added; existing ones don't change shape without a version bump and a note in the changelog.
 
@@ -38,21 +55,16 @@ export SUPERSET_API_KEY=sk_live_…
 export SUPERSET_ORGANIZATION_ID=…
 ```
 
-## Your first call
+## Create the client
 
 ```ts
 import Superset from '@superset_sh/sdk';
 
 const client = new Superset();
 // reads SUPERSET_API_KEY and SUPERSET_ORGANIZATION_ID from env
-
-const tasks = await client.tasks.list({ assigneeMe: true, limit: 10 });
-for (const t of tasks) {
-  console.log(`${t.priority.padEnd(6)} ${t.title}`);
-}
 ```
 
-That's it — all resources work the same way.
+That's all the setup. From here, every resource works the same way:
 
 ```ts
 // Create a task
