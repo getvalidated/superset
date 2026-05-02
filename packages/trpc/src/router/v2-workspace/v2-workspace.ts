@@ -11,7 +11,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { parseClientHeader, posthog } from "../../lib/analytics";
+import { posthog } from "../../lib/analytics";
 import { jwtProcedure, protectedProcedure } from "../../trpc";
 import { requireActiveOrgId } from "../utils/active-org";
 import {
@@ -217,7 +217,6 @@ export const v2WorkspaceRouter = {
 							host_id: inserted.hostId,
 							branch: inserted.branch,
 							type: inserted.type,
-							...parseClientHeader(ctx.headers),
 						},
 					});
 				}
@@ -451,7 +450,6 @@ export const v2WorkspaceRouter = {
 					host_id: workspace.hostId,
 					branch: workspace.branch,
 					type: workspace.type,
-					...parseClientHeader(ctx.headers),
 				},
 			});
 

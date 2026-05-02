@@ -23,5 +23,10 @@ export type { CommandsPluginOptions } from "./plugin";
 export { createCommandsPlugin } from "./plugin";
 export type { CliCommand, CliGroup } from "./router";
 export { buildTree, routeCommand } from "./router";
-export type { CommandTree, RunOptions } from "./runner";
+export type {
+	CommandCompleteEvent,
+	CommandCompleteHook,
+	CommandTree,
+	RunOptions,
+} from "./runner";
 export { run } from "./runner";

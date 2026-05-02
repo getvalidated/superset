@@ -22,11 +22,23 @@ export interface CommandTree {
 	middleware?: MiddlewareFn;
 }
 
+export interface CommandCompleteEvent {
+	command: string;
+	flags: string[];
+	exitStatus: "success" | "error" | "cancelled";
+	durationMs: number;
+}
+
+export type CommandCompleteHook = (
+	event: CommandCompleteEvent,
+) => void | Promise<void>;
+
 export interface RunOptions {
 	name: string;
 	version: string;
 	tree: CommandTree;
 	globals?: Record<string, GenericBuilderInternals>;
+	onCommandComplete?: CommandCompleteHook;
 }
 
 export async function run(opts: RunOptions): Promise<void> {
@@ -342,18 +354,42 @@ async function execute(
 	// Agent-mode auto-JSON only when --quiet wasn't passed; --quiet beats it.
 	const isJson = jsonFlag ?? (!isQuiet && isAgentMode());
 
-	const result = await cmd.run({
-		options: parsed.options as never,
-		args: argsResult as never,
-		ctx: ctx as never,
-		signal,
-	});
-
-	if (result !== undefined) {
-		const output = formatOutput(result, cmd.display, {
-			json: isJson,
-			quiet: isQuiet,
+	const startedAt = Date.now();
+	const flagKeys = Object.keys(parsed.options).filter(
+		(k) => parsed.options[k] !== undefined,
+	);
+	let exitStatus: "success" | "error" | "cancelled" = "success";
+	try {
+		const result = await cmd.run({
+			options: parsed.options as never,
+			args: argsResult as never,
+			ctx: ctx as never,
+			signal,
 		});
-		if (output) console.log(output);
+
+		if (result !== undefined) {
+			const output = formatOutput(result, cmd.display, {
+				json: isJson,
+				quiet: isQuiet,
+			});
+			if (output) console.log(output);
+		}
+	} catch (error) {
+		exitStatus = signal.aborted ? "cancelled" : "error";
+		throw error;
+	} finally {
+		if (opts.onCommandComplete) {
+			try {
+				await opts.onCommandComplete({
+					command: commandPath.join(" "),
+					flags: flagKeys,
+					exitStatus,
+					durationMs: Date.now() - startedAt,
+				});
+			} catch (hookError) {
+				// Telemetry failures must never break command execution.
+				console.error("[cli-framework] onCommandComplete failed:", hookError);
+			}
+		}
 	}
 }
