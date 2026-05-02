@@ -3,9 +3,13 @@ import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import type { HostDb } from "../../../db";
 import * as schema from "../../../db/schema";
 import type { HostServiceContext } from "../../../types";
-import { agentConfigsRouter } from "./agent-configs";
+import {
+	agentConfigsRouter,
+	findOrCreateHostPresetByPresetId,
+} from "./agent-configs";
 import { AGENT_PRESETS } from "./agent-presets";
 
 const MIGRATIONS_FOLDER = resolve(import.meta.dir, "../../../../drizzle");
@@ -274,6 +278,31 @@ describe("agentConfigsRouter", () => {
 			expect(result.map((row) => row.presetId)).toEqual(DEFAULT_PRESET_IDS);
 			expect(result.find((row) => row.label === "Renamed")).toBeUndefined();
 			expect(result.find((row) => row.presetId === "pi")).toBeUndefined();
+		});
+	});
+
+	describe("findOrCreateHostPresetByPresetId()", () => {
+		it("returns the existing row for a default-seeded preset", () => {
+			const db = createTestDb() as unknown as HostDb;
+			const claude = findOrCreateHostPresetByPresetId(db, "claude");
+			expect(claude?.presetId).toBe("claude");
+		});
+
+		it("materializes a row for a non-default builtin preset on first call", () => {
+			const db = createTestDb() as unknown as HostDb;
+			const masta = findOrCreateHostPresetByPresetId(db, "mastracode");
+			expect(masta?.presetId).toBe("mastracode");
+			expect(masta?.promptTransport).toBe("stdin");
+
+			// Calling again returns the same row
+			const again = findOrCreateHostPresetByPresetId(db, "mastracode");
+			expect(again?.id).toBe(masta?.id);
+		});
+
+		it("returns null for an unknown presetId", () => {
+			const db = createTestDb() as unknown as HostDb;
+			const result = findOrCreateHostPresetByPresetId(db, "nonexistent");
+			expect(result).toBeNull();
 		});
 	});
 });

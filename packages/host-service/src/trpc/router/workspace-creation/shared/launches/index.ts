@@ -4,6 +4,8 @@ export {
 	type HostAgentPresetRow,
 	type TerminalLaunchPlan,
 } from "./build-agent-launch";
+export { buildHostResolveCtx } from "./host-resolve-ctx";
+export { resolveAttachmentFiles } from "./resolve-attachment-files";
 export {
 	startTerminalLaunch,
 	type StartedTerminalLaunch,
