@@ -6,9 +6,6 @@ export default middleware(async (opts) => {
 	const options = opts.options as { apiKey?: string };
 	const { config, api, bearer, authSource } = await resolveAuth(options.apiKey);
 
-	// Fire-and-forget at command start — we don't await the HTTP request
-	// because Bun-compiled binaries can exit before fetch completes;
-	// keepalive: true (set inside trackCommandInvoked) handles that.
 	trackCommandInvoked({
 		bearer,
 		commandPath: opts.commandPath,
