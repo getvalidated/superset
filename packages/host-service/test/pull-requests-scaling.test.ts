@@ -2,16 +2,16 @@ import { describe, expect, mock, test } from "bun:test";
 import { PullRequestRuntimeManager } from "../src/runtime/pull-requests/pull-requests";
 
 /**
- * Reproduces finding #1 from `plans/v2-paths-worktree-perf-findings.md`:
+ * Pins the cost of the **safety-net sweep** that runs every
+ * `SAFETY_NET_INTERVAL_MS` (5 min) — the long-cadence backup for the
+ * event-driven `GitWatcher` subscription. When `syncWorkspaceBranches`
+ * runs, it still walks every workspace and spawns ~5 git subprocesses
+ * for each one. The fix from finding #1 doesn't change the safety-net
+ * sweep's cost; it only ensures that path runs at 5 min instead of 30 s.
  *
- * `syncWorkspaceBranches` runs every 30s and spawns ~5 git subprocesses for
- * every workspace in the DB, regardless of whether anything changed. This
- * test proves the cost scales linearly with workspace count by counting the
- * git operations issued during a single tick, then asserting the per-tick
- * total grows in proportion to N.
- *
- * The "fix" (subscribing the runtime to `GitWatcher.onChanged`) should make
- * an idle tick cost O(1), not O(N).
+ * The steady-state idle behavior — zero git ops when nothing changed in
+ * any `.git/` directory — is covered by
+ * `pull-requests-scaling.integration.test.ts`.
  */
 
 interface RawCallLog {
@@ -106,6 +106,7 @@ async function runSync(workspaceCount: number) {
 		db: db as never,
 		git: git as never,
 		github: async () => ({}) as never,
+		gitWatcher: { onChanged: () => () => {} } as never,
 	});
 
 	// `syncWorkspaceBranches` calls `refreshProject` only for changed projects;
@@ -123,8 +124,8 @@ async function runSync(workspaceCount: number) {
 	return { rawCalls, gitFactoryCalls };
 }
 
-describe("syncWorkspaceBranches worktree-scaling", () => {
-	test("git subprocess count grows linearly with workspace count (idle tick)", async () => {
+describe("syncWorkspaceBranches safety-net sweep — worktree-scaling", () => {
+	test("git subprocess count grows linearly with workspace count", async () => {
 		const small = await runSync(2);
 		const large = await runSync(20);
 
@@ -152,10 +153,11 @@ describe("syncWorkspaceBranches worktree-scaling", () => {
 		);
 	});
 
-	test("calls all N git factories even when zero workspaces changed", async () => {
-		// The whole point of the scaling concern: even on a totally idle tick
-		// (no branch / HEAD / upstream changes), every workspace pays the full
-		// git-subprocess cost. This test pins that wasteful behavior.
+	test("safety-net sweep calls all N git factories even when zero workspaces changed", async () => {
+		// The safety-net sweep still walks every workspace — that's its job.
+		// What changed in finding #1 is the **cadence**: this used to fire every
+		// 30s; now it fires every 5 min, and the steady-state per-workspace
+		// sync runs only on real `.git/` activity.
 		const { gitFactoryCalls, rawCalls } = await runSync(10);
 
 		expect(gitFactoryCalls.length).toBe(10);

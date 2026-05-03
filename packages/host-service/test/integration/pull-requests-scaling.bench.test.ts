@@ -1,6 +1,10 @@
 import { afterEach, describe, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import simpleGit, { type SimpleGit } from "simple-git";
 import type { HostDb } from "../../src/db";
+import { workspaces } from "../../src/db/schema";
+import { GitWatcher } from "../../src/events/git-watcher";
+import { WorkspaceFilesystemManager } from "../../src/runtime/filesystem";
 import { PullRequestRuntimeManager } from "../../src/runtime/pull-requests/pull-requests";
 import { createTestHost, type TestHost } from "../helpers/createTestHost";
 import { createGitFixture, type GitFixture } from "../helpers/git-fixture";
@@ -9,14 +13,20 @@ import { seedProject, seedWorkspace } from "../helpers/seed";
 /**
  * BENCHMARK companion to `pull-requests-scaling.integration.test.ts`.
  *
- * Real wall-clock numbers for `syncWorkspaceBranches` at N ∈ {1, 5, 20}
- * worktrees so the over-time cost can be quoted in milliseconds, not just
- * "O(N) git ops." Real DB, real git repos, real `simple-git` subprocesses.
+ * Two measurements relevant after Fix #1 (event-driven branch sync):
  *
- * This file exists so claims like "with 20 worktrees, idle ticks burn X ms
- * every 30s" are anchored to a measurement, not extrapolation. Output goes
- * through `console.log`; assertions are minimal so the benchmark doesn't
- * fail on slow CI runners.
+ * 1. **Event-to-DB-update latency** — wall-clock time from a real `git
+ *    commit` until the workspaces.headSha row is updated. This is the new
+ *    primary cost: paid only on real `.git/` activity, regardless of how
+ *    many idle worktrees exist.
+ *
+ * 2. **Safety-net sweep cost** — wall-clock time for the long-cadence
+ *    `syncWorkspaceBranches` call at N ∈ {1, 5, 20}. The sweep still does
+ *    O(N) work *if it fires*, but now fires every 5 min instead of every
+ *    30 s, so daily wall-clock waste drops by 10×.
+ *
+ * Output goes through `console.log`; assertions are minimal so the
+ * benchmark doesn't fail on slow CI runners.
  */
 
 interface OpCounter {
@@ -41,7 +51,10 @@ function instrumentGit(realGit: SimpleGit, counter: OpCounter): SimpleGit {
 interface BenchScenario {
 	host: TestHost;
 	repos: GitFixture[];
+	workspaceIds: string[];
 	manager: PullRequestRuntimeManager;
+	gitWatcher: GitWatcher;
+	filesystem: WorkspaceFilesystemManager;
 	counter: OpCounter;
 	dispose: () => Promise<void>;
 }
@@ -49,26 +62,31 @@ interface BenchScenario {
 async function setup(workspaceCount: number): Promise<BenchScenario> {
 	const host = await createTestHost();
 	const repos: GitFixture[] = [];
+	const workspaceIds: string[] = [];
 
 	for (let i = 0; i < workspaceCount; i++) {
 		const repo = await createGitFixture();
 		repos.push(repo);
 		const { id: projectId } = seedProject(host, { repoPath: repo.repoPath });
 		const headSha = (await repo.git.revparse(["HEAD"])).trim();
-		seedWorkspace(host, {
+		const { id } = seedWorkspace(host, {
 			projectId,
 			worktreePath: repo.repoPath,
 			branch: "main",
 			headSha,
 		});
+		workspaceIds.push(id);
 	}
 
 	const counter: OpCounter = { count: 0 };
+	const filesystem = new WorkspaceFilesystemManager({ db: host.db as HostDb });
+	const gitWatcher = new GitWatcher(host.db as HostDb, filesystem);
 	const manager = new PullRequestRuntimeManager({
 		db: host.db as HostDb,
 		git: async (worktreePath: string) =>
 			instrumentGit(simpleGit(worktreePath), counter),
 		github: async () => ({}) as never,
+		gitWatcher,
 	});
 
 	(
@@ -76,14 +94,26 @@ async function setup(workspaceCount: number): Promise<BenchScenario> {
 	).refreshProject = async () => undefined;
 
 	const dispose = async () => {
+		manager.stop();
+		gitWatcher.close();
+		await filesystem.close();
 		for (const repo of repos) repo.dispose();
 		await host.dispose();
 	};
 
-	return { host, repos, manager, counter, dispose };
+	return {
+		host,
+		repos,
+		workspaceIds,
+		manager,
+		gitWatcher,
+		filesystem,
+		counter,
+		dispose,
+	};
 }
 
-async function runOneTick(scenario: BenchScenario): Promise<void> {
+async function runSafetyNetTick(scenario: BenchScenario): Promise<void> {
 	await (
 		scenario.manager as unknown as {
 			syncWorkspaceBranches: () => Promise<void>;
@@ -91,7 +121,20 @@ async function runOneTick(scenario: BenchScenario): Promise<void> {
 	).syncWorkspaceBranches();
 }
 
-describe("BENCH: syncWorkspaceBranches wall-clock vs N", () => {
+async function waitFor(
+	predicate: () => boolean,
+	{ timeoutMs = 10_000, pollMs = 25 } = {},
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() > deadline) {
+			throw new Error("Timed out waiting for predicate");
+		}
+		await new Promise((r) => setTimeout(r, pollMs));
+	}
+}
+
+describe("BENCH: pull-requests runtime — post-fix steady state", () => {
 	let scenarios: BenchScenario[] = [];
 
 	afterEach(async () => {
@@ -99,7 +142,50 @@ describe("BENCH: syncWorkspaceBranches wall-clock vs N", () => {
 		scenarios = [];
 	});
 
-	test("prints ms-per-tick for N ∈ {1, 5, 20}", async () => {
+	test("event-to-DB-update latency for a single git commit", async () => {
+		const scenario = await setup(5);
+		scenarios.push(scenario);
+
+		scenario.gitWatcher.start();
+		scenario.manager.start();
+
+		// Wait for initial sweep to settle.
+		await waitFor(() => scenario.counter.count >= 1, { timeoutMs: 10_000 });
+		await new Promise((r) => setTimeout(r, 200));
+
+		const targetWorkspaceId = scenario.workspaceIds[2];
+		const targetRepo = scenario.repos[2];
+		if (!targetWorkspaceId || !targetRepo) throw new Error("missing target");
+
+		const expectedSha = (
+			await targetRepo.commit("bench commit", { "bench.txt": "x" })
+		).trim();
+
+		const t0 = performance.now();
+		await waitFor(
+			() => {
+				const row = scenario.host.db
+					.select({ headSha: workspaces.headSha })
+					.from(workspaces)
+					.where(eq(workspaces.id, targetWorkspaceId))
+					.get();
+				return row?.headSha === expectedSha;
+			},
+			{ timeoutMs: 15_000, pollMs: 25 },
+		);
+		const latencyMs = performance.now() - t0;
+
+		console.log("\n=== Event-to-DB-update latency ===");
+		console.log(
+			`commit → workspaces.headSha update: ${latencyMs.toFixed(0)}ms`,
+		);
+		console.log(
+			"(includes 300ms GitWatcher debounce + git subprocesses + sqlite write)",
+		);
+		console.log("===\n");
+	}, 60_000);
+
+	test("safety-net sweep wall-clock for N ∈ {1, 5, 20}", async () => {
 		const sizes = [1, 5, 20];
 		const rows: Array<{
 			n: number;
@@ -115,15 +201,14 @@ describe("BENCH: syncWorkspaceBranches wall-clock vs N", () => {
 
 			// Warmup: first tick may pay JIT / disk-cache costs.
 			const t0 = performance.now();
-			await runOneTick(scenario);
+			await runSafetyNetTick(scenario);
 			const warmupMs = performance.now() - t0;
-			const warmupOps = scenario.counter.count;
+			void warmupMs;
 
-			// Measured: second tick is the steady-state cost — same wasted work,
-			// caches are hot, so this is the true recurring overhead.
+			// Measured: second tick is the steady-state sweep cost.
 			scenario.counter.count = 0;
 			const t1 = performance.now();
-			await runOneTick(scenario);
+			await runSafetyNetTick(scenario);
 			const measuredMs = performance.now() - t1;
 			const ops = scenario.counter.count;
 
@@ -134,31 +219,28 @@ describe("BENCH: syncWorkspaceBranches wall-clock vs N", () => {
 				ops,
 				msPerOp: +(measuredMs / ops).toFixed(2),
 			});
-
-			// Discard warmup numbers from final report unless they're way off.
-			void warmupOps;
 		}
 
-		console.log("\n=== syncWorkspaceBranches wall-clock benchmark ===");
-		console.log("N\twarmup ms\tsteady ms\tgit ops\tms/op\tprojected/30s");
+		console.log("\n=== Safety-net sweep wall-clock benchmark ===");
+		console.log("N\twarmup ms\tsteady ms\tgit ops\tms/op\tprojected/5min tick");
 		for (const r of rows) {
 			console.log(
-				`${r.n}\t${r.warmupMs}\t\t${r.measuredMs}\t\t${r.ops}\t${r.msPerOp}\t${r.measuredMs.toFixed(0)}ms / 30s tick`,
+				`${r.n}\t${r.warmupMs}\t\t${r.measuredMs}\t\t${r.ops}\t${r.msPerOp}\t${r.measuredMs.toFixed(0)}ms / 5-min sweep`,
 			);
 		}
 
-		// Extrapolate to common worktree counts the user might have.
 		const last = rows[rows.length - 1];
 		if (last) {
 			const msPerWorkspace = last.measuredMs / last.n;
+			const dailyTicks = (24 * 60) / 5;
 			console.log(
-				`\nExtrapolation @ ${msPerWorkspace.toFixed(1)} ms/workspace/tick:`,
+				`\nExtrapolation @ ${msPerWorkspace.toFixed(1)} ms/workspace/sweep:`,
 			);
 			for (const projN of [50, 100]) {
 				const projectedMs = msPerWorkspace * projN;
-				const projectedDailyMs = projectedMs * 2 * 60 * 24; // 2 ticks/min × 60min × 24h
+				const projectedDailyMs = projectedMs * dailyTicks;
 				console.log(
-					`  N=${projN}: ~${projectedMs.toFixed(0)}ms/tick, ~${(projectedDailyMs / 1000).toFixed(0)}s/day of pure git-subprocess waste`,
+					`  N=${projN}: ~${projectedMs.toFixed(0)}ms/sweep × ${dailyTicks} sweeps/day = ~${(projectedDailyMs / 1000).toFixed(1)}s/day total sweep cost`,
 				);
 			}
 		}

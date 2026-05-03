@@ -10,23 +10,11 @@ Each fix has a verification step against the existing reproduction tests / bench
 
 ---
 
-## Current state (handoff)
+## Current state
 
-- **Branch:** `v2-paths-worktree-perf`. Working tree clean.
-- **HEAD:** `b45aee0e3 perf(workspace-fs): cap searchIndexCache + pathTypes for worktree scaling` — Fixes #2 + #3 landed in this single commit. Adds findings doc, fix plan, reproduction tests, and benchmarks.
-- **Suite status:** `bun test` from `packages/workspace-fs` is 43/43 passing. `bun test` from `packages/host-service` was 455/455 before the changes; new pull-requests-scaling tests pass independently.
-- **What's left:** Fix #1 (the big one) and Fix #4 (one-line) remain. Fix #5 stays deferred until #1 is measured.
-
-### Pickup checklist for the next session
-
-1. Read the **Fix 1** section below — it's self-contained and prescribes file paths, the helper to extract, and the test mutations.
-2. Skim `packages/host-service/src/runtime/pull-requests/pull-requests.ts:200-378` to ground the existing class shape.
-3. Skim `packages/host-service/src/events/git-watcher.ts:81-94` for the `onChanged` API shape.
-4. Skim `packages/host-service/src/app.ts` to find where `GitWatcher` and `PullRequestRuntimeManager` are constructed — that's where the new wiring goes.
-5. Run the existing reproduction tests to anchor the BEFORE behavior:
-   - `cd packages/host-service && bun test test/integration/pull-requests-scaling.integration.test.ts` — should pass and print "[integration scaling] real git ops/tick: 2 workspaces=8, 5 workspaces=20".
-6. Implement Fix #1 + #4 together (#4 is one line in the same file).
-7. Update tests as described in **Fix 1 → Verification** below — the "second idle tick pays full cost" assertion needs to flip to "second idle tick pays 0 ops" (because no `.git/` event fires).
+- **Branch:** `v2-paths-worktree-perf`.
+- **All 4 in-scope fixes landed.** Fix #5 remains deferred (measure post-merge before re-scoping).
+- **Suite status:** `packages/host-service` 460/460 passing including the new event-driven steady-state integration test. `packages/workspace-fs` 43/43 passing.
 
 ---
 
@@ -34,15 +22,15 @@ Each fix has a verification step against the existing reproduction tests / bench
 
 | # | Fix | Severity | Effort | Where | Status |
 |---|-----|----------|--------|-------|--------|
-| 1 | Event-driven `pull-requests` runtime via `GitWatcher.onChanged` | 🔴 CRITICAL | Medium | `packages/host-service` | pending |
+| 1 | Event-driven `pull-requests` runtime via `GitWatcher.onChanged` | 🔴 CRITICAL | Medium | `packages/host-service` | ✅ landed |
 | 2 | LRU + idle-TTL cap on `searchIndexCache` | 🔴 IMPORTANT | Small | `packages/workspace-fs` | ✅ landed |
 | 3 | LRU cap on per-watcher `pathTypes` | 🔴 IMPORTANT | Small | `packages/workspace-fs` | ✅ landed |
-| 4 | Loosen `refreshEligibleProjects` to 5-min safety net | 🟡 LOW | Trivial | `packages/host-service` | pending (after #1) |
+| 4 | Loosen `refreshEligibleProjects` to 5-min safety net | 🟡 LOW | Trivial | `packages/host-service` | ✅ landed |
 | 5 | (Deferred) Lazy GitWatcher registration | ⚪ DEFER | Large | `packages/host-service` | deferred |
 
-### Measured impact of landed fixes (#2 + #3)
+### Measured impact of landed fixes
 
-Re-running `cache-and-paths-memory.bench.test.ts` after the caps:
+Workspace-fs (`cache-and-paths-memory.bench.test.ts`):
 
 | Metric | Before | After | Reduction |
 |--------|--------|-------|-----------|
@@ -51,11 +39,20 @@ Re-running `cache-and-paths-memory.bench.test.ts` after the caps:
 | `pathTypes.size` @ 20k unique paths | 20,000 | 10,000 (capped) | hard cap |
 | `searchIndexCache` retained entries @ 130 worktrees | 130 (linear) | 12 (cap) | hard cap |
 
-Order matters: #1 unblocks #4, and the structural argument for #5 weakens significantly once #1–#3 land. Do #1–#4 first; reassess #5 after measuring.
+Host-service pull-requests runtime (`pull-requests-scaling.bench.test.ts`):
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Idle tick @ N=20 | 1450 ms / 30 s = **48 ms/s** of git-subprocess waste | 0 ms (no idle ticks) |
+| Real branch change → DB update latency | ≤ 30 s | **427 ms** (one measurement, N=5) |
+| Safety-net sweep cadence | every 30 s | every 5 min |
+| Daily safety-net cost @ N=20 | 1450 ms × 2880 ticks/day = **70 min/day** | 1450 ms × 288 sweeps/day = **7 min/day** |
+
+The big shift: idle worktrees now cost 0 git subprocesses. Branch change latency dropped from 30 s p99 to ~430 ms. The remaining sweep cost is 10× smaller and only there as a belt-and-braces backup for `GitWatcher` overflow / error paths.
 
 ---
 
-## Fix 1 — Event-driven `pull-requests` runtime
+## Fix 1 — Event-driven `pull-requests` runtime ✅ landed
 
 **Goal:** turn the unconditional 30s `syncWorkspaceBranches` polling into a `git:changed` subscription, so idle ticks cost ~0 git subprocesses regardless of worktree count.
 
@@ -166,7 +163,7 @@ test("git:changed event triggers single-workspace sync, not full sweep", async (
 
 ---
 
-## Fix 2 — LRU + idle-TTL cap on `searchIndexCache`
+## Fix 2 — LRU + idle-TTL cap on `searchIndexCache` ✅ landed
 
 **Goal:** bound JS heap growth by capping the number of cached worktree indexes and evicting idle entries.
 
@@ -233,7 +230,7 @@ In `getSearchIndex` (lines 272–300):
 
 ---
 
-## Fix 3 — LRU cap on per-watcher `pathTypes`
+## Fix 3 — LRU cap on per-watcher `pathTypes` ✅ landed
 
 **Goal:** stop unbounded growth of `WatcherState.pathTypes` when worktrees see continuous unique-path creation (logs, hashed build artifacts).
 
@@ -290,7 +287,7 @@ if (event.type === "delete") {
 
 ---
 
-## Fix 4 — Loosen `refreshEligibleProjects` to 5-min safety net
+## Fix 4 — Loosen `refreshEligibleProjects` to 5-min safety net ✅ landed
 
 **Goal:** drop the constant 20s ticking once Fix 1 makes branch changes event-driven.
 

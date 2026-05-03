@@ -50,6 +50,7 @@ describe("PullRequestRuntimeManager branch sync", () => {
 			db: db as never,
 			git: git as never,
 			github: async () => ({}) as never,
+			gitWatcher: { onChanged: () => () => {} } as never,
 		});
 		const refreshProjectMock = mock(async () => undefined);
 		(
@@ -110,6 +111,7 @@ describe("PullRequestRuntimeManager branch sync", () => {
 			db: db as never,
 			git: git as never,
 			github: async () => ({}) as never,
+			gitWatcher: { onChanged: () => () => {} } as never,
 		});
 		const refreshProjectMock = mock(async () => undefined);
 		(
