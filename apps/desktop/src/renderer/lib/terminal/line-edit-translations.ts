@@ -13,6 +13,11 @@ function onlyMod(event: KeyboardEvent, mod: "meta" | "alt" | "ctrl"): boolean {
 	);
 }
 
+/** True when Shift is the only modifier held. */
+function onlyShift(event: KeyboardEvent): boolean {
+	return event.shiftKey && !event.metaKey && !event.altKey && !event.ctrlKey;
+}
+
 /**
  * Translate Mac Cmd+/Option+ and Windows Ctrl+ arrow / backspace chords into
  * the escape sequences shells expect. Returns the bytes to send, or null if
@@ -31,24 +36,16 @@ export function translateLineEditChord(
 	const { isMac, isWindows } = options;
 	const { key } = event;
 
+	// Shift+Enter and Mac Cmd+Enter both emit ESC+CR — chat TUIs (Claude Code,
+	// etc.) parse this as a newline. Sent directly because xterm's kitty
+	// keyboard encoder would otherwise produce CSI-u sequences the TUI doesn't
+	// recognize.
+	if (key === "Enter" && onlyShift(event)) return "\x1b\r";
 	if (isMac && onlyMod(event, "meta")) {
 		if (key === "Backspace") return "\x15\x1b[D";
 		if (key === "ArrowLeft") return "\x01";
 		if (key === "ArrowRight") return "\x05";
-		// Chat TUIs parse ESC+CR as Shift+Enter/newline in kitty mode.
 		if (key === "Enter") return "\x1b\r";
-	}
-	// Shift+Enter: kitty keyboard mode CSI-u-encodes this so most chat TUIs
-	// (Claude Code, etc.) don't see a newline. Send ESC+CR explicitly — the
-	// same sequence Mac Cmd+Enter already produces.
-	if (
-		key === "Enter" &&
-		event.shiftKey &&
-		!event.metaKey &&
-		!event.altKey &&
-		!event.ctrlKey
-	) {
-		return "\x1b\r";
 	}
 	if (isMac && onlyMod(event, "alt")) {
 		if (key === "ArrowLeft") return "\x1bb";
