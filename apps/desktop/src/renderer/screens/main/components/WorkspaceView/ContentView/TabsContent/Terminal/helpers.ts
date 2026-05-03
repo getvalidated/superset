@@ -84,6 +84,7 @@ export function createTerminalInWrapper(options: CreateTerminalOptions = {}): {
 	searchAddon: SearchAddon;
 	wrapper: HTMLDivElement;
 	linkManager: TerminalLinkManager;
+	clearTextureAtlas: () => void;
 	cleanup: () => void;
 } {
 	const {
@@ -203,6 +204,11 @@ export function createTerminalInWrapper(options: CreateTerminalOptions = {}): {
 		searchAddon,
 		wrapper,
 		linkManager,
+		clearTextureAtlas: () => {
+			try {
+				webglAddon?.clearTextureAtlas();
+			} catch {}
+		},
 		cleanup: () => {
 			disposed = true;
 			cancelAnimationFrame(rafId);
