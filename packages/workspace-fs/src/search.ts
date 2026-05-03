@@ -97,8 +97,48 @@ export interface SearchContentOptions {
 	) => Promise<{ stdout: string }>;
 }
 
-const searchIndexCache = new Map<string, SearchIndexEntry[]>();
+// LRU + idle-TTL on the index cache: bound JS heap as worktree count grows.
+// Inactive worktrees pay a fresh fast-glob walk on next search (~50–200 ms
+// for a 5k-file repo) — cheap relative to keeping every index resident.
+const SEARCH_INDEX_CACHE_MAX = 12;
+const SEARCH_INDEX_CACHE_TTL_MS = 30 * 60_000;
+
+interface CachedIndex {
+	items: SearchIndexEntry[];
+	lastAccessedAt: number;
+}
+
+const searchIndexCache = new Map<string, CachedIndex>();
 const searchIndexBuilds = new Map<string, Promise<SearchIndexEntry[]>>();
+
+function evictStaleSearchIndexEntries(now: number): void {
+	for (const [key, cached] of searchIndexCache) {
+		if (now - cached.lastAccessedAt > SEARCH_INDEX_CACHE_TTL_MS) {
+			searchIndexCache.delete(key);
+		}
+	}
+}
+
+function evictLruSearchIndexEntries(): void {
+	// Map iteration is insertion-order; re-inserting on hit moves an entry to
+	// the end, so the first key is least-recently-used.
+	while (searchIndexCache.size >= SEARCH_INDEX_CACHE_MAX) {
+		const oldestKey = searchIndexCache.keys().next().value;
+		if (!oldestKey) break;
+		searchIndexCache.delete(oldestKey);
+	}
+}
+
+function bumpAndReturnCachedIndex(
+	cacheKey: string,
+	cached: CachedIndex,
+): SearchIndexEntry[] {
+	// Move to MRU position.
+	cached.lastAccessedAt = Date.now();
+	searchIndexCache.delete(cacheKey);
+	searchIndexCache.set(cacheKey, cached);
+	return cached.items;
+}
 
 function createSearchIndexEntry(
 	rootPath: string,
@@ -276,7 +316,7 @@ export async function getSearchIndex(
 
 	const cached = searchIndexCache.get(cacheKey);
 	if (cached) {
-		return cached;
+		return bumpAndReturnCachedIndex(cacheKey, cached);
 	}
 
 	const inFlight = searchIndexBuilds.get(cacheKey);
@@ -286,7 +326,12 @@ export async function getSearchIndex(
 
 	const buildPromise = buildSearchIndex(options)
 		.then((items) => {
-			searchIndexCache.set(cacheKey, items);
+			evictStaleSearchIndexEntries(Date.now());
+			evictLruSearchIndexEntries();
+			searchIndexCache.set(cacheKey, {
+				items,
+				lastAccessedAt: Date.now(),
+			});
 			searchIndexBuilds.delete(cacheKey);
 			return items;
 		})
@@ -701,7 +746,7 @@ export function patchSearchIndexesForRoot(
 		}
 
 		const nextItemsByPath = new Map(
-			cached.map((item) => [item.absolutePath, item]),
+			cached.items.map((item) => [item.absolutePath, item]),
 		);
 		for (const event of events) {
 			applySearchPatchEvent({
@@ -712,7 +757,12 @@ export function patchSearchIndexesForRoot(
 			});
 		}
 
-		searchIndexCache.set(cacheKey, Array.from(nextItemsByPath.values()));
+		// Patches imply the worktree is alive — bump to MRU and refresh access time.
+		searchIndexCache.delete(cacheKey);
+		searchIndexCache.set(cacheKey, {
+			items: Array.from(nextItemsByPath.values()),
+			lastAccessedAt: Date.now(),
+		});
 	}
 }
 

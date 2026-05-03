@@ -15,6 +15,12 @@ import {
 } from "./search";
 import type { FsWatchEvent } from "./types";
 
+// Cap per-watcher pathTypes so monotonic stream of unique paths (log
+// rotation, hashed build artifacts) doesn't grow JS heap unbounded. Eviction
+// loses only the directory-type hint — the next event for that path falls
+// back to stat(), which is the existing slow-path behavior.
+const PATH_TYPES_MAX = 10_000;
+
 export interface WatchPathOptions {
 	absolutePath: string;
 	recursive?: boolean;
@@ -477,6 +483,13 @@ export class FsWatcherManager {
 			try {
 				const stats = await stat(absolutePath);
 				isDirectory = stats.isDirectory();
+				// LRU bump + evict oldest when at cap. Map iteration is
+				// insertion-order, so the first key is least-recently-used.
+				state.pathTypes.delete(absolutePath);
+				if (state.pathTypes.size >= PATH_TYPES_MAX) {
+					const oldestKey = state.pathTypes.keys().next().value;
+					if (oldestKey) state.pathTypes.delete(oldestKey);
+				}
 				state.pathTypes.set(absolutePath, isDirectory);
 			} catch {
 				isDirectory = state.pathTypes.get(absolutePath) ?? false;

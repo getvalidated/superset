@@ -1,0 +1,296 @@
+import { afterEach, describe, expect, it } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { FsWatcherManager } from "./watch";
+
+/**
+ * INTEGRATION reproduction of finding #3 in
+ * `plans/v2-paths-worktree-perf-findings.md`.
+ *
+ * `WatcherState.pathTypes` (private to `FsWatcherManager`) accumulates one
+ * entry per path that has been seen via `create` / `update` / `rename` events.
+ * Only `delete` events remove entries. New file paths created over time
+ * (logs, build artifacts that escape DEFAULT_IGNORE_PATTERNS, generated
+ * assets, dev-server tmp files) leak in monotonically.
+ *
+ * Uses a real `FsWatcherManager` with the real `@parcel/watcher` backend and
+ * real fs writes. Reaches into private `watchers` map after events flush
+ * to assert pathTypes growth — the same pattern other tests in this repo
+ * use to inspect manager-internal state.
+ */
+
+interface WatcherStateView {
+	pathTypes: Map<string, boolean>;
+}
+
+interface FsWatcherManagerInternal {
+	watchers: Map<string, WatcherStateView>;
+}
+
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+	await Promise.all(
+		tempRoots.splice(0).map(async (rootPath) => {
+			await fs.rm(rootPath, { recursive: true, force: true });
+		}),
+	);
+});
+
+async function createTempRoot(): Promise<string> {
+	const tempPath = await fs.mkdtemp(path.join(os.tmpdir(), "watch-pathtypes-"));
+	// Resolve symlinks (e.g. macOS /var → /private/var) so absolute paths
+	// inside `pathTypes` match what we compute in the test.
+	return fs.realpath(tempPath);
+}
+
+function getPathTypes(
+	manager: FsWatcherManager,
+	rootPath: string,
+): Map<string, boolean> {
+	const internal = manager as unknown as FsWatcherManagerInternal;
+	const state = internal.watchers.get(rootPath);
+	if (!state) {
+		throw new Error(`No WatcherState for ${rootPath}`);
+	}
+	return state.pathTypes;
+}
+
+async function waitForCondition(
+	check: () => boolean,
+	timeoutMs = 4000,
+	pollMs = 50,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!check()) {
+		if (Date.now() > deadline) {
+			throw new Error("Timed out waiting for watcher condition");
+		}
+		await new Promise((resolve) => setTimeout(resolve, pollMs));
+	}
+}
+
+describe("FsWatcherManager.pathTypes — monotonic growth", () => {
+	it("creating N new files adds N entries to pathTypes", async () => {
+		const rootPath = await createTempRoot();
+		tempRoots.push(rootPath);
+
+		const manager = new FsWatcherManager({ debounceMs: 50 });
+		const events: string[] = [];
+		const unsubscribe = await manager.subscribe(
+			{ absolutePath: rootPath, recursive: true },
+			(batch) => {
+				for (const event of batch.events) {
+					if (event.kind !== "overflow") {
+						events.push(`${event.kind}:${event.absolutePath}`);
+					}
+				}
+			},
+		);
+
+		const fileCount = 12;
+		for (let i = 0; i < fileCount; i++) {
+			await fs.writeFile(path.join(rootPath, `gen-${i}.log`), `${i}\n`);
+		}
+
+		await waitForCondition(() => events.length >= fileCount);
+
+		const pathTypes = getPathTypes(manager, rootPath);
+		expect(pathTypes.size).toBeGreaterThanOrEqual(fileCount);
+
+		// Each tracked path is one of the files we created.
+		for (let i = 0; i < fileCount; i++) {
+			expect(pathTypes.has(path.join(rootPath, `gen-${i}.log`))).toBe(true);
+		}
+
+		await unsubscribe();
+		await manager.close();
+	});
+
+	it("updates to existing files do not grow pathTypes", async () => {
+		const rootPath = await createTempRoot();
+		tempRoots.push(rootPath);
+
+		const manager = new FsWatcherManager({ debounceMs: 50 });
+		const events: string[] = [];
+		const unsubscribe = await manager.subscribe(
+			{ absolutePath: rootPath, recursive: true },
+			(batch) => {
+				for (const event of batch.events) {
+					if (event.kind !== "overflow") events.push(event.kind);
+				}
+			},
+		);
+
+		// Create one file, wait for it to be tracked.
+		const filePath = path.join(rootPath, "stable.txt");
+		await fs.writeFile(filePath, "v1");
+		await waitForCondition(() => events.includes("create"));
+
+		const sizeAfterCreate = getPathTypes(manager, rootPath).size;
+
+		// Now mutate the same file 10 times. pathTypes should not grow.
+		for (let i = 0; i < 10; i++) {
+			await fs.writeFile(filePath, `v${i + 2}`);
+		}
+		await waitForCondition(
+			() => events.filter((k) => k === "update").length >= 1,
+		);
+
+		const sizeAfterUpdates = getPathTypes(manager, rootPath).size;
+		expect(sizeAfterUpdates).toBe(sizeAfterCreate);
+
+		await unsubscribe();
+		await manager.close();
+	});
+
+	it("delete events remove entries; create-new events add fresh ones", async () => {
+		const rootPath = await createTempRoot();
+		tempRoots.push(rootPath);
+
+		const manager = new FsWatcherManager({ debounceMs: 50 });
+		const events: string[] = [];
+		const unsubscribe = await manager.subscribe(
+			{ absolutePath: rootPath, recursive: true },
+			(batch) => {
+				for (const event of batch.events) {
+					if (event.kind !== "overflow") {
+						events.push(`${event.kind}:${event.absolutePath}`);
+					}
+				}
+			},
+		);
+
+		// Phase 1: create 5 files.
+		for (let i = 0; i < 5; i++) {
+			await fs.writeFile(path.join(rootPath, `phase1-${i}.txt`), "x");
+		}
+		await waitForCondition(
+			() => events.filter((e) => e.startsWith("create:")).length >= 5,
+		);
+
+		const sizeAfterPhase1 = getPathTypes(manager, rootPath).size;
+		expect(sizeAfterPhase1).toBeGreaterThanOrEqual(5);
+
+		// Phase 2: delete those 5 files. pathTypes should shrink.
+		for (let i = 0; i < 5; i++) {
+			await fs.rm(path.join(rootPath, `phase1-${i}.txt`));
+		}
+		await waitForCondition(
+			() => events.filter((e) => e.startsWith("delete:")).length >= 5,
+		);
+
+		const sizeAfterDeletes = getPathTypes(manager, rootPath).size;
+		expect(sizeAfterDeletes).toBeLessThan(sizeAfterPhase1);
+
+		// Phase 3: create 5 NEW files with different names. pathTypes grows
+		// again. This is the leak shape: log rotation / dev-server tmp /
+		// hashed build artifacts produce a stream of unique paths whose
+		// older deletes happen sometime — but in the meantime pathTypes
+		// climbs and climbs.
+		for (let i = 0; i < 5; i++) {
+			await fs.writeFile(path.join(rootPath, `phase3-${i}.txt`), "x");
+		}
+		await waitForCondition(
+			() => events.filter((e) => e.startsWith("create:")).length >= 10,
+		);
+
+		const sizeAfterPhase3 = getPathTypes(manager, rootPath).size;
+		expect(sizeAfterPhase3).toBeGreaterThanOrEqual(sizeAfterDeletes + 5);
+
+		await unsubscribe();
+		await manager.close();
+	});
+
+	it("caps pathTypes at PATH_TYPES_MAX (10k) — older entries evicted on overflow", async () => {
+		// After Fix #3 lands, creating 10k+ unique files should plateau at the
+		// cap rather than growing without bound. Slightly above the cap (10,200)
+		// to exercise eviction without slowing the test more than necessary.
+		const rootPath = await createTempRoot();
+		tempRoots.push(rootPath);
+
+		const manager = new FsWatcherManager({ debounceMs: 50 });
+		let createCount = 0;
+		const unsubscribe = await manager.subscribe(
+			{ absolutePath: rootPath, recursive: true },
+			(batch) => {
+				for (const event of batch.events) {
+					if (event.kind === "create") createCount++;
+				}
+			},
+		);
+
+		const PATH_TYPES_MAX = 10_000;
+		const total = PATH_TYPES_MAX + 200;
+
+		for (let i = 0; i < total; i++) {
+			await fs.writeFile(path.join(rootPath, `cap-${i}.tmp`), `${i}`);
+		}
+
+		// Wait for parcel to deliver enough events that we've definitely
+		// exceeded the cap (95% of total seen as a safety margin).
+		await waitForCondition(
+			() => createCount >= Math.floor(total * 0.95),
+			60_000,
+		);
+
+		// Give an extra tick for the final debounce flush.
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const cappedSize = getPathTypes(manager, rootPath).size;
+		expect(cappedSize).toBeLessThanOrEqual(PATH_TYPES_MAX);
+
+		// The cap is hard, so size should be exactly PATH_TYPES_MAX once
+		// we've sent more than that many create events through.
+		if (createCount > PATH_TYPES_MAX) {
+			expect(cappedSize).toBe(PATH_TYPES_MAX);
+		}
+
+		// Earliest paths (cap-0..cap-199) should have been evicted.
+		const firstPath = path.join(rootPath, "cap-0.tmp");
+		expect(getPathTypes(manager, rootPath).has(firstPath)).toBe(false);
+
+		// Most-recent paths should still be in the map.
+		const lastPath = path.join(rootPath, `cap-${total - 1}.tmp`);
+		expect(getPathTypes(manager, rootPath).has(lastPath)).toBe(true);
+
+		await unsubscribe();
+		await manager.close();
+	}, 120_000);
+
+	it("repeated create/delete with unique names grows pathTypes monotonically until delete catches up", async () => {
+		// The most realistic leak scenario: a process keeps creating files
+		// with NEW unique names (think rotating logs, hashed build outputs).
+		// Even if old files eventually get cleaned up, the *peak* size of
+		// pathTypes during the watcher's lifetime is unbounded — there's
+		// no LRU or size cap to keep it from spiking.
+		const rootPath = await createTempRoot();
+		tempRoots.push(rootPath);
+
+		const manager = new FsWatcherManager({ debounceMs: 50 });
+		let createCount = 0;
+		const unsubscribe = await manager.subscribe(
+			{ absolutePath: rootPath, recursive: true },
+			(batch) => {
+				for (const event of batch.events) {
+					if (event.kind === "create") createCount++;
+				}
+			},
+		);
+
+		// Burst: create 30 unique paths before any delete fires. Without
+		// a cap, pathTypes holds all 30 simultaneously.
+		const totalUnique = 30;
+		for (let i = 0; i < totalUnique; i++) {
+			await fs.writeFile(path.join(rootPath, `unique-${i}.tmp`), `${i}`);
+		}
+		await waitForCondition(() => createCount >= totalUnique);
+
+		const peakSize = getPathTypes(manager, rootPath).size;
+		expect(peakSize).toBeGreaterThanOrEqual(totalUnique);
+
+		await unsubscribe();
+		await manager.close();
+	});
+});
