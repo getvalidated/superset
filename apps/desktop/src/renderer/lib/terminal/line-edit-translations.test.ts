@@ -12,12 +12,15 @@ function event(overrides: Partial<KeyboardEvent>): KeyboardEvent {
 	} as KeyboardEvent;
 }
 
+const noKitty = { kittyKeyboardActive: false };
+
 describe("translateLineEditChord", () => {
 	it("maps Mac Cmd+Enter to the TUI newline sequence", () => {
 		expect(
 			translateLineEditChord(event({ key: "Enter", metaKey: true }), {
 				isMac: true,
 				isWindows: false,
+				...noKitty,
 			}),
 		).toBe("\x1b\r");
 	});
@@ -26,7 +29,7 @@ describe("translateLineEditChord", () => {
 		expect(
 			translateLineEditChord(
 				event({ key: "Enter", metaKey: true, shiftKey: true }),
-				{ isMac: true, isWindows: false },
+				{ isMac: true, isWindows: false, ...noKitty },
 			),
 		).toBeNull();
 	});
@@ -36,6 +39,7 @@ describe("translateLineEditChord", () => {
 			translateLineEditChord(event({ key: "Enter", metaKey: true }), {
 				isMac: false,
 				isWindows: true,
+				...noKitty,
 			}),
 		).toBeNull();
 	});
@@ -45,6 +49,7 @@ describe("translateLineEditChord", () => {
 			translateLineEditChord(event({ key: "Enter", shiftKey: true }), {
 				isMac: true,
 				isWindows: false,
+				...noKitty,
 			}),
 		).toBe("\x1b\r");
 	});
@@ -54,6 +59,7 @@ describe("translateLineEditChord", () => {
 			translateLineEditChord(event({ key: "Enter", shiftKey: true }), {
 				isMac: false,
 				isWindows: true,
+				...noKitty,
 			}),
 		).toBe("\x1b\r");
 	});
@@ -63,7 +69,38 @@ describe("translateLineEditChord", () => {
 			translateLineEditChord(event({ key: "Enter", shiftKey: true }), {
 				isMac: false,
 				isWindows: false,
+				...noKitty,
 			}),
 		).toBe("\x1b\r");
+	});
+
+	it("skips Shift+Enter when kitty keyboard mode is active", () => {
+		expect(
+			translateLineEditChord(event({ key: "Enter", shiftKey: true }), {
+				isMac: true,
+				isWindows: false,
+				kittyKeyboardActive: true,
+			}),
+		).toBeNull();
+	});
+
+	it("skips Mac Cmd+Enter when kitty keyboard mode is active", () => {
+		expect(
+			translateLineEditChord(event({ key: "Enter", metaKey: true }), {
+				isMac: true,
+				isWindows: false,
+				kittyKeyboardActive: true,
+			}),
+		).toBeNull();
+	});
+
+	it("still translates Cmd+Backspace when kitty keyboard mode is active", () => {
+		expect(
+			translateLineEditChord(event({ key: "Backspace", metaKey: true }), {
+				isMac: true,
+				isWindows: false,
+				kittyKeyboardActive: true,
+			}),
+		).toBe("\x15\x1b[D");
 	});
 });

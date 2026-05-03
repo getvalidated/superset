@@ -1,6 +1,14 @@
 export interface LineEditChordOptions {
 	isMac: boolean;
 	isWindows: boolean;
+	/**
+	 * True when xterm.js's kitty keyboard mode is active (a TUI has pushed
+	 * flags via `CSI > Ps u`). When active, Enter chords skip translation so
+	 * xterm's native CSI-u encoder reaches the TUI — kitty-aware programs
+	 * (Codex, etc.) decode `\x1B[13;Nu` as the proper Shift/Cmd+Enter event,
+	 * whereas our `\x1B\r` shim is silently dropped.
+	 */
+	kittyKeyboardActive: boolean;
 }
 
 type Platform = "mac" | "windows" | "linux";
@@ -18,14 +26,31 @@ interface ChordTranslation {
 	sequence: string;
 	/** Omit to match all platforms. */
 	platforms?: Platform[];
+	/**
+	 * Skip when xterm's kitty keyboard mode is active. Used for Enter chords
+	 * whose `\x1B\r` shim conflicts with the kitty CSI-u encoding the TUI
+	 * actually expects.
+	 */
+	skipWhenKittyActive?: boolean;
 }
 
 const TRANSLATIONS: ChordTranslation[] = [
-	// Shift+Enter and Mac Cmd+Enter both emit ESC+CR — chat TUIs (Claude Code,
-	// etc.) parse this as a newline. Sent directly because xterm's kitty
-	// keyboard encoder would otherwise produce CSI-u sequences the TUI doesn't
-	// recognize.
-	{ chord: { key: "Enter", shift: true }, sequence: "\x1b\r" },
+	// Shift+Enter and Mac Cmd+Enter emit ESC+CR for chat TUIs that don't push
+	// the kitty keyboard protocol (Claude Code reads `\x1B\r` as Shift+Enter
+	// via readline). When a TUI HAS pushed kitty mode, xterm.js will encode
+	// these as CSI-u natively (`\x1B[13;Nu`) — skip our shim so the TUI sees
+	// the proper sequence.
+	{
+		chord: { key: "Enter", shift: true },
+		sequence: "\x1b\r",
+		skipWhenKittyActive: true,
+	},
+	{
+		chord: { key: "Enter", meta: true },
+		sequence: "\x1b\r",
+		platforms: ["mac"],
+		skipWhenKittyActive: true,
+	},
 	// Mac Cmd+ line edit
 	{
 		chord: { key: "Backspace", meta: true },
@@ -40,11 +65,6 @@ const TRANSLATIONS: ChordTranslation[] = [
 	{
 		chord: { key: "ArrowRight", meta: true },
 		sequence: "\x05",
-		platforms: ["mac"],
-	},
-	{
-		chord: { key: "Enter", meta: true },
-		sequence: "\x1b\r",
 		platforms: ["mac"],
 	},
 	// Mac Option+ word jump
@@ -107,6 +127,7 @@ export function translateLineEditChord(
 	options: LineEditChordOptions,
 ): string | null {
 	for (const t of TRANSLATIONS) {
+		if (t.skipWhenKittyActive && options.kittyKeyboardActive) continue;
 		if (matchesPlatform(t.platforms, options) && matchesChord(event, t.chord)) {
 			return t.sequence;
 		}
