@@ -71,10 +71,14 @@ export async function verifyToken(
 				"Bearer token has no organization context",
 			);
 		}
+		// API keys get the legacy "all access" treatment (matches pre-refactor
+		// main). OAuth-issued JWTs use exactly the scopes they were issued with
+		// — never silently default an unscoped token to mcp:full.
+		const scopes = bearer.kind === "apiKey" ? ["mcp:full"] : bearer.scopes;
 		return {
 			token: "bearer",
 			clientId: bearer.kind === "apiKey" ? "api-key" : "mcp-client",
-			scopes: bearer.scopes.length > 0 ? bearer.scopes : ["mcp:full"],
+			scopes,
 			extra: {
 				mcpContext: {
 					userId: bearer.userId,

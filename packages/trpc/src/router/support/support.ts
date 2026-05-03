@@ -74,9 +74,13 @@ export const supportRouter = createTRPCRouter({
 				where: eq(users.id, ctx.userId),
 				columns: { name: true, email: true },
 			});
-			const userEmail = userRow?.email ?? ctx.email;
+			const userEmail = userRow?.email || ctx.email || "";
 			const safeName = userRow?.name ? sanitizeEmailBodyLine(userRow.name) : "";
-			const userLabel = safeName ? `${safeName} <${userEmail}>` : userEmail;
+			const userLabel = userEmail
+				? safeName
+					? `${safeName} <${userEmail}>`
+					: userEmail
+				: `userId:${ctx.userId}`;
 
 			await assertSupportReportRateLimit({
 				userId: ctx.userId,

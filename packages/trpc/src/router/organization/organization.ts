@@ -1,6 +1,6 @@
 import { stripeClient } from "@superset/auth/stripe";
 import { db } from "@superset/db/client";
-import { members, organizations } from "@superset/db/schema";
+import { members, organizations, users } from "@superset/db/schema";
 import {
 	sessions as authSessions,
 	invitations,
@@ -197,7 +197,18 @@ export const organizationRouter = {
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const domain = ctx.email.split("@")[1]?.toLowerCase();
+			// API-key callers don't carry an email claim — fetch the canonical
+			// address so the managed-domain check can't be bypassed by the
+			// auth method.
+			const email =
+				ctx.email ||
+				(
+					await db.query.users.findFirst({
+						where: eq(users.id, ctx.userId),
+						columns: { email: true },
+					})
+				)?.email;
+			const domain = email?.split("@")[1]?.toLowerCase();
 			if (domain) {
 				const domainOrg = await db.query.organizations.findFirst({
 					where: sql`${organizations.allowedDomains} @> ARRAY[${domain}]::text[]`,
