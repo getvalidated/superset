@@ -25,6 +25,7 @@ import { safeResolveWorktreePath } from "../workspace-creation/shared/worktree-p
 import { generateBranchNameFromPrompt } from "../workspace-creation/utils/ai-branch-name";
 import {
 	applyAiWorkspaceRename,
+	type GeneratedWorkspaceNames,
 	generateWorkspaceNamesFromPrompt,
 } from "../workspace-creation/utils/ai-workspace-names";
 import { execGh } from "../workspace-creation/utils/exec-gh";
@@ -42,10 +43,10 @@ const agentLaunchSchema = z.object({
 const createInputSchema = z
 	.object({
 		projectId: z.string(),
-		// Both `name` and `branch` are optional. When omitted, the server
-		// generates a friendly random name (e.g. "nosy-puck") and uses it
-		// for whichever field is missing. Absence of `name` is also the
-		// signal to run the post-create AI rename.
+		// Both `name` and `branch` are optional. When omitted with a
+		// non-empty agent prompt, the server generates them inline via
+		// the same LLM call (in parallel with the worktree work). When
+		// omitted with no prompt, a friendly-random fallback fills in.
 		name: z.string().min(1).optional(),
 		branch: z.string().min(1).optional(),
 		pr: z.number().int().positive().optional(),
@@ -176,27 +177,18 @@ interface BranchSourcePlan {
 	usedExistingBranch: boolean;
 }
 
-async function planBranchSource(
+/**
+ * Resolve the start point a *new* branch should fork from. No
+ * `resolveRef(branch)` check — callers are responsible for guaranteeing
+ * the branch name is fresh (e.g. via `deduplicateBranchName`). Useful
+ * when the branch name is being chosen at the same time the start point
+ * is resolved (auto-gen + AI naming path), so it can run in parallel
+ * with the LLM call.
+ */
+async function resolveNewBranchStartPoint(
 	git: GitClient,
-	branch: string,
 	baseBranch: string | undefined,
-): Promise<BranchSourcePlan> {
-	const resolved = await resolveRef(git, branch);
-
-	if (
-		resolved &&
-		(resolved.kind === "local" || resolved.kind === "remote-tracking")
-	) {
-		return { branch, startPoint: resolved, usedExistingBranch: true };
-	}
-
-	if (resolved && resolved.kind === "tag") {
-		throw new TRPCError({
-			code: "BAD_REQUEST",
-			message: `"${branch}" is a tag, not a branch — cannot check out into a workspace`,
-		});
-	}
-
+): Promise<ResolvedRef> {
 	let startPoint = await resolveStartPoint(git, baseBranch);
 
 	// Fork from upstream of the default branch when the user didn't specify
@@ -242,6 +234,31 @@ async function planBranchSource(
 		}
 	}
 
+	return startPoint;
+}
+
+async function planBranchSource(
+	git: GitClient,
+	branch: string,
+	baseBranch: string | undefined,
+): Promise<BranchSourcePlan> {
+	const resolved = await resolveRef(git, branch);
+
+	if (
+		resolved &&
+		(resolved.kind === "local" || resolved.kind === "remote-tracking")
+	) {
+		return { branch, startPoint: resolved, usedExistingBranch: true };
+	}
+
+	if (resolved && resolved.kind === "tag") {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message: `"${branch}" is a tag, not a branch — cannot check out into a workspace`,
+		});
+	}
+
+	const startPoint = await resolveNewBranchStartPoint(git, baseBranch);
 	return { branch, startPoint, usedExistingBranch: false };
 }
 
@@ -321,6 +338,27 @@ async function recordBaseBranchConfig(args: {
 		});
 }
 
+/**
+ * Kicks off `host.ensure` so the cloud round-trip overlaps with the
+ * git work in `workspaces.create`. Returned promise is awaited inside
+ * `registerCloudAndLocal` once we actually need the hostId.
+ *
+ * `host.ensure` is idempotent — fine to start it before we know
+ * whether we'll end up creating a workspace at all (e.g. the
+ * idempotency short-circuit returns early). Worst case is one wasted
+ * cloud call, no observable side effect.
+ */
+async function startHostEnsure(
+	ctx: HostServiceContext,
+): Promise<{ machineId: string }> {
+	const { getHostId, getHostName } = await import("@superset/shared/host-info");
+	return ctx.api.host.ensure.mutate({
+		organizationId: ctx.organizationId,
+		machineId: getHostId(),
+		name: getHostName(),
+	});
+}
+
 async function registerCloudAndLocal(args: {
 	ctx: HostServiceContext;
 	id: string | undefined;
@@ -330,16 +368,12 @@ async function registerCloudAndLocal(args: {
 	worktreePath: string;
 	taskIds: string[] | undefined;
 	rollbackWorktree: () => Promise<void>;
+	hostPromise: Promise<{ machineId: string }>;
 }): Promise<{ id: string; projectId: string; name: string; branch: string }> {
 	const { ctx } = args;
-	const { getHostId, getHostName } = await import("@superset/shared/host-info");
 	let host: { machineId: string };
 	try {
-		host = await ctx.api.host.ensure.mutate({
-			organizationId: ctx.organizationId,
-			machineId: getHostId(),
-			name: getHostName(),
-		});
+		host = await args.hostPromise;
 	} catch (err) {
 		await args.rollbackWorktree();
 		throw new TRPCError({
@@ -436,6 +470,34 @@ export const workspacesRouter = router({
 		.input(createInputSchema)
 		.mutation(async ({ ctx, input }) => {
 			const localProject = requireLocalProject(ctx, input.projectId);
+
+			// Kick off host.ensure immediately so the cloud round-trip
+			// overlaps with the git work below. Suppressing unhandled
+			// rejection here — the await in registerCloudAndLocal turns
+			// the promise rejection into a TRPCError with rollback.
+			const hostPromise = startHostEnsure(ctx);
+			hostPromise.catch(() => {});
+
+			// Kick off AI naming in parallel when the user supplied a prompt
+			// but left at least one of (name, branch) blank. The LLM call
+			// (~700ms) overlaps with `ensureMainWorkspace` + the start-point
+			// resolution, so by the time we need the resolved values for
+			// `worktree add` they're already in hand. PR path skips entirely
+			// — PR title + derived branch are already meaningful.
+			const composerPrompt = input.agents?.[0]?.prompt?.trim() ?? "";
+			const wantAi =
+				input.pr === undefined &&
+				(input.branch === undefined || input.name === undefined) &&
+				!!composerPrompt;
+			const aiNamesPromise: Promise<GeneratedWorkspaceNames | null> | null =
+				wantAi
+					? generateWorkspaceNamesFromPrompt(composerPrompt).catch((err) => {
+							console.warn("[workspaces.create] AI naming failed", err);
+							return null;
+						})
+					: null;
+			aiNamesPromise?.catch(() => {});
+
 			await ensureMainWorkspace(ctx, input.projectId, localProject.repoPath);
 
 			const git = await ctx.git(localProject.repoPath);
@@ -538,6 +600,7 @@ export const workspacesRouter = router({
 						worktreePath,
 						taskIds: input.taskIds,
 						rollbackWorktree,
+						hostPromise,
 					});
 
 					if (prMetadata.baseRefName) {
@@ -551,17 +614,38 @@ export const workspacesRouter = router({
 				}
 			} else {
 				const typedBranch = input.branch?.trim();
+				let plan: BranchSourcePlan;
+				let aiTitle: string | null = null;
+
 				if (typedBranch) {
+					// Typed branch: resolve start point via the existing-branch-
+					// aware planner. Title-rename can race with that lookup.
 					resolvedBranch = typedBranch;
+					const [planResult, aiNames] = await Promise.all([
+						planBranchSource(git, resolvedBranch, input.baseBranch),
+						aiNamesPromise ?? Promise.resolve(null),
+					]);
+					plan = planResult;
+					aiTitle = aiNames?.title ?? null;
 				} else {
-					// User didn't supply a branch — pick a friendly random one
-					// (e.g. "nosy-puck") and dedupe against any existing local
-					// branches so a stale orphan can't silently win.
-					const existing = await listBranchNames(ctx, localProject.repoPath);
-					resolvedBranch = deduplicateBranchName(
-						generateFriendlyBranchName(),
-						existing,
-					);
+					// Auto-gen branch: kick the LLM, the start-point resolve,
+					// and the dedupe list off in parallel — none of them depend
+					// on the others. Whichever finishes last gates the worktree
+					// add. AI's branch name wins when available; friendly random
+					// is a fallback for no-prompt or LLM failure.
+					const [aiNames, startPoint, existing] = await Promise.all([
+						aiNamesPromise ?? Promise.resolve(null),
+						resolveNewBranchStartPoint(git, input.baseBranch),
+						listBranchNames(ctx, localProject.repoPath),
+					]);
+					aiTitle = aiNames?.title ?? null;
+					const candidate = aiNames?.branchName || generateFriendlyBranchName();
+					resolvedBranch = deduplicateBranchName(candidate, existing);
+					plan = {
+						branch: resolvedBranch,
+						startPoint,
+						usedExistingBranch: false,
+					};
 				}
 
 				const existing = await findExistingWorkspaceByBranch(
@@ -581,10 +665,13 @@ export const workspacesRouter = router({
 					// Adopt: a worktree already exists at the standard path with the
 					// matching branch checked out (e.g. left behind by a prior session
 					// or registered outside Superset). Skip `git worktree add` and
-					// proceed straight to register.
+					// proceed straight to register. Only meaningful when the user
+					// supplied the branch — auto-gen names are deduped and can't
+					// collide with anything pre-existing.
 					const adopted =
+						!!typedBranch &&
 						(await getWorktreeBranchAtPath(git, worktreePath)) ===
-						resolvedBranch;
+							resolvedBranch;
 
 					mkdirSync(dirname(worktreePath), { recursive: true });
 
@@ -600,11 +687,7 @@ export const workspacesRouter = router({
 						}
 					};
 
-					const plan = adopted
-						? null
-						: await planBranchSource(git, resolvedBranch, input.baseBranch);
-
-					if (plan) {
+					if (!adopted) {
 						try {
 							await addBranchWorktree({ git, plan, worktreePath });
 						} catch (err) {
@@ -622,20 +705,13 @@ export const workspacesRouter = router({
 						"[workspaces.create]",
 					);
 
-					if (
-						plan &&
-						!plan.usedExistingBranch &&
-						plan.startPoint.kind !== "head"
-					) {
+					if (!plan.usedExistingBranch && plan.startPoint.kind !== "head") {
+						const baseShortName = plan.startPoint.shortName;
 						await git
-							.raw([
-								"config",
-								`branch.${resolvedBranch}.base`,
-								plan.startPoint.shortName,
-							])
+							.raw(["config", `branch.${resolvedBranch}.base`, baseShortName])
 							.catch((err) => {
 								console.warn(
-									`[workspaces.create] failed to record base branch ${plan.startPoint.kind === "head" ? "" : plan.startPoint.shortName}:`,
+									`[workspaces.create] failed to record base branch ${baseShortName}:`,
 									err,
 								);
 							});
@@ -645,11 +721,12 @@ export const workspacesRouter = router({
 						ctx,
 						id: input.id,
 						projectId: input.projectId,
-						name: input.name ?? resolvedBranch,
+						name: input.name ?? aiTitle ?? resolvedBranch,
 						branch: resolvedBranch,
 						worktreePath,
 						taskIds: input.taskIds,
 						rollbackWorktree,
+						hostPromise,
 					});
 				}
 			}
@@ -676,34 +753,6 @@ export const workspacesRouter = router({
 						terminalsResult.push({
 							terminalId: terminal.id,
 							label: terminal.label,
-						});
-					}
-				}
-
-				// Run AI rename for whichever side(s) the user didn't supply.
-				// User-typed values always win. PR path skips entirely — the
-				// PR title and derived branch are already meaningful.
-				if (prMetadata === null) {
-					const renameTitle = input.name === undefined;
-					const renameBranch = input.branch === undefined;
-					const composerPrompt = input.agents?.[0]?.prompt?.trim() ?? "";
-					if ((renameTitle || renameBranch) && composerPrompt) {
-						const setupPath = setupWorktreePath ?? "";
-						void applyAiWorkspaceRename({
-							ctx,
-							workspaceId: workspaceRow.id,
-							repoPath: localProject.repoPath,
-							worktreePath: setupPath,
-							oldBranchName: workspaceRow.branch,
-							oldWorkspaceName: workspaceRow.name,
-							prompt: composerPrompt,
-							renameTitle,
-							renameBranch,
-						}).catch((err) => {
-							console.warn(
-								"[workspaces.create] AI workspace rename failed",
-								err,
-							);
 						});
 					}
 				}
