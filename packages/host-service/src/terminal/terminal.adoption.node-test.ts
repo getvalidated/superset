@@ -439,6 +439,16 @@ describe("createTerminalSessionInternal — host-service restart adoption", () =
 			`first create failed: ${JSON.stringify(first)}`,
 		);
 		const firstPid = "error" in first ? -1 : first.pty.pid;
+		if ("error" in first) return;
+
+		// Seed buffered output and a title so we can assert they carry across
+		// the kill→resurrect boundary.
+		first.pty.write("echo before-kill\n");
+		await waitForOutput(first.pty, "before-kill", 3000);
+		const seededTitle = "carry-me-across-kill";
+		first.title = seededTitle;
+		const seededBufferBytes = first.bufferBytes;
+		assert.ok(seededBufferBytes > 0, "expected buffered output before kill");
 
 		markSessionKilled(terminalId, db);
 
@@ -454,6 +464,11 @@ describe("createTerminalSessionInternal — host-service restart adoption", () =
 			killedEntry?.exited,
 			true,
 			"killed session should report exited=true",
+		);
+		assert.equal(
+			killedEntry?.title,
+			seededTitle,
+			"killed entry should retain the title for the dropdown label",
 		);
 
 		// Resurrect: same terminalId → fresh PTY, different pid.
@@ -473,6 +488,15 @@ describe("createTerminalSessionInternal — host-service restart adoption", () =
 			second.pty.pid,
 			firstPid,
 			"resurrect should spawn a fresh shell, not return the dead session",
+		);
+		assert.equal(
+			second.title,
+			seededTitle,
+			"resurrected session should inherit the killed session's title",
+		);
+		assert.ok(
+			second.bufferBytes >= seededBufferBytes,
+			`resurrected session should inherit buffered output (got ${second.bufferBytes}b, expected >= ${seededBufferBytes}b)`,
 		);
 
 		const afterResurrect = listTerminalSessions({ workspaceId });

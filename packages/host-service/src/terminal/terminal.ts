@@ -685,11 +685,24 @@ export async function createTerminalSessionInternal({
 	replayOnAdoption = true,
 }: CreateTerminalSessionOptions): Promise<TerminalSession | { error: string }> {
 	const existing = sessions.get(terminalId);
+	let resurrected: {
+		buffer: Uint8Array[];
+		bufferBytes: number;
+		title: string | null;
+	} | null = null;
 	if (existing) {
 		if (existing.exited) {
 			// Resurrect: the previous shell is dead but we kept the entry around
-			// for the dropdown. Wipe it so the code below spawns a fresh PTY on
-			// the same terminalId — the DB row gets re-activated below too.
+			// for the dropdown. Capture the bits worth carrying over to the
+			// fresh shell — buffered output (so the user sees what the dead
+			// shell printed before it died) and the title (so the dropdown
+			// label doesn't snap back to "Terminal"). The new shell's title
+			// scanner overrides this once OSC sequences arrive.
+			resurrected = {
+				buffer: existing.buffer,
+				bufferBytes: existing.bufferBytes,
+				title: existing.title,
+			};
 			clearKilledRetention(terminalId);
 			sessions.delete(terminalId);
 		} else {
@@ -817,14 +830,14 @@ export async function createTerminalSessionInternal({
 		pty,
 		unsubscribeDaemon: null,
 		sockets: new Set(),
-		buffer: [],
-		bufferBytes: 0,
+		buffer: resurrected?.buffer ?? [],
+		bufferBytes: resurrected?.bufferBytes ?? 0,
 		createdAt,
 		exited: false,
 		exitCode: 0,
 		exitSignal: 0,
 		listed,
-		title: null,
+		title: resurrected?.title ?? null,
 		titleScanState: createTerminalTitleScanState(),
 		shellReadyState: shellSupportsReady
 			? "pending"
@@ -1009,10 +1022,16 @@ export function registerWorkspaceTerminalRoute({
 					}
 
 					const existing = sessions.get(terminalId);
-					if (!existing) {
+					// An exited entry is a "Killed" session retained for the
+					// dropdown — attaching to one means the user picked it from
+					// the list to resurrect. Fall through to the create path so
+					// `createTerminalSessionInternal` spawns a fresh shell on the
+					// same terminalId and carries over the buffer + title.
+					if (!existing || existing.exited) {
 						// V2 callers can create a session by opening the WebSocket with
 						// workspaceId; this keeps terminal attach out of tRPC request queues.
-						const workspaceId = c.req.query("workspaceId") ?? null;
+						const workspaceId =
+							c.req.query("workspaceId") ?? existing?.workspaceId ?? null;
 						if (!workspaceId) {
 							sendMessage(ws, {
 								type: "error",
@@ -1049,6 +1068,10 @@ export function registerWorkspaceTerminalRoute({
 
 							result.sockets.add(ws);
 							sendMessage(ws, { type: "title", title: result.title });
+							// On resurrect, the session inherits the killed buffer so the
+							// user sees prior output before the fresh prompt. For a true
+							// fresh open the buffer is empty and this is a no-op.
+							replayBuffer(result, ws);
 
 							db.update(terminalSessions)
 								.set({ lastAttachedAt: Date.now() })
