@@ -424,22 +424,48 @@ export const gitRouter = router({
 			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
 			const git = await ctx.git(worktreePath);
 			const status = await git.status();
-			// Files staged-as-added don't exist in HEAD — checkout would fail,
-			// so unstage and delete them instead.
-			const stagedAddedPaths = status.created;
-			// Files with staged changes that exist in HEAD (M/D/R/C/T). Scoped
-			// to staged paths only so unstaged-only files aren't touched.
-			const stagedTrackedPaths = status.files
-				.filter((f) => f.index !== " " && f.index !== "?" && f.index !== "A")
-				.map((f) => f.path);
-			if (stagedTrackedPaths.length > 0) {
-				await git.raw(["checkout", "HEAD", "--", ...stagedTrackedPaths]);
-			}
-			if (stagedAddedPaths.length > 0) {
-				await git.raw(["reset", "HEAD", "--", ...stagedAddedPaths]);
-				for (const filePath of stagedAddedPaths) {
-					await rm(join(worktreePath, filePath), { force: true });
+
+			// Files with a staged change (index entry differs from HEAD).
+			const stagedFiles = status.files.filter(
+				(f) => f.index !== " " && f.index !== "?",
+			);
+
+			const checkoutHeadPaths: string[] = [];
+			const resetPaths: string[] = [];
+			const deletePaths: string[] = [];
+
+			for (const f of stagedFiles) {
+				if (f.index === "A") {
+					// Staged-as-added: not in HEAD. Unstage + delete.
+					resetPaths.push(f.path);
+					deletePaths.push(f.path);
+				} else if (f.index === "R") {
+					// Staged rename: index has both delete-of-old and add-of-new.
+					// Unstage both ends, restore old from HEAD, delete new.
+					resetPaths.push(f.path);
+					deletePaths.push(f.path);
+					if (f.from) {
+						resetPaths.push(f.from);
+						checkoutHeadPaths.push(f.from);
+					}
+				} else if (f.index === "C") {
+					// Staged copy: source unchanged, dest is new in index.
+					resetPaths.push(f.path);
+					deletePaths.push(f.path);
+				} else {
+					// M, D, T: exists in HEAD; checkout reverts both index and WT.
+					checkoutHeadPaths.push(f.path);
 				}
+			}
+
+			if (resetPaths.length > 0) {
+				await git.raw(["reset", "HEAD", "--", ...resetPaths]);
+			}
+			if (checkoutHeadPaths.length > 0) {
+				await git.raw(["checkout", "HEAD", "--", ...checkoutHeadPaths]);
+			}
+			for (const filePath of deletePaths) {
+				await rm(join(worktreePath, filePath), { force: true });
 			}
 			return { success: true };
 		}),
