@@ -273,6 +273,142 @@ WHERE origin_workspace_id = ?;
 SELECT id, preset_id, label, command FROM host_agent_configs;
 ```
 
+## Input × pre-existing state matrix
+
+The full enumeration of `workspaces.create` cases. **Inputs** are
+what the caller sends. **State** is what already exists on disk /
+in DB before the call. **Outcome** is what should happen.
+
+After this PR's refactor (server-generated names + per-side AI
+rename gate), the inputs collapse to:
+
+```
+{
+  projectId,
+  name?,         // user-typed workspace title; absent = AI rename it
+  branch?,       // user-typed git branch; absent = generate friendly + AI rename
+  pr?,           // PR number (mutually exclusive with branch)
+  baseBranch?,   // start-point hint for new branches
+  taskIds?,
+  agents?,       // [{ agent, prompt, attachmentIds? }] — sugar for create+dispatch
+  id?            // explicit UUID for idempotent retry
+}
+```
+
+### A. Validation / early reject
+
+| # | Inputs | State | Outcome |
+|---|---|---|---|
+| A1 | `branch` set AND `pr` set | — | Zod refine: BAD_REQUEST `"branch and pr cannot both be set"` |
+| A2 | `projectId` not in host's `projects` table | — | `requireLocalProject` throws (NOT_FOUND-style); no rollback needed (no side effects yet) |
+| A3 | `taskIds` includes a uuid not in `tasks` table | task missing in cloud | Cloud `v2Workspace.create` rejects BAD_REQUEST (taskId not found); worktree rolled back |
+| A4 | `taskIds` from a different organization | task in another org | Cloud rejects FORBIDDEN; worktree rolled back |
+| A5 | `id` collides with an existing v2 workspace in **another** org | cloud row exists in different org | Cloud rejects CONFLICT (workspace id already in use); worktree rolled back |
+| A6 | `id` matches an existing v2 workspace in **same** org | cloud row exists | Cloud transaction returns existing row → server treats as alreadyExists path (idempotent retry) |
+
+### B. PR mode (`pr` is set)
+
+`branch` is ignored when `pr` is set (refine forbids both).
+Server fetches `gh pr view`, derives a local branch name from PR metadata.
+
+| # | `name` | `taskIds` | State on disk | Outcome |
+|---|---|---|---|---|
+| B1 | undefined | undefined | nothing pre-existing | `gh pr view` → derive branch → detached worktree → `gh pr checkout --force` → register w/ `name = prMetadata.title || derived-branch`. Setup terminal if `.superset/setup.sh`. **AI rename does NOT run** (PR title meaningful). `branch.<n>.base = pr.baseRefName` written. |
+| B2 | "My title" | undefined | nothing pre-existing | Same as B1 but `name = "My title"`. |
+| B3 | undefined | [task-id] | nothing pre-existing | Same as B1 + workspace_tasks row inserted atomically with v2_workspaces row. |
+| B4 | undefined | undefined | v2 workspace already has this branch in this project (idempotency) | Returns `alreadyExists: true`, existing row, no new worktree, no setup terminal, no agents dispatch. |
+| B5 | undefined | undefined | local branch with same derived name exists outside Superset | **CONFLICT** with message instructing `git branch -D <n>`. (V1 reset+warned instead — see regression #2.) |
+| B6 | undefined | undefined | `gh pr view` fails (network/auth/PR doesn't exist) | mutation rejects with `gh pr view` error. No worktree, no rows. |
+| B7 | undefined | undefined | `gh pr checkout` fails after detached worktree added | Detached worktree force-removed; INTERNAL_SERVER_ERROR; no rows. |
+| B8 | undefined | undefined | PR is closed | Same as B1 — no warning surface today (regression #3). |
+| B9 | undefined | undefined | PR is merged | Same as B1 — no warning surface today (regression #3). |
+| B10 | undefined | undefined | Cross-repo PR (head fork) | Same as B1 — `gh pr checkout` handles fork remote setup. |
+| B11 | undefined | undefined | Worktree dir already at standard path with the derived branch checked out | **PR path does NOT adopt** — only branch path does. Worktree-add fails because the path is occupied → CONFLICT. (Inconsistency with branch path.) |
+
+### C. Branch mode (`pr` is not set)
+
+#### C.1 — `branch` typed
+
+| # | `name` | State on disk | Outcome |
+|---|---|---|---|
+| C1.1 | undefined | nothing pre-existing for this branch | `usedExistingBranch: false`. New branch `--no-track -b` from `resolveStartPoint(baseBranch)`. `branch.<n>.base = startPoint.shortName` written. AI rename runs (`renameTitle: true`). Workspace name = branch (until AI rename lands). |
+| C1.2 | "My title" | nothing pre-existing | Same as C1.1 but workspace name = "My title". **AI rename does NOT run** (both fields supplied). |
+| C1.3 | undefined | v2 workspace already has this branch in this project (idempotency) | `alreadyExists: true`. No worktree, no setup terminal, no rename. |
+| C1.4 | "My title" | v2 workspace already has this branch | Same as C1.3 — input.name ignored on the alreadyExists path (existing row's name preserved). |
+| C1.5 | undefined | local branch exists, no v2 workspace, no worktree at standard path | `usedExistingBranch: true`. `worktree add <path> <branch>`. **No** `branch.<n>.base` written. AI rename runs. |
+| C1.6 | undefined | local branch is a tag (e.g. `v1.0`) | BAD_REQUEST: `"<branch>" is a tag, not a branch`. |
+| C1.7 | undefined | only remote-tracking ref exists (`origin/<branch>`) | `usedExistingBranch: true`, remote-tracking. Fetch + `worktree add --track -b <branch> <path> origin/<branch>`. AI rename runs. |
+| C1.8 | undefined | worktree already at standard path with the same branch checked out | **Adopt**: skip `git worktree add`, register only. Setup terminal still fires (it's gated on `.superset/setup.sh`, not on adoption). |
+| C1.9 | undefined | worktree at standard path with a *different* branch checked out | Adopt check fails → falls through to plan. If branch resolved as existing → tries `worktree add <path>` → fails with CONFLICT (path occupied). |
+| C1.10 | undefined | branch name collides with a stranded local branch (no v2 workspace, no worktree) | Today: treats as existing-branch (`usedExistingBranch: true`). Was dedup'd in v1 — see regression #1. |
+| C1.11 | "My title" | `baseBranch` set, refers to a tag | `resolveStartPoint` accepts tags as start point (forks new branch off tag commit) — actually wait, in current `resolveStartPoint` returns only `local | remote-tracking | head`; a tag start point is **not** something `resolveStartPoint` will return. Tag-as-base-branch falls through to head. Test: probably surprising. |
+| C1.12 | undefined | `baseBranch` set, doesn't exist locally or remote | `resolveStartPoint` returns `head`. Worktree forks from current HEAD of repo. **No** `branch.<n>.base` written (start point = head). |
+| C1.13 | undefined | `baseBranch` is the repo default branch, has an upstream | Local default + upstream-swap heuristic kicks in. Forks from `origin/<default>` (fresh remote tip). |
+| C1.14 | undefined | branch name has slashes (`feature/foo`) | Worktree path: `<repo>/.worktrees/feature/foo`. New branch with that name. Works. |
+| C1.15 | undefined | branch name with whitespace or special chars | `safeResolveWorktreePath` may reject; otherwise fails on git. |
+| C1.16 | undefined | branch name very long (> 255 chars) | git rejects via filesystem path length. CONFLICT or filesystem error. |
+
+#### C.2 — `branch` not typed
+
+Server generates `friendly-random` (e.g., `nosy-puck`) and dedupes against existing local branches.
+
+| # | `name` | State on disk | Outcome |
+|---|---|---|---|
+| C2.1 | undefined | clean | Generate friendly + dedupe → use as branch. `usedExistingBranch: false`. New branch off default-branch upstream. AI rename runs (`renameTitle: true`, `renameBranch: true` — replaces both with prompt-derived names). |
+| C2.2 | "My title" | clean | Same as C2.1 but `name = "My title"`. AI rename runs `renameBranch: true` only — title preserved, branch replaced. |
+| C2.3 | undefined | generated friendly already exists locally | dedup appends `-2` → `nosy-puck-2`. Continues normally. |
+| C2.4 | undefined | `baseBranch` set | Friendly name, forked off the specified base. |
+
+### D. Failure / rollback paths (orthogonal to the input matrix)
+
+| # | Failure point | Outcome |
+|---|---|---|
+| D1 | Friendly-name dedup loop exhausts (>10000 collisions) | Falls back to `<base>-<unix-ms-base36>`. Effectively never collides. |
+| D2 | `git worktree add` fails (e.g. path occupied) | `worktree remove --force` rollback (no-op when add failed). CONFLICT bubbled. No cloud or local rows. |
+| D3 | `gh pr checkout` fails after detached worktree added | `worktree remove --force` rollback. INTERNAL_SERVER_ERROR. No rows. |
+| D4 | `host.ensure` fails | Worktree rolled back. INTERNAL_SERVER_ERROR. No cloud or local rows. |
+| D5 | `v2Workspace.create` cloud rejects | Worktree rolled back. Cloud error bubbled. No local row. |
+| D6 | Local sqlite insert fails (foreign key, disk full, etc.) | Worktree rolled back AND cloud row deleted via `v2Workspace.delete`. INTERNAL_SERVER_ERROR. |
+| D7 | Setup terminal spawn fails | Workspace + cloud row REMAIN. Setup-terminal warning logged. Create call returns success — terminal failure is independent. |
+| D8 | Agent dispatch fails (e.g. empty `host_agent_configs`) | Workspace + cloud row REMAIN. `agents` array in response has `{ ok: false, error }` per failed entry. Create call returns success. |
+| D9 | AI rename LLM call fails / model unavailable | Workspace + cloud row REMAIN with the original (typed-or-friendly) name. AI rename is fire-and-forget; failure logged but not bubbled. |
+| D10 | AI rename's `git branch -m` fails (e.g. branch lock) | LLM call succeeded but git rename didn't fire. Title still applied if `renameTitle`. Branch unchanged. |
+| D11 | AI rename's cloud `updateNameFromHost` fails after git rename | Git rename rolled back via reverse `git branch -m`. Cloud + local DB stay in sync. |
+
+### E. AI rename × user-typed matrix (post-PR1 behavior)
+
+After this PR, AI rename runs whenever the user didn't supply a side
+AND there's a non-empty agent prompt. Both flags are computed at the
+call site:
+
+```
+renameTitle  = input.name === undefined
+renameBranch = input.branch === undefined
+```
+
+PR path always sets both to false (skips AI rename — PR title is meaningful).
+
+| `branch` | `name` | `prompt` | AI rename behavior |
+|---|---|---|---|
+| typed | typed | any | Skipped — both supplied |
+| typed | undefined | empty | Skipped — no prompt to drive generation |
+| typed | undefined | non-empty | Runs; replaces **title only** (branch preserved) |
+| undefined | typed | empty | Skipped |
+| undefined | typed | non-empty | Runs; replaces **branch only** (title preserved) |
+| undefined | undefined | empty | Skipped — workspace name stays as the friendly random |
+| undefined | undefined | non-empty | Runs; replaces **both** title and branch |
+| (PR path) | any | any | Skipped unconditionally |
+
+### F. Idempotency / explicit-id behaviors
+
+| # | Scenario | Outcome |
+|---|---|---|
+| F1 | Submit, mutation in flight, user clicks again before response | Modal closed after first submit (renderer-side). Second click does nothing. |
+| F2 | Submit, network drop after host insert but before client got response, retry with same `id` | Cloud transaction returns existing row by id, no new worktree, no duplicate. |
+| F3 | Submit twice with same `(project, branch)` from different sessions | Second call sees existing local workspace row → `alreadyExists: true`. |
+| F4 | Submit with explicit `id` matching existing in same org | Returns existing row (idempotent). |
+| F5 | Submit with explicit `id` matching existing in **different** org | Cloud rejects CONFLICT. Worktree rolled back. |
+
 ## Open questions / follow-ups
 
 1. **Re-add branch dedup** (matrix #1) for the new-branch path? Or rely
