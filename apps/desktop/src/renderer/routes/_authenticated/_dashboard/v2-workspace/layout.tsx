@@ -66,10 +66,6 @@ function V2WorkspaceLayout() {
 		return null;
 	}
 
-	// No real workspace row yet — render the page directly so it can show
-	// in-flight create state (creating / error) or NotFound. The trpc
-	// provider isn't usable without a hostUrl, and the in-flight UI doesn't
-	// need it.
 	if (!workspace || !hostUrl) {
 		return <Outlet />;
 	}

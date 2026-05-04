@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { authClient } from "renderer/lib/auth-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import type { NewWorkspacePromptContextApi } from "renderer/stores/new-workspace-prompt-context";
 import { useWorkspaceCreates } from "renderer/stores/workspace-creates";
 import { useDashboardNewWorkspaceDraft } from "../../../../../DashboardNewWorkspaceDraftContext";
 import type { WorkspaceCreateAgent } from "../../types";
@@ -19,6 +20,7 @@ export function useSubmitWorkspace(
 	projectId: string | null,
 	selectedAgent: WorkspaceCreateAgent,
 	uploadAttachments: UseUploadAttachmentsApi,
+	promptContext: NewWorkspacePromptContextApi,
 ) {
 	const navigate = useNavigate();
 	const { closeAndResetDraft, draft } = useDashboardNewWorkspaceDraft();
@@ -59,21 +61,35 @@ export function useSubmitWorkspace(
 
 		const isPrCheckout = draft.linkedPR !== null;
 
-		const taskIds = draft.linkedIssues
-			.filter((issue) => issue.source === "internal" && issue.taskId)
-			.map((issue) => issue.taskId as string);
+		const linkedTaskId = draft.linkedIssues.find(
+			(issue) => issue.source === "internal" && issue.taskId,
+		)?.taskId;
 
-		const agents =
-			selectedAgent !== "none" && draft.prompt.trim()
-				? [
-						{
-							agent: selectedAgent,
-							prompt: draft.prompt,
-							attachmentIds:
-								attachmentIds.length > 0 ? attachmentIds : undefined,
-						},
-					]
-				: undefined;
+		const hasAnyContext =
+			!!draft.prompt.trim() ||
+			draft.linkedPR !== null ||
+			draft.linkedIssues.length > 0 ||
+			attachmentIds.length > 0;
+		const wantAgent = selectedAgent !== "none" && hasAnyContext;
+
+		const finalPrompt = wantAgent
+			? await promptContext.build({
+					userPrompt: draft.prompt,
+					linkedPR: draft.linkedPR,
+					linkedIssues: draft.linkedIssues,
+					timeoutMs: 2000,
+				})
+			: null;
+
+		const agents = wantAgent
+			? [
+					{
+						agent: selectedAgent,
+						prompt: finalPrompt ?? "",
+						attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+					},
+				]
+			: undefined;
 
 		// PR path supplies a name (PR title) so the in-flight UI has
 		// something to show immediately. Branch path leaves both `name`
@@ -92,7 +108,7 @@ export function useSubmitWorkspace(
 			branch: isPrCheckout ? undefined : (branchName ?? undefined),
 			pr: isPrCheckout ? draft.linkedPR?.prNumber : undefined,
 			baseBranch: draft.baseBranch ?? undefined,
-			taskIds: taskIds.length > 0 ? taskIds : undefined,
+			taskId: linkedTaskId,
 			agents,
 		};
 
@@ -106,6 +122,7 @@ export function useSubmitWorkspace(
 		machineId,
 		navigate,
 		projectId,
+		promptContext,
 		selectedAgent,
 		submit,
 		uploadAttachments,

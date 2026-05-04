@@ -36,12 +36,11 @@ export function register(server: McpServer): void {
 				.string()
 				.min(1)
 				.describe("Host machineId to create the workspace on."),
-			taskIds: z
-				.array(z.string().uuid())
+			taskId: z
+				.string()
+				.uuid()
 				.optional()
-				.describe(
-					"Optional Superset task ids to link to the new workspace via the workspace_tasks join.",
-				),
+				.describe("Optional Superset task id to link to the new workspace."),
 		},
 		handler: async (input, ctx) => {
 			return hostServiceMutation<
@@ -51,7 +50,7 @@ export function register(server: McpServer): void {
 					branch?: string;
 					pr?: number;
 					baseBranch?: string;
-					taskIds?: string[];
+					taskId?: string;
 				},
 				{
 					workspace: {
@@ -78,7 +77,7 @@ export function register(server: McpServer): void {
 					branch: input.branch,
 					pr: input.pr,
 					baseBranch: input.baseBranch,
-					taskIds: input.taskIds,
+					taskId: input.taskId,
 				},
 			);
 		},

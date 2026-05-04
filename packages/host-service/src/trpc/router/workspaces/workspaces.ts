@@ -38,11 +38,17 @@ import {
 import { resolveStartPoint } from "../workspace-creation/utils/resolve-start-point";
 import { deduplicateBranchName } from "../workspace-creation/utils/sanitize-branch";
 
-const agentLaunchSchema = z.object({
-	agent: z.string().min(1),
-	prompt: z.string().min(1),
-	attachmentIds: z.array(z.string().uuid()).optional(),
-});
+const agentLaunchSchema = z
+	.object({
+		agent: z.string().min(1),
+		prompt: z.string(),
+		attachmentIds: z.array(z.string().uuid()).optional(),
+	})
+	.refine(
+		(value) =>
+			value.prompt.length > 0 || (value.attachmentIds?.length ?? 0) > 0,
+		{ message: "Agent launch requires a prompt or attachments" },
+	);
 
 const createInputSchema = z
 	.object({
@@ -55,7 +61,7 @@ const createInputSchema = z
 		branch: z.string().min(1).optional(),
 		pr: z.number().int().positive().optional(),
 		baseBranch: z.string().min(1).optional(),
-		taskIds: z.array(z.string().uuid()).optional(),
+		taskId: z.string().uuid().optional(),
 		agents: z.array(agentLaunchSchema).optional(),
 		id: z.string().uuid().optional(),
 	})
@@ -371,7 +377,7 @@ async function registerCloudAndLocal(args: {
 	name: string;
 	branch: string;
 	worktreePath: string;
-	taskIds: string[] | undefined;
+	taskId: string | undefined;
 	rollbackWorktree: () => Promise<void>;
 	hostPromise: Promise<{ machineId: string }>;
 }): Promise<{ id: string; projectId: string; name: string; branch: string }> {
@@ -394,7 +400,7 @@ async function registerCloudAndLocal(args: {
 			name: args.name,
 			branch: args.branch,
 			hostId: host.machineId,
-			taskIds: args.taskIds,
+			taskId: args.taskId,
 			id: args.id,
 		})
 		.catch(async (err) => {
@@ -643,7 +649,7 @@ export const workspacesRouter = router({
 						name: input.name ?? prMetadata.title ?? resolvedBranch,
 						branch: resolvedBranch,
 						worktreePath,
-						taskIds: input.taskIds,
+						taskId: input.taskId,
 						rollbackWorktree,
 						hostPromise,
 					});
@@ -769,7 +775,7 @@ export const workspacesRouter = router({
 						name: input.name ?? aiTitle ?? resolvedBranch,
 						branch: resolvedBranch,
 						worktreePath,
-						taskIds: input.taskIds,
+						taskId: input.taskId,
 						rollbackWorktree,
 						hostPromise,
 					});

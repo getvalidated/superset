@@ -1,5 +1,5 @@
 {
-  "id": "d080f949-93f6-45de-bfed-c9ba72e451cc",
+  "id": "30f47cfc-32ea-4500-9022-2277f5d22bb3",
   "prevId": "eec89421-4398-49a7-a83f-a51620451a11",
   "version": "7",
   "dialect": "postgresql",
@@ -5516,6 +5516,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5567,6 +5573,21 @@
           "columns": [
             {
               "expression": "host_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "v2_workspaces_task_id_idx": {
+          "name": "v2_workspaces_task_id_idx",
+          "columns": [
+            {
+              "expression": "task_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5642,6 +5663,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "v2_workspaces_task_id_tasks_id_fk": {
+          "name": "v2_workspaces_task_id_tasks_id_fk",
+          "tableFrom": "v2_workspaces",
+          "tableTo": "tasks",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "v2_workspaces_host_fk": {
           "name": "v2_workspaces_host_fk",
           "tableFrom": "v2_workspaces",
@@ -5659,89 +5693,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.workspace_tasks": {
-      "name": "workspace_tasks",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "workspace_tasks_task_idx": {
-          "name": "workspace_tasks_task_idx",
-          "columns": [
-            {
-              "expression": "task_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workspace_tasks_workspace_id_v2_workspaces_id_fk": {
-          "name": "workspace_tasks_workspace_id_v2_workspaces_id_fk",
-          "tableFrom": "workspace_tasks",
-          "tableTo": "v2_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_tasks_task_id_tasks_id_fk": {
-          "name": "workspace_tasks_task_id_tasks_id_fk",
-          "tableFrom": "workspace_tasks",
-          "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "workspace_tasks_workspace_id_task_id_pk": {
-          "name": "workspace_tasks_workspace_id_task_id_pk",
-          "columns": [
-            "workspace_id",
-            "task_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

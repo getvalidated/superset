@@ -540,6 +540,9 @@ export const v2Workspaces = pgTable(
 		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
 			onDelete: "set null",
 		}),
+		taskId: uuid("task_id").references(() => tasks.id, {
+			onDelete: "set null",
+		}),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -557,6 +560,7 @@ export const v2Workspaces = pgTable(
 		index("v2_workspaces_project_id_idx").on(table.projectId),
 		index("v2_workspaces_organization_id_idx").on(table.organizationId),
 		index("v2_workspaces_host_id_idx").on(table.hostId),
+		index("v2_workspaces_task_id_idx").on(table.taskId),
 		uniqueIndex("v2_workspaces_one_main_per_host")
 			.on(table.projectId, table.hostId)
 			.where(sql`${table.type} = 'main'`),
@@ -565,28 +569,6 @@ export const v2Workspaces = pgTable(
 
 export type InsertV2Workspace = typeof v2Workspaces.$inferInsert;
 export type SelectV2Workspace = typeof v2Workspaces.$inferSelect;
-
-export const workspaceTasks = pgTable(
-	"workspace_tasks",
-	{
-		workspaceId: uuid("workspace_id")
-			.notNull()
-			.references(() => v2Workspaces.id, { onDelete: "cascade" }),
-		taskId: uuid("task_id")
-			.notNull()
-			.references(() => tasks.id, { onDelete: "cascade" }),
-		createdAt: timestamp("created_at", { withTimezone: true })
-			.notNull()
-			.defaultNow(),
-	},
-	(table) => [
-		primaryKey({ columns: [table.workspaceId, table.taskId] }),
-		index("workspace_tasks_task_idx").on(table.taskId),
-	],
-);
-
-export type InsertWorkspaceTask = typeof workspaceTasks.$inferInsert;
-export type SelectWorkspaceTask = typeof workspaceTasks.$inferSelect;
 
 export const secrets = pgTable(
 	"secrets",

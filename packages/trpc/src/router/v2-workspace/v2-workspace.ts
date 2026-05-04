@@ -6,7 +6,6 @@ import {
 	v2Projects,
 	v2UsersHosts,
 	v2Workspaces,
-	workspaceTasks,
 } from "@superset/db/schema";
 import { getCurrentTxid } from "@superset/db/utils";
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -170,7 +169,7 @@ export const v2WorkspaceRouter = {
 				branch: z.string().min(1),
 				hostId: z.string().min(1),
 				type: z.enum(v2WorkspaceTypeValues).default("worktree"),
-				taskIds: z.array(z.string().uuid()).optional(),
+				taskId: z.string().uuid().optional(),
 				id: z.string().uuid().optional(),
 			}),
 		)
@@ -188,28 +187,27 @@ export const v2WorkspaceRouter = {
 			);
 			const host = await getScopedHost(input.organizationId, input.hostId);
 
-			if (input.taskIds && input.taskIds.length > 0) {
-				const found = await dbWs.query.tasks.findMany({
+			if (input.taskId) {
+				const found = await dbWs.query.tasks.findFirst({
 					columns: { id: true, organizationId: true },
-					where: inArray(tasks.id, input.taskIds),
+					where: eq(tasks.id, input.taskId),
 				});
-				if (found.length !== input.taskIds.length) {
+				if (!found) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
-						message: "One or more taskIds not found",
+						message: "taskId not found",
 					});
 				}
-				if (found.some((t) => t.organizationId !== input.organizationId)) {
+				if (found.organizationId !== input.organizationId) {
 					throw new TRPCError({
 						code: "FORBIDDEN",
-						message: "All taskIds must belong to the workspace's organization",
+						message: "taskId must belong to the workspace's organization",
 					});
 				}
 			}
 
-			// Insert workspace + workspace_tasks rows in one transaction so the link
-			// is atomic with the create. Relies on the partial unique index
-			// (project_id, host_id) WHERE type='main' for main-workspace idempotency.
+			// Relies on the partial unique index (project_id, host_id) WHERE
+			// type='main' for main-workspace idempotency.
 			const result = await dbWs.transaction(async (tx) => {
 				const [inserted] = await tx
 					.insert(v2Workspaces)
@@ -222,22 +220,12 @@ export const v2WorkspaceRouter = {
 						hostId: host.machineId,
 						type: input.type,
 						createdByUserId: ctx.userId,
+						taskId: input.taskId ?? null,
 					})
 					.onConflictDoNothing()
 					.returning();
 
 				if (inserted) {
-					if (input.taskIds && input.taskIds.length > 0) {
-						await tx
-							.insert(workspaceTasks)
-							.values(
-								input.taskIds.map((taskId) => ({
-									workspaceId: inserted.id,
-									taskId,
-								})),
-							)
-							.onConflictDoNothing();
-					}
 					posthog.capture({
 						distinctId: ctx.userId,
 						event: "workspace_created",
@@ -315,11 +303,11 @@ export const v2WorkspaceRouter = {
 			});
 		}),
 
-	linkTask: protectedProcedure
+	setTask: protectedProcedure
 		.input(
 			z.object({
 				workspaceId: z.string().uuid(),
-				taskId: z.string().uuid(),
+				taskId: z.string().uuid().nullable(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -329,49 +317,28 @@ export const v2WorkspaceRouter = {
 				input.workspaceId,
 				{ organizationId },
 			);
-			const task = await dbWs.query.tasks.findFirst({
-				columns: { id: true, organizationId: true },
-				where: eq(tasks.id, input.taskId),
-			});
-			if (!task) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Task not found",
+			if (input.taskId) {
+				const task = await dbWs.query.tasks.findFirst({
+					columns: { id: true, organizationId: true },
+					where: eq(tasks.id, input.taskId),
 				});
-			}
-			if (task.organizationId !== workspace.organizationId) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Task does not belong to the workspace's organization",
-				});
+				if (!task) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Task not found",
+					});
+				}
+				if (task.organizationId !== workspace.organizationId) {
+					throw new TRPCError({
+						code: "FORBIDDEN",
+						message: "Task does not belong to the workspace's organization",
+					});
+				}
 			}
 			await dbWs
-				.insert(workspaceTasks)
-				.values({ workspaceId: input.workspaceId, taskId: input.taskId })
-				.onConflictDoNothing();
-			return { success: true as const };
-		}),
-
-	unlinkTask: protectedProcedure
-		.input(
-			z.object({
-				workspaceId: z.string().uuid(),
-				taskId: z.string().uuid(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const organizationId = requireActiveOrgId(ctx, "No active organization");
-			await getWorkspaceAccess(ctx.session.user.id, input.workspaceId, {
-				organizationId,
-			});
-			await dbWs
-				.delete(workspaceTasks)
-				.where(
-					and(
-						eq(workspaceTasks.workspaceId, input.workspaceId),
-						eq(workspaceTasks.taskId, input.taskId),
-					),
-				);
+				.update(v2Workspaces)
+				.set({ taskId: input.taskId })
+				.where(eq(v2Workspaces.id, input.workspaceId));
 			return { success: true as const };
 		}),
 

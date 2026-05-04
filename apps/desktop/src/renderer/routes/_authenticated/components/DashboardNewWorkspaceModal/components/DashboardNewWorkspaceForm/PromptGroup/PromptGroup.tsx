@@ -30,6 +30,7 @@ import { PLATFORM } from "renderer/hotkeys";
 import { authClient } from "renderer/lib/auth-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useNewWorkspaceModalOpen } from "renderer/stores/new-workspace-modal";
+import { useNewWorkspacePromptContext } from "renderer/stores/new-workspace-prompt-context";
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { useDashboardNewWorkspaceDraft } from "../../../DashboardNewWorkspaceDraftContext";
 import { DevicePicker } from "../components/DevicePicker";
@@ -212,11 +213,20 @@ export function PromptGroup({
 		return null;
 	}, [projectId, draft.hostId, machineId, activeHostUrl, otherHosts]);
 
+	// ── Linked-context prefetch ──────────────────────────────────────
+	const promptContext = useNewWorkspacePromptContext({
+		projectId,
+		hostId,
+		linkedPR,
+		linkedIssues,
+	});
+
 	// ── Submit (fork) ────────────────────────────────────────────────
 	const createWorkspace = useSubmitWorkspace(
 		projectId,
 		selectedAgent,
 		uploadAttachments,
+		promptContext,
 	);
 	const handleSubmit = useCallback(() => {
 		if (needsSetup) {

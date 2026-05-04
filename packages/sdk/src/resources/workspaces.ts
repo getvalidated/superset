@@ -51,7 +51,7 @@ export class Workspaces extends APIResource {
 				branch: params.branch,
 				pr: params.pr,
 				baseBranch: params.baseBranch,
-				taskIds: params.taskIds,
+				taskId: params.taskId,
 				agents: params.agents,
 			},
 			options,
@@ -140,8 +140,8 @@ export interface WorkspaceCreateParams {
 	pr?: number;
 	/** Branch to fork from when `branch` does not exist. Ignored with `pr`. */
 	baseBranch?: string;
-	/** Optional Superset task ids to link via the workspace_tasks join. */
-	taskIds?: string[];
+	/** Optional Superset task id to link to the new workspace. */
+	taskId?: string;
 	/** Spawn one or more agents in the workspace immediately after creation. */
 	agents?: WorkspaceAgentLaunch[];
 }
