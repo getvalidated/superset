@@ -143,8 +143,9 @@ export function useDashboardSidebarData() {
 				.map((entry) => ({
 					id: entry.snapshot.id as string,
 					projectId: entry.snapshot.projectId,
-					name: entry.snapshot.name,
-					branchName: entry.snapshot.branch ?? entry.snapshot.name,
+					name: entry.snapshot.name ?? "New workspace",
+					branchName:
+						entry.snapshot.branch ?? entry.snapshot.name ?? "New workspace",
 					status:
 						entry.state === "creating"
 							? ("creating" as const)

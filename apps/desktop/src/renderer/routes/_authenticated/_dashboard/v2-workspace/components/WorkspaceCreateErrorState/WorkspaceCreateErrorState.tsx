@@ -5,7 +5,7 @@ import { useWorkspaceCreates } from "renderer/stores/workspace-creates";
 
 interface WorkspaceCreateErrorStateProps {
 	workspaceId: string;
-	name: string;
+	name?: string;
 	error: string;
 }
 
@@ -31,7 +31,7 @@ export function WorkspaceCreateErrorState({
 				<h1 className="text-lg font-semibold tracking-tight">
 					Failed to create workspace
 				</h1>
-				<p className="mt-2 text-sm text-muted-foreground">{name}</p>
+				{name && <p className="mt-2 text-sm text-muted-foreground">{name}</p>}
 				<p className="mt-3 text-xs text-destructive/90 break-words">{error}</p>
 				<div className="mt-6 flex items-center gap-2">
 					<Button size="sm" onClick={() => void retry(workspaceId)}>

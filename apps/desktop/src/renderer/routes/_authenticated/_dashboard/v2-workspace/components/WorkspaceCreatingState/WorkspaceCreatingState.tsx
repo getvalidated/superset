@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 
 interface WorkspaceCreatingStateProps {
-	name: string;
+	name?: string;
 	branch?: string;
 }
 
@@ -18,7 +18,7 @@ export function WorkspaceCreatingState({
 				<h1 className="text-lg font-semibold tracking-tight">
 					Creating workspace
 				</h1>
-				<p className="mt-2 text-sm text-muted-foreground">{name}</p>
+				{name && <p className="mt-2 text-sm text-muted-foreground">{name}</p>}
 				{branch && (
 					<p className="mt-1 text-xs text-muted-foreground/80">
 						Branch: {branch}

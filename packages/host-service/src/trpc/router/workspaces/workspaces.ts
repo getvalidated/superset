@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { generateFriendlyBranchName } from "@superset/shared/workspace-launch";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -30,6 +31,7 @@ import { execGh } from "../workspace-creation/utils/exec-gh";
 import { listBranchNames } from "../workspace-creation/utils/list-branch-names";
 import { derivePrLocalBranchName } from "../workspace-creation/utils/pr-branch-name";
 import { resolveStartPoint } from "../workspace-creation/utils/resolve-start-point";
+import { deduplicateBranchName } from "../workspace-creation/utils/sanitize-branch";
 
 const agentLaunchSchema = z.object({
 	agent: z.string().min(1),
@@ -40,17 +42,20 @@ const agentLaunchSchema = z.object({
 const createInputSchema = z
 	.object({
 		projectId: z.string(),
-		name: z.string().min(1),
+		// Both `name` and `branch` are optional. When omitted, the server
+		// generates a friendly random name (e.g. "nosy-puck") and uses it
+		// for whichever field is missing. Absence of `name` is also the
+		// signal to run the post-create AI rename.
+		name: z.string().min(1).optional(),
 		branch: z.string().min(1).optional(),
 		pr: z.number().int().positive().optional(),
 		baseBranch: z.string().min(1).optional(),
 		taskIds: z.array(z.string().uuid()).optional(),
-		autogenerateName: z.boolean().optional(),
 		agents: z.array(agentLaunchSchema).optional(),
 		id: z.string().uuid().optional(),
 	})
-	.refine((value) => Boolean(value.branch) !== Boolean(value.pr), {
-		message: "Exactly one of `branch` or `pr` must be set",
+	.refine((value) => !(value.branch && value.pr), {
+		message: "`branch` and `pr` cannot both be set",
 	});
 
 type AgentLaunchResult =
@@ -528,7 +533,7 @@ export const workspacesRouter = router({
 						ctx,
 						id: input.id,
 						projectId: input.projectId,
-						name: input.name,
+						name: input.name ?? prMetadata.title ?? resolvedBranch,
 						branch: resolvedBranch,
 						worktreePath,
 						taskIds: input.taskIds,
@@ -545,13 +550,19 @@ export const workspacesRouter = router({
 					}
 				}
 			} else {
-				if (!input.branch) {
-					throw new TRPCError({
-						code: "BAD_REQUEST",
-						message: "branch is required when pr is not set",
-					});
+				const typedBranch = input.branch?.trim();
+				if (typedBranch) {
+					resolvedBranch = typedBranch;
+				} else {
+					// User didn't supply a branch — pick a friendly random one
+					// (e.g. "nosy-puck") and dedupe against any existing local
+					// branches so a stale orphan can't silently win.
+					const existing = await listBranchNames(ctx, localProject.repoPath);
+					resolvedBranch = deduplicateBranchName(
+						generateFriendlyBranchName(),
+						existing,
+					);
 				}
-				resolvedBranch = input.branch.trim();
 
 				const existing = await findExistingWorkspaceByBranch(
 					ctx,
@@ -634,7 +645,7 @@ export const workspacesRouter = router({
 						ctx,
 						id: input.id,
 						projectId: input.projectId,
-						name: input.name,
+						name: input.name ?? resolvedBranch,
 						branch: resolvedBranch,
 						worktreePath,
 						taskIds: input.taskIds,
@@ -669,9 +680,14 @@ export const workspacesRouter = router({
 					}
 				}
 
-				if (input.autogenerateName) {
+				// Run AI rename for whichever side(s) the user didn't supply.
+				// User-typed values always win. PR path skips entirely — the
+				// PR title and derived branch are already meaningful.
+				if (prMetadata === null) {
+					const renameTitle = input.name === undefined;
+					const renameBranch = input.branch === undefined;
 					const composerPrompt = input.agents?.[0]?.prompt?.trim() ?? "";
-					if (composerPrompt) {
+					if ((renameTitle || renameBranch) && composerPrompt) {
 						const setupPath = setupWorktreePath ?? "";
 						void applyAiWorkspaceRename({
 							ctx,
@@ -681,6 +697,8 @@ export const workspacesRouter = router({
 							oldBranchName: workspaceRow.branch,
 							oldWorkspaceName: workspaceRow.name,
 							prompt: composerPrompt,
+							renameTitle,
+							renameBranch,
 						}).catch((err) => {
 							console.warn(
 								"[workspaces.create] AI workspace rename failed",
@@ -754,6 +772,8 @@ export const workspacesRouter = router({
 				oldBranchName: cloud.branch,
 				oldWorkspaceName: cloud.name,
 				prompt: input.prompt,
+				renameTitle: true,
+				renameBranch: true,
 			}).catch((err) => {
 				console.warn("[workspaces.aiRename] failed", err);
 			});

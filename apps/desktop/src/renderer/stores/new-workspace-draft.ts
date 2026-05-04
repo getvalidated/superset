@@ -1,4 +1,3 @@
-import { generateFriendlyBranchName } from "@superset/shared/workspace-launch";
 import { create } from "zustand";
 
 export type LinkedIssue = {
@@ -42,7 +41,6 @@ export interface NewWorkspaceDraft {
 	linkedPR: LinkedPR | null;
 	selectedAgentId: string | null;
 	attachments: DraftAttachment[];
-	friendlyFallback: string;
 }
 
 interface NewWorkspaceDraftState extends NewWorkspaceDraft {
@@ -69,7 +67,6 @@ function buildInitialDraft(): NewWorkspaceDraft {
 		linkedPR: null,
 		selectedAgentId: null,
 		attachments: [],
-		friendlyFallback: generateFriendlyBranchName(),
 	};
 }
 
