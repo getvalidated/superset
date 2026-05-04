@@ -4,6 +4,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
 
+import { posthog } from "../../lib/analytics";
 import {
 	executeFunnelQuery,
 	executeHogQLQuery,
@@ -13,7 +14,7 @@ import {
 	type InsightVizNode,
 	type RetentionCohort,
 } from "../../lib/posthog-client";
-import { adminProcedure } from "../../trpc";
+import { adminProcedure, authenticatedProcedure } from "../../trpc";
 
 export interface FunnelStepData {
 	name: string;
@@ -54,6 +55,30 @@ function formatWeekData(
 }
 
 export const analyticsRouter = {
+	captureEvent: authenticatedProcedure
+		.input(
+			z.object({
+				source: z.string().min(1).max(50),
+				event: z.string().min(1).max(200),
+				properties: z.record(z.string(), z.unknown()).optional(),
+			}),
+		)
+		.mutation(({ ctx, input }) => {
+			posthog.capture({
+				distinctId: ctx.userId,
+				event: input.event,
+				properties: {
+					...(input.properties ?? {}),
+					source: input.source,
+					active_organization_id: ctx.activeOrganizationId,
+				},
+				groups: ctx.activeOrganizationId
+					? { organization: ctx.activeOrganizationId }
+					: undefined,
+			});
+			return { ok: true };
+		}),
+
 	getActivationFunnel: adminProcedure
 		.input(
 			z

@@ -13,18 +13,24 @@ import {
 	DropdownMenuShortcut,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
+import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { ChevronDown } from "lucide-react";
-import { memo } from "react";
-import { StatusIndicator } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/StatusIndicator";
-import { PathActionsMenuItems } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/WorkspaceSidebar/components/FilesTab/components/WorkspaceFilesTreeItem/components/PathActionsMenuItems";
-import type { ChangesetFile } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useChangeset";
+import { workspaceTrpc } from "@superset/workspace-client";
 import {
-	CLICK_HINT_TOOLTIP,
-	MOD_CLICK_LABEL,
-	SHIFT_CLICK_LABEL,
-} from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/clickModifierLabels";
-import { getSidebarClickIntent } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/getSidebarClickIntent";
+	ChevronDown,
+	ExternalLink,
+	FileText,
+	GitCompare,
+	SquarePlus,
+	Trash2,
+	Undo2,
+} from "lucide-react";
+import { memo, useState } from "react";
+import { modifierLabel, useSidebarFilePolicy } from "renderer/lib/clickPolicy";
+import { DiscardConfirmDialog } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/DiscardConfirmDialog";
+import { StatusIndicator } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/StatusIndicator";
+import { PathActionsMenuItems } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/WorkspaceSidebar/components/PathActionsMenuItems";
+import type { ChangesetFile } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useChangeset";
 import { FileIcon } from "renderer/screens/main/components/WorkspaceView/RightSidebar/FilesView/utils";
 import { toAbsoluteWorkspacePath } from "shared/absolute-paths";
 
@@ -39,6 +45,7 @@ function splitPath(path: string): { dir: string; basename: string } {
 
 interface FileRowProps {
 	file: ChangesetFile;
+	workspaceId: string;
 	worktreePath?: string;
 	onSelect?: (path: string, openInNewTab?: boolean) => void;
 	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
@@ -47,6 +54,7 @@ interface FileRowProps {
 
 export const FileRow = memo(function FileRow({
 	file,
+	workspaceId,
 	worktreePath,
 	onSelect,
 	onOpenFile,
@@ -60,6 +68,27 @@ export const FileRow = memo(function FileRow({
 	const absolutePath = worktreePath
 		? toAbsoluteWorkspacePath(worktreePath, file.path)
 		: undefined;
+	const canDiscard = file.source.kind === "unstaged";
+	const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+	const isDeleteAction = file.status === "untracked" || file.status === "added";
+	const utils = workspaceTrpc.useUtils();
+	const discardMutation = workspaceTrpc.git.discardChanges.useMutation({
+		onSuccess: () => {
+			void utils.git.getStatus.invalidate({ workspaceId });
+			void utils.git.getDiff.invalidate({ workspaceId });
+		},
+		onError: (err) => {
+			toast.error("Couldn't discard changes", { description: err.message });
+		},
+	});
+	const confirmDiscard = () => {
+		setShowDiscardConfirm(false);
+		discardMutation.mutate({ workspaceId, filePath: file.path });
+	};
+
+	const policy = useSidebarFilePolicy();
+	const newTabTier = policy.tierForAction("newTab");
+	const externalTier = policy.tierForAction("external");
 
 	const rowButton = (
 		<div className="group relative">
@@ -67,12 +96,10 @@ export const FileRow = memo(function FileRow({
 				type="button"
 				className="flex w-full items-center gap-1.5 py-1 pr-3 pl-3 text-left text-xs hover:bg-accent/50"
 				onClick={(e) => {
-					const intent = getSidebarClickIntent(e);
-					if (intent === "openInEditor") {
-						onOpenInEditor?.(file.path);
-					} else {
-						onSelect?.(file.path, intent === "openInNewTab");
-					}
+					const action = policy.getAction(e);
+					if (action === "external") onOpenInEditor?.(file.path);
+					else if (action === "newTab") onSelect?.(file.path, true);
+					else if (action === "pane") onSelect?.(file.path, false);
 				}}
 			>
 				<FileIcon fileName={basename} className="size-3.5 shrink-0" />
@@ -104,6 +131,24 @@ export const FileRow = memo(function FileRow({
 				</span>
 			</button>
 			<div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100">
+				{canDiscard && (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<button
+								type="button"
+								aria-label="Discard changes"
+								className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-destructive"
+								onClick={(e) => {
+									e.stopPropagation();
+									setShowDiscardConfirm(true);
+								}}
+							>
+								<Undo2 className="size-3.5" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="top">Discard changes</TooltipContent>
+					</Tooltip>
+				)}
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<button
@@ -115,32 +160,45 @@ export const FileRow = memo(function FileRow({
 							<ChevronDown className="size-3.5" />
 						</button>
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" className="w-56">
+					<DropdownMenuContent align="end" className="w-64">
 						<DropdownMenuItem onSelect={() => onSelect?.(file.path)}>
+							<GitCompare />
 							Open Diff
 						</DropdownMenuItem>
 						<DropdownMenuItem onSelect={() => onSelect?.(file.path, true)}>
+							<SquarePlus />
 							Open Diff in New Tab
-							<DropdownMenuShortcut>{SHIFT_CLICK_LABEL}</DropdownMenuShortcut>
+							{newTabTier && (
+								<DropdownMenuShortcut>
+									{modifierLabel(newTabTier)}
+								</DropdownMenuShortcut>
+							)}
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							onSelect={() => absolutePath && onOpenFile?.(absolutePath)}
 							disabled={!onOpenFile || !absolutePath}
 						>
+							<FileText />
 							Open File
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							onSelect={() => absolutePath && onOpenFile?.(absolutePath, true)}
 							disabled={!onOpenFile || !absolutePath}
 						>
+							<SquarePlus />
 							Open File in New Tab
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							onSelect={() => onOpenInEditor?.(file.path)}
 							disabled={!onOpenInEditor}
 						>
+							<ExternalLink />
 							Open in Editor
-							<DropdownMenuShortcut>{MOD_CLICK_LABEL}</DropdownMenuShortcut>
+							{externalTier && (
+								<DropdownMenuShortcut>
+									{modifierLabel(externalTier)}
+								</DropdownMenuShortcut>
+							)}
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
@@ -154,34 +212,47 @@ export const FileRow = memo(function FileRow({
 				<ContextMenuTrigger asChild>
 					<TooltipTrigger asChild>{rowButton}</TooltipTrigger>
 				</ContextMenuTrigger>
-				<TooltipContent side="right">{CLICK_HINT_TOOLTIP}</TooltipContent>
+				<TooltipContent side="right">{policy.hint}</TooltipContent>
 			</Tooltip>
-			<ContextMenuContent className="w-56">
+			<ContextMenuContent className="w-64">
 				<ContextMenuItem onSelect={() => onSelect?.(file.path)}>
+					<GitCompare />
 					Open Diff
 				</ContextMenuItem>
 				<ContextMenuItem onSelect={() => onSelect?.(file.path, true)}>
+					<SquarePlus />
 					Open Diff in New Tab
-					<ContextMenuShortcut>{SHIFT_CLICK_LABEL}</ContextMenuShortcut>
+					{newTabTier && (
+						<ContextMenuShortcut>
+							{modifierLabel(newTabTier)}
+						</ContextMenuShortcut>
+					)}
 				</ContextMenuItem>
 				<ContextMenuItem
 					onSelect={() => absolutePath && onOpenFile?.(absolutePath)}
 					disabled={!onOpenFile || !absolutePath}
 				>
+					<FileText />
 					Open File
 				</ContextMenuItem>
 				<ContextMenuItem
 					onSelect={() => absolutePath && onOpenFile?.(absolutePath, true)}
 					disabled={!onOpenFile || !absolutePath}
 				>
+					<SquarePlus />
 					Open File in New Tab
 				</ContextMenuItem>
 				<ContextMenuItem
 					onSelect={() => onOpenInEditor?.(file.path)}
 					disabled={!onOpenInEditor}
 				>
+					<ExternalLink />
 					Open in Editor
-					<ContextMenuShortcut>{MOD_CLICK_LABEL}</ContextMenuShortcut>
+					{externalTier && (
+						<ContextMenuShortcut>
+							{modifierLabel(externalTier)}
+						</ContextMenuShortcut>
+					)}
 				</ContextMenuItem>
 				{absolutePath && (
 					<>
@@ -192,7 +263,35 @@ export const FileRow = memo(function FileRow({
 						/>
 					</>
 				)}
+				{canDiscard && (
+					<>
+						<ContextMenuSeparator />
+						<ContextMenuItem
+							variant="destructive"
+							onSelect={() => setShowDiscardConfirm(true)}
+						>
+							{isDeleteAction ? <Trash2 /> : <Undo2 />}
+							{isDeleteAction ? "Delete" : "Discard changes"}
+						</ContextMenuItem>
+					</>
+				)}
 			</ContextMenuContent>
+			<DiscardConfirmDialog
+				open={showDiscardConfirm}
+				onOpenChange={setShowDiscardConfirm}
+				title={
+					isDeleteAction
+						? `Delete "${basename}"?`
+						: `Discard changes to "${basename}"?`
+				}
+				description={
+					isDeleteAction
+						? "This will permanently delete this file. This action cannot be undone."
+						: "This will revert all changes to this file. This action cannot be undone."
+				}
+				confirmLabel={isDeleteAction ? "Delete" : "Discard"}
+				onConfirm={confirmDiscard}
+			/>
 		</ContextMenu>
 	);
 });

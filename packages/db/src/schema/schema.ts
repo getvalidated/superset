@@ -409,6 +409,7 @@ export const v2Projects = pgTable(
 			() => githubRepositories.id,
 			{ onDelete: "set null" },
 		),
+		iconUrl: text("icon_url"),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -540,6 +541,9 @@ export const v2Workspaces = pgTable(
 		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
 			onDelete: "set null",
 		}),
+		taskId: uuid("task_id").references(() => tasks.id, {
+			onDelete: "set null",
+		}),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -557,6 +561,7 @@ export const v2Workspaces = pgTable(
 		index("v2_workspaces_project_id_idx").on(table.projectId),
 		index("v2_workspaces_organization_id_idx").on(table.organizationId),
 		index("v2_workspaces_host_id_idx").on(table.hostId),
+		index("v2_workspaces_task_id_idx").on(table.taskId),
 		uniqueIndex("v2_workspaces_one_main_per_host")
 			.on(table.projectId, table.hostId)
 			.where(sql`${table.type} = 'main'`),
@@ -691,6 +696,34 @@ export const chatSessions = pgTable(
 
 export type InsertChatSession = typeof chatSessions.$inferInsert;
 export type SelectChatSession = typeof chatSessions.$inferSelect;
+
+export const chatAttachments = pgTable(
+	"chat_attachments",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		chatSessionId: uuid("chat_session_id")
+			.notNull()
+			.references(() => chatSessions.id, { onDelete: "cascade" }),
+		createdBy: uuid("created_by")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		blobPathname: text("blob_pathname").notNull(),
+		mediaType: text("media_type").notNull(),
+		filename: text().notNull(),
+		sizeBytes: integer("size_bytes").notNull(),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+	},
+	(table) => [
+		index("chat_attachments_session_idx").on(table.chatSessionId),
+		index("chat_attachments_created_by_idx").on(table.createdBy),
+	],
+);
+
+export type InsertChatAttachment = typeof chatAttachments.$inferInsert;
+export type SelectChatAttachment = typeof chatAttachments.$inferSelect;
 
 export const automationRunStatus = pgEnum(
 	"automation_run_status",
@@ -845,3 +878,27 @@ export type InsertAutomationPromptVersion =
 	typeof automationPromptVersions.$inferInsert;
 export type SelectAutomationPromptVersion =
 	typeof automationPromptVersions.$inferSelect;
+
+export const submittedPrompts = pgTable(
+	"submitted_prompts",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		organizationId: uuid("organization_id").references(() => organizations.id, {
+			onDelete: "set null",
+		}),
+		promptText: text("prompt_text").notNull(),
+		submitterName: text("submitter_name"),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+	},
+	(table) => [
+		index("submitted_prompts_user_id_idx").on(table.userId),
+		index("submitted_prompts_organization_id_idx").on(table.organizationId),
+		index("submitted_prompts_created_at_idx").on(table.createdAt),
+	],
+);
+
+export type InsertSubmittedPrompt = typeof submittedPrompts.$inferInsert;
+export type SelectSubmittedPrompt = typeof submittedPrompts.$inferSelect;
