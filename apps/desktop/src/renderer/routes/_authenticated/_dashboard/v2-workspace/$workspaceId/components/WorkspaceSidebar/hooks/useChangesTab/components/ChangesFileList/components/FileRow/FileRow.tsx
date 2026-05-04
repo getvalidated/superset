@@ -26,7 +26,6 @@ import {
 	Undo2,
 } from "lucide-react";
 import { memo, useState } from "react";
-import { LuUndo2 } from "react-icons/lu";
 import { DiscardConfirmDialog } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/DiscardConfirmDialog";
 import { StatusIndicator } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/StatusIndicator";
 import { PathActionsMenuItems } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/WorkspaceSidebar/components/FilesTab/components/WorkspaceFilesTreeItem/components/PathActionsMenuItems";
@@ -147,7 +146,7 @@ export const FileRow = memo(function FileRow({
 									setShowDiscardConfirm(true);
 								}}
 							>
-								<LuUndo2 className="size-3.5" />
+								<Undo2 className="size-3.5" />
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="top">Discard changes</TooltipContent>
