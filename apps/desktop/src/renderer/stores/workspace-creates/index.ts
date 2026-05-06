@@ -1,7 +1,6 @@
-export { WorkspaceCreatesManager } from "./Manager";
 export {
-	type InFlightEntry,
-	useWorkspaceCreatesStore,
+	type FailedWorkspaceCreate,
+	useWorkspaceCreateFailuresStore,
 	type WorkspacesCreateInput,
 } from "./store";
 export {

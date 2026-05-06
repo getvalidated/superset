@@ -8,7 +8,7 @@ import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/u
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { getVisibleSidebarWorkspaces } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
-import { useWorkspaceCreatesStore } from "renderer/stores/workspace-creates";
+import { useWorkspaceCreateFailuresStore } from "renderer/stores/workspace-creates";
 import type {
 	DashboardSidebarProject,
 	DashboardSidebarProjectChild,
@@ -132,26 +132,23 @@ export function useDashboardSidebarData() {
 	const { toggleProjectCollapsed } = useDashboardSidebarState();
 	const queryClient = useQueryClient();
 
-	// In-flight workspace.create operations. These don't have a backing DB row
-	// — they're kept in renderer memory until the real v2Workspaces row arrives
-	// via Electric sync (or until error/dismiss).
-	const inFlightEntries = useWorkspaceCreatesStore((store) => store.entries);
-	const inFlightSidebarRows = useMemo(
+	// Failed workspace.create operations — backing v2_workspaces row was rolled
+	// back, but we keep the snapshot in renderer memory so the user can retry
+	// from the detail page or dismiss from the sidebar.
+	const failuresMap = useWorkspaceCreateFailuresStore(
+		(store) => store.failures,
+	);
+	const failureSidebarRows = useMemo(
 		() =>
-			inFlightEntries
-				.filter((entry) => entry.snapshot.id !== undefined)
-				.map((entry) => ({
-					id: entry.snapshot.id as string,
-					projectId: entry.snapshot.projectId,
-					name: entry.snapshot.name ?? "New workspace",
-					branchName:
-						entry.snapshot.branch ?? entry.snapshot.name ?? "New workspace",
-					status:
-						entry.state === "creating"
-							? ("creating" as const)
-							: ("failed" as const),
-				})),
-		[inFlightEntries],
+			Object.entries(failuresMap).map(([id, entry]) => ({
+				id,
+				projectId: entry.snapshot.projectId,
+				hostId: entry.hostId,
+				name: entry.snapshot.name ?? "New workspace",
+				branchName:
+					entry.snapshot.branch ?? entry.snapshot.name ?? "New workspace",
+			})),
+		[failuresMap],
 	);
 
 	const { data: hosts = [] } = useLiveQuery(
@@ -263,14 +260,13 @@ export function useDashboardSidebarData() {
 		[rawSidebarWorkspaces],
 	);
 
-	const { data: localMainWorkspaces = [] } = useLiveQuery(
+	const { data: localWorkspaceCandidates = [] } = useLiveQuery(
 		(q) =>
 			q
 				.from({ workspaces: collections.v2Workspaces })
 				.innerJoin({ hosts: collections.v2Hosts }, ({ workspaces, hosts }) =>
 					eq(workspaces.hostId, hosts.machineId),
 				)
-				.where(({ workspaces }) => eq(workspaces.type, "main"))
 				.select(({ workspaces, hosts }) => ({
 					id: workspaces.id,
 					projectId: workspaces.projectId,
@@ -281,8 +277,7 @@ export function useDashboardSidebarData() {
 					branch: workspaces.branch,
 					createdAt: workspaces.createdAt,
 					updatedAt: workspaces.updatedAt,
-					tabOrder: MAIN_WORKSPACE_TAB_ORDER,
-					sectionId: null as string | null,
+					synced: workspaces.$synced,
 				})),
 		[collections],
 	);
@@ -291,17 +286,34 @@ export function useDashboardSidebarData() {
 		const sidebarProjectIds = new Set(
 			sidebarProjects.map((project) => project.id),
 		);
-		const autoLocalMainWorkspaces = localMainWorkspaces.filter(
-			(workspace) =>
-				!localStateWorkspaceIds.has(workspace.id) &&
-				workspace.hostId === machineId &&
-				sidebarProjectIds.has(workspace.projectId),
-		);
+		const autoIncluded = localWorkspaceCandidates
+			.filter((workspace) => {
+				if (localStateWorkspaceIds.has(workspace.id)) return false;
+				if (workspace.hostId !== machineId) return false;
+				if (!sidebarProjectIds.has(workspace.projectId)) return false;
+				if (workspace.type === "main") return true;
+				return workspace.type === "worktree" && workspace.synced === false;
+			})
+			.map((workspace) => ({
+				...workspace,
+				tabOrder:
+					workspace.type === "main"
+						? MAIN_WORKSPACE_TAB_ORDER
+						: PENDING_WORKSPACE_TAB_ORDER,
+				sectionId: null as string | null,
+				creationStatus:
+					workspace.synced === false ? ("creating" as const) : undefined,
+			}));
+		const sidebarWithSyncMeta = sidebarWorkspaces.map((workspace) => ({
+			...workspace,
+			synced: true,
+			creationStatus: undefined,
+		}));
 
-		return [...autoLocalMainWorkspaces, ...sidebarWorkspaces];
+		return [...autoIncluded, ...sidebarWithSyncMeta];
 	}, [
-		localMainWorkspaces,
 		localStateWorkspaceIds,
+		localWorkspaceCandidates,
 		machineId,
 		sidebarProjects,
 		sidebarWorkspaces,
@@ -442,6 +454,7 @@ export function useDashboardSidebarData() {
 				behindCount: null,
 				createdAt: workspace.createdAt,
 				updatedAt: workspace.updatedAt,
+				creationStatus: workspace.creationStatus,
 			};
 
 			if (workspace.sectionId) {
@@ -464,23 +477,25 @@ export function useDashboardSidebarData() {
 			});
 		}
 
-		// Inject in-flight workspaces (creating / failed) from the renderer-side
-		// in-flight store.
-		for (const pw of inFlightSidebarRows) {
-			if (localStateWorkspaceIds.has(pw.id)) continue;
-			const project = projectsById.get(pw.projectId);
+		// Inject failed workspace.create rows from the renderer failure store.
+		// The optimistic v2_workspaces row was rolled back, so the only signal
+		// left is the snapshot we kept in memory for retry/dismiss.
+		for (const failure of failureSidebarRows) {
+			if (localStateWorkspaceIds.has(failure.id)) continue;
+			const project = projectsById.get(failure.projectId);
 			if (!project) continue;
 
-			const pendingItem: DashboardSidebarWorkspace = {
-				id: pw.id,
-				projectId: pw.projectId,
-				hostId: "",
-				hostType: "local-device",
+			const failedItem: DashboardSidebarWorkspace = {
+				id: failure.id,
+				projectId: failure.projectId,
+				hostId: failure.hostId,
+				hostType:
+					failure.hostId === machineId ? "local-device" : "remote-device",
 				type: "worktree",
 				hostIsOnline: null,
 				accentColor: null,
-				name: pw.name,
-				branch: pw.branchName,
+				name: failure.name,
+				branch: failure.branchName,
 				pullRequest: null,
 				repoUrl:
 					project.githubOwner && project.githubRepoName
@@ -492,14 +507,14 @@ export function useDashboardSidebarData() {
 				behindCount: null,
 				createdAt: new Date(),
 				updatedAt: new Date(),
-				creationStatus: pw.status,
+				creationStatus: "failed",
 			};
 
 			project.childEntries.push({
 				tabOrder: PENDING_WORKSPACE_TAB_ORDER,
 				child: {
 					type: "workspace",
-					workspace: pendingItem,
+					workspace: failedItem,
 				},
 			});
 		}
@@ -542,7 +557,7 @@ export function useDashboardSidebarData() {
 	}, [
 		machineId,
 		pullRequestsByWorkspaceId,
-		inFlightSidebarRows,
+		failureSidebarRows,
 		localStateWorkspaceIds,
 		sidebarProjects,
 		sidebarSections,
