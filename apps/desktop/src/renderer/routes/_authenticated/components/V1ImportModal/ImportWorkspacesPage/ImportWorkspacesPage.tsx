@@ -15,6 +15,10 @@ interface ImportWorkspacesPageProps {
 const WORKTREE_LIST_KEY_PREFIX = ["v1-import", "projectWorktrees"] as const;
 const WORKSPACE_CLOUD_LIST_KEY = ["v1-import", "workspaceCloudList"] as const;
 const HOST_PROJECT_LIST_KEY_PREFIX = ["v1-import", "hostProjectList"] as const;
+const PROJECT_CLOUD_LIST_KEY_PREFIX = [
+	"v1-import",
+	"projectCloudList",
+] as const;
 
 function trpcCode(err: unknown): string | null {
 	if (typeof err !== "object" || err === null) return null;
@@ -42,6 +46,15 @@ export function ImportWorkspacesPage({
 		retry: false,
 	});
 
+	const cloudProjectsQuery = useQuery({
+		queryKey: [...PROJECT_CLOUD_LIST_KEY_PREFIX, organizationId, activeHostUrl],
+		queryFn: async () => {
+			const client = getHostServiceClientByUrl(activeHostUrl);
+			return client.project.cloudList.query();
+		},
+		retry: false,
+	});
+
 	const cloudWorkspacesQuery = useQuery({
 		queryKey: [...WORKSPACE_CLOUD_LIST_KEY, organizationId, activeHostUrl],
 		queryFn: async () => {
@@ -52,8 +65,12 @@ export function ImportWorkspacesPage({
 	});
 
 	const v2ProjectIdByV1Id = useMemo(() => {
+		const cloudIds = cloudProjectsQuery.data
+			? new Set(cloudProjectsQuery.data.map((p) => p.id))
+			: null;
 		const v2ByPath = new Map<string, string>();
 		for (const v2 of hostProjectListQuery.data ?? []) {
+			if (cloudIds && !cloudIds.has(v2.id)) continue;
 			v2ByPath.set(v2.repoPath, v2.id);
 		}
 		const map = new Map<string, string>();
@@ -62,7 +79,7 @@ export function ImportWorkspacesPage({
 			if (v2Id) map.set(v1.id, v2Id);
 		}
 		return map;
-	}, [hostProjectListQuery.data, projectsQuery.data]);
+	}, [hostProjectListQuery.data, projectsQuery.data, cloudProjectsQuery.data]);
 
 	const cloudWorkspaceKeys = useMemo(() => {
 		const set = new Set<string>();
@@ -108,6 +125,7 @@ export function ImportWorkspacesPage({
 		workspacesQuery.isPending ||
 		worktreesQuery.isPending ||
 		hostProjectListQuery.isPending ||
+		cloudProjectsQuery.isPending ||
 		worktreeListQueries.some((q) => q.isPending);
 
 	const [isRefreshing, setIsRefreshing] = useState(false);
@@ -119,6 +137,7 @@ export function ImportWorkspacesPage({
 				workspacesQuery.refetch(),
 				worktreesQuery.refetch(),
 				hostProjectListQuery.refetch(),
+				cloudProjectsQuery.refetch(),
 				cloudWorkspacesQuery.refetch(),
 				queryClient.invalidateQueries({
 					queryKey: WORKTREE_LIST_KEY_PREFIX,

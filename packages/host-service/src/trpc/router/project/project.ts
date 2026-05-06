@@ -39,6 +39,13 @@ export const projectRouter = router({
 			.all();
 	}),
 
+	cloudList: protectedProcedure.query(async ({ ctx }) => {
+		const rows = await ctx.api.v2Project.list.query({
+			organizationId: ctx.organizationId,
+		});
+		return rows.map((row) => ({ id: row.id }));
+	}),
+
 	get: protectedProcedure
 		.input(z.object({ projectId: z.string().uuid() }))
 		.query(({ ctx, input }) => {

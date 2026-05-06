@@ -15,6 +15,10 @@ interface ImportProjectsPageProps {
 
 const FIND_BY_PATH_KEY_PREFIX = ["v1-import", "findByPath"] as const;
 const HOST_PROJECT_LIST_KEY_PREFIX = ["v1-import", "hostProjectList"] as const;
+const PROJECT_CLOUD_LIST_KEY_PREFIX = [
+	"v1-import",
+	"projectCloudList",
+] as const;
 
 export function ImportProjectsPage({
 	organizationId,
@@ -208,6 +212,9 @@ function ProjectRow({
 				}),
 				queryClient.invalidateQueries({
 					queryKey: HOST_PROJECT_LIST_KEY_PREFIX,
+				}),
+				queryClient.invalidateQueries({
+					queryKey: PROJECT_CLOUD_LIST_KEY_PREFIX,
 				}),
 			]);
 		} catch (err) {
