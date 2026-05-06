@@ -61,10 +61,6 @@ function OnboardingProjectPage() {
 		const result = await folderImport.start();
 		if (result) {
 			markComplete("project");
-			navigate({
-				to: "/project/$projectId",
-				params: { projectId: result.projectId },
-			});
 		}
 	};
 
