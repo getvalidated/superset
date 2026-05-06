@@ -18,6 +18,7 @@ import { useEnsureV2Project } from "renderer/hooks/useEnsureV2Project";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useOpenProject } from "renderer/react-query/projects/useOpenProject";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { STEP_ROUTES, useOnboardingStore } from "renderer/stores/onboarding";
 import { SetupButton } from "../components/SetupButton";
 import { StepHeader, StepShell, SupersetPill } from "../components/StepShell";
@@ -41,8 +42,10 @@ function OnboardingProjectPage() {
 	const { openNew, isPending: isOpenPending } = useOpenProject();
 	const utils = electronTrpc.useUtils();
 	const isV2CloudEnabled = useIsV2CloudEnabled();
+	const { activeHostUrl } = useLocalHostService();
 	const ensureV2Project = useEnsureV2Project();
 	const [isContinuing, setIsContinuing] = useState(false);
+	const v2NeedsHost = isV2CloudEnabled && !activeHostUrl;
 	const closeProject = electronTrpc.projects.close.useMutation({
 		onSuccess: async () => {
 			await utils.projects.getRecents.invalidate();
@@ -245,21 +248,29 @@ function OnboardingProjectPage() {
 				<div className="flex w-[273px] flex-col gap-2 self-center">
 					<SetupButton
 						onClick={handleContinueWithCurrent}
-						disabled={isContinuing || isOpenPending}
+						disabled={isContinuing || isOpenPending || v2NeedsHost}
 					>
-						{isContinuing ? "Linking…" : "Continue with current"}
+						{isContinuing
+							? "Linking…"
+							: v2NeedsHost
+								? "Connecting…"
+								: "Continue with current"}
 					</SetupButton>
 					<SetupButton
 						variant="secondary"
 						onClick={handleSelectNewRepo}
-						disabled={isOpenPending || isContinuing}
+						disabled={isOpenPending || isContinuing || v2NeedsHost}
 					>
-						{isOpenPending ? "Opening…" : "Select new repo"}
+						{isOpenPending
+							? "Opening…"
+							: v2NeedsHost
+								? "Connecting…"
+								: "Select new repo"}
 					</SetupButton>
 					<SetupButton
 						variant="secondary"
 						onClick={() => navigate({ to: "/new-project" })}
-						disabled={isContinuing}
+						disabled={isContinuing || v2NeedsHost}
 					>
 						Clone from GitHub
 					</SetupButton>
@@ -284,12 +295,20 @@ function OnboardingProjectPage() {
 			/>
 
 			<div className="flex w-[273px] flex-col gap-2 self-center">
-				<SetupButton onClick={handleSelectNewRepo} disabled={isOpenPending}>
-					{isOpenPending ? "Opening…" : "Select new repo"}
+				<SetupButton
+					onClick={handleSelectNewRepo}
+					disabled={isOpenPending || v2NeedsHost}
+				>
+					{isOpenPending
+						? "Opening…"
+						: v2NeedsHost
+							? "Connecting…"
+							: "Select new repo"}
 				</SetupButton>
 				<SetupButton
 					variant="secondary"
 					onClick={() => navigate({ to: "/new-project" })}
+					disabled={v2NeedsHost}
 				>
 					Clone from GitHub
 				</SetupButton>

@@ -187,11 +187,12 @@ function AdoptWorktreesContent({
 	const importExternalWorktrees = useImportExternalWorktrees();
 	const isV2CloudEnabled = useIsV2CloudEnabled();
 	const { submit } = useWorkspaceCreates();
-	const { machineId } = useLocalHostService();
+	const { machineId, activeHostUrl } = useLocalHostService();
 	const ensureV2Project = useEnsureV2Project();
 	const [results, setResults] = useState<Record<string, ProjectResult>>({});
 	const [selected, setSelected] = useState<SelectionState>({});
 	const [isV2Importing, setIsV2Importing] = useState(false);
+	const v2NeedsHost = isV2CloudEnabled && !activeHostUrl;
 
 	const allLoaded = projects.every((p) => results[p.id]?.loaded);
 	const total = useMemo(
@@ -376,14 +377,17 @@ function AdoptWorktreesContent({
 								!allLoaded ||
 								totalSelected === 0 ||
 								importExternalWorktrees.isPending ||
-								isV2Importing
+								isV2Importing ||
+								v2NeedsHost
 							}
 						>
 							{importExternalWorktrees.isPending || isV2Importing
 								? "Importing…"
-								: totalSelected === 0
-									? "Select worktrees"
-									: `Import ${totalSelected} selected`}
+								: v2NeedsHost
+									? "Connecting…"
+									: totalSelected === 0
+										? "Select worktrees"
+										: `Import ${totalSelected} selected`}
 						</SetupButton>
 						<SetupButton
 							variant="link"
