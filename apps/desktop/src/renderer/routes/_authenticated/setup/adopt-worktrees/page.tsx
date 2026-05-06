@@ -334,6 +334,13 @@ function AdoptWorktreesContent({
 			}
 		}
 
+		const hadSelections = projects.some((p) => (selected[p.id]?.size ?? 0) > 0);
+		if (hadSelections && totalImported === 0) {
+			// Every selected import failed. Errors were already toasted; keep the
+			// user on the page so they can retry or explicitly Skip rather than
+			// being yanked into a post-onboarding route on a sea of red toasts.
+			return;
+		}
 		if (totalImported > 0) {
 			toast.success(
 				`Imported ${totalImported} workspace${totalImported === 1 ? "" : "s"}`,

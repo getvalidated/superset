@@ -58,10 +58,17 @@ export function useEnsureV2Project(): (args: {
 					};
 				} catch (err) {
 					// `findByPath` returns local sqlite rows even when no cloud v2
-					// project exists for that id; setup → v2Project.get → NOT_FOUND in
-					// that case. Fall through to create a fresh v2 project.
+					// project exists for that id; setup → v2Project.get → NOT_FOUND.
+					// Only that case is safe to fall through to create — every other
+					// error (network, auth, 5xx) must propagate or repeated retries
+					// would silently mint duplicate cloud projects for the same repo.
+					const code = (err as { data?: { code?: string } } | null | undefined)
+						?.data?.code;
+					if (code !== "NOT_FOUND") {
+						throw err;
+					}
 					console.warn(
-						"[ensureV2Project] setup failed, falling through to create",
+						"[ensureV2Project] no v2 project for candidate id, falling through to create",
 						err,
 					);
 				}

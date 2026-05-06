@@ -114,8 +114,15 @@ function OnboardingProvidersPage() {
 	const showBothCompact = !inAnyStep;
 	const showClaude = showBothCompact || effectiveProvider === "claude";
 	const showCodex = showBothCompact || effectiveProvider === "codex";
+	// Only show the switcher when neither provider is connected. After auto-
+	// switch flips activeProvider to the unconnected one, offering "Set up X
+	// instead" for the already-connected one is misleading — clicking it just
+	// drops the user into the connected-with-Reconfigure panel.
 	const showSwitcher =
-		!showBothCompact && !reconfiguringClaude && !reconfiguringCodex;
+		!claudeConnected &&
+		!codexConnected &&
+		!reconfiguringClaude &&
+		!reconfiguringCodex;
 	const otherLabel = effectiveProvider === "claude" ? "Codex" : "Claude Code";
 
 	return (
