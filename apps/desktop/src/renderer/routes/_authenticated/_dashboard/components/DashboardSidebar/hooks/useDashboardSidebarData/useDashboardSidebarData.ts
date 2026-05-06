@@ -243,6 +243,7 @@ export function useDashboardSidebarData() {
 					branch: workspaces.branch,
 					createdAt: workspaces.createdAt,
 					updatedAt: workspaces.updatedAt,
+					synced: workspaces.$synced,
 					tabOrder: sidebarWorkspaces.sidebarState.tabOrder,
 					sectionId: sidebarWorkspaces.sidebarState.sectionId,
 					isHidden: sidebarWorkspaces.sidebarState.isHidden,
@@ -304,10 +305,16 @@ export function useDashboardSidebarData() {
 				creationStatus:
 					workspace.synced === false ? ("creating" as const) : undefined,
 			}));
+		// Pinned rows (those with v2WorkspaceLocalState) keep showing the
+		// creating spinner until Electric confirms `$synced`. The detail page
+		// reads `$synced` directly off the row, so without this the sidebar
+		// would clear its spinner the moment local state was inserted in
+		// `onInsert`, while the detail page would still show
+		// `WorkspaceCreatingState` until the shape stream caught up.
 		const sidebarWithSyncMeta = sidebarWorkspaces.map((workspace) => ({
 			...workspace,
-			synced: true,
-			creationStatus: undefined,
+			creationStatus:
+				workspace.synced === false ? ("creating" as const) : undefined,
 		}));
 
 		return [...autoIncluded, ...sidebarWithSyncMeta];

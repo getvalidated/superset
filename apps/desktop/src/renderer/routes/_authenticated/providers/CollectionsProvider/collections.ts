@@ -429,50 +429,59 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				}
 
 				// Mirror the post-create paneLayout setup that used to live in the
-				// renderer dispatch. Runs only on real success — alreadyExists with
-				// matching id (idempotent retry) reuses the existing layout, fresh
-				// create appends terminals/agent panes.
-				const existing = v2WorkspaceLocalState.get(result.workspace.id);
-				const paneLayout = appendLaunchesToPaneLayout({
-					existing: existing?.paneLayout as
-						| WorkspaceState<PaneViewerData>
-						| undefined,
-					terminals: result.terminals,
-					agents: result.agents,
-				});
-				if (existing) {
-					v2WorkspaceLocalState.update(result.workspace.id, (draft) => {
-						draft.paneLayout = paneLayout;
+				// renderer dispatch. Local-state writes are best-effort — the
+				// remote create has already succeeded, so a localStorage failure
+				// must NOT throw back to Electric (which would roll the row back
+				// even though the host wrote it). The next ensureWorkspaceInSidebar
+				// call (e.g. detail-page mount) will resync local state.
+				try {
+					const existing = v2WorkspaceLocalState.get(result.workspace.id);
+					const paneLayout = appendLaunchesToPaneLayout({
+						existing: existing?.paneLayout as
+							| WorkspaceState<PaneViewerData>
+							| undefined,
+						terminals: result.terminals,
+						agents: result.agents,
 					});
-				} else {
-					// Prepend so the new workspace lands at the top of its project
-					// lane regardless of where existing tabOrders sit. Compute from
-					// the same project's visible top-level workspace rows.
-					const projectTabOrders = Array.from(
-						v2WorkspaceLocalState.state.values(),
-					)
-						.filter(
-							(row) =>
-								row.sidebarState.projectId === result.workspace.projectId &&
-								row.sidebarState.sectionId === null &&
-								isSidebarWorkspaceVisible(row),
+					if (existing) {
+						v2WorkspaceLocalState.update(result.workspace.id, (draft) => {
+							draft.paneLayout = paneLayout;
+						});
+					} else {
+						// Prepend so the new workspace lands at the top of its project
+						// lane regardless of where existing tabOrders sit. Compute from
+						// the same project's visible top-level workspace rows.
+						const projectTabOrders = Array.from(
+							v2WorkspaceLocalState.state.values(),
 						)
-						.map((row) => ({ tabOrder: row.sidebarState.tabOrder }));
-					v2WorkspaceLocalState.insert({
-						workspaceId: result.workspace.id,
-						createdAt: new Date(),
-						sidebarState: {
-							projectId: result.workspace.projectId,
-							tabOrder: getPrependTabOrder(projectTabOrders),
-							sectionId: null,
-							changesFilter: { kind: "all" },
-							activeTab: "changes",
-							isHidden: false,
-						},
-						paneLayout,
-						viewedFiles: [],
-						recentlyViewedFiles: [],
-					});
+							.filter(
+								(row) =>
+									row.sidebarState.projectId === result.workspace.projectId &&
+									row.sidebarState.sectionId === null &&
+									isSidebarWorkspaceVisible(row),
+							)
+							.map((row) => ({ tabOrder: row.sidebarState.tabOrder }));
+						v2WorkspaceLocalState.insert({
+							workspaceId: result.workspace.id,
+							createdAt: new Date(),
+							sidebarState: {
+								projectId: result.workspace.projectId,
+								tabOrder: getPrependTabOrder(projectTabOrders),
+								sectionId: null,
+								changesFilter: { kind: "all" },
+								activeTab: "changes",
+								isHidden: false,
+							},
+							paneLayout,
+							viewedFiles: [],
+							recentlyViewedFiles: [],
+						});
+					}
+				} catch (err) {
+					console.warn(
+						"[v2Workspaces.onInsert] local sidebar state write failed; remote create succeeded",
+						{ workspaceId: result.workspace.id, err },
+					);
 				}
 
 				return result.txid !== undefined ? { txid: result.txid } : undefined;
