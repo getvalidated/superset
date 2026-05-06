@@ -4,11 +4,14 @@ import { Spinner } from "@superset/ui/spinner";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GoGitBranch } from "react-icons/go";
+import { useEnsureV2Project } from "renderer/hooks/useEnsureV2Project";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { track } from "renderer/lib/analytics";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useImportExternalWorktrees } from "renderer/react-query/workspaces/useImportExternalWorktrees";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { STEP_ROUTES, useOnboardingStore } from "renderer/stores/onboarding";
+import { useWorkspaceCreates } from "renderer/stores/workspace-creates";
 import { SetupButton } from "../components/SetupButton";
 import { StepHeader, StepShell } from "../components/StepShell";
 import {
@@ -48,30 +51,40 @@ function OnboardingAdoptWorktreesPage() {
 	}, [goTo]);
 
 	const navigateAfterFlow = useCallback(
-		async (replace: boolean) => {
+		async (replace: boolean, importedV2WorkspaceId?: string) => {
+			if (isV2CloudEnabled) {
+				if (importedV2WorkspaceId) {
+					navigate({
+						to: "/v2-workspace/$workspaceId",
+						params: { workspaceId: importedV2WorkspaceId },
+						replace,
+					});
+					return;
+				}
+				const project = projects?.[0];
+				if (project) {
+					navigate({
+						to: "/project/$projectId",
+						params: { projectId: project.id },
+						replace,
+					});
+					return;
+				}
+				navigate({ to: "/welcome", replace });
+				return;
+			}
 			try {
 				const grouped = await utils.workspaces.getAllGrouped.fetch();
 				const allWorkspaces = grouped.flatMap((g) => g.workspaces);
 				const lastViewedId = localStorage.getItem("lastViewedWorkspaceId");
-				const candidates = isV2CloudEnabled
-					? allWorkspaces.filter((w) => w.type === "worktree")
-					: allWorkspaces;
 				const target =
-					candidates.find((w) => w.id === lastViewedId) ?? candidates[0];
+					allWorkspaces.find((w) => w.id === lastViewedId) ?? allWorkspaces[0];
 				if (target) {
-					if (isV2CloudEnabled) {
-						navigate({
-							to: "/v2-workspace/$workspaceId",
-							params: { workspaceId: target.id },
-							replace,
-						});
-					} else {
-						navigate({
-							to: "/workspace/$workspaceId",
-							params: { workspaceId: target.id },
-							replace,
-						});
-					}
+					navigate({
+						to: "/workspace/$workspaceId",
+						params: { workspaceId: target.id },
+						replace,
+					});
 					return;
 				}
 			} catch {
@@ -91,16 +104,19 @@ function OnboardingAdoptWorktreesPage() {
 		[utils, isV2CloudEnabled, navigate, projects],
 	);
 
-	const finishFlow = useCallback(() => {
-		const startedAt = useOnboardingStore.getState().startedAt;
-		track("onboarding_finished", {
-			outcome: "completed",
-			duration_ms: startedAt ? Date.now() - startedAt : null,
-		});
-		markComplete("adopt-worktrees");
-		setManualWalkthrough(false);
-		void navigateAfterFlow(true);
-	}, [markComplete, setManualWalkthrough, navigateAfterFlow]);
+	const finishFlow = useCallback(
+		(importedV2WorkspaceId?: string) => {
+			const startedAt = useOnboardingStore.getState().startedAt;
+			track("onboarding_finished", {
+				outcome: "completed",
+				duration_ms: startedAt ? Date.now() - startedAt : null,
+			});
+			markComplete("adopt-worktrees");
+			setManualWalkthrough(false);
+			void navigateAfterFlow(true, importedV2WorkspaceId);
+		},
+		[markComplete, setManualWalkthrough, navigateAfterFlow],
+	);
 
 	const skipFlow = useCallback(() => {
 		const startedAt = useOnboardingStore.getState().startedAt;
@@ -127,7 +143,11 @@ function OnboardingAdoptWorktreesPage() {
 
 	return (
 		<AdoptWorktreesContent
-			projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+			projects={projects.map((p) => ({
+				id: p.id,
+				name: p.name,
+				mainRepoPath: p.mainRepoPath,
+			}))}
 			onSkip={skipFlow}
 			onFinish={finishFlow}
 			manualWalkthrough={manualWalkthrough}
@@ -152,9 +172,9 @@ interface ProjectResult {
 }
 
 interface AdoptWorktreesContentProps {
-	projects: { id: string; name: string }[];
+	projects: { id: string; name: string; mainRepoPath: string }[];
 	onSkip: () => void;
-	onFinish: () => void;
+	onFinish: (importedV2WorkspaceId?: string) => void;
 	manualWalkthrough: boolean;
 }
 
@@ -165,8 +185,13 @@ function AdoptWorktreesContent({
 	manualWalkthrough,
 }: AdoptWorktreesContentProps) {
 	const importExternalWorktrees = useImportExternalWorktrees();
+	const isV2CloudEnabled = useIsV2CloudEnabled();
+	const { submit } = useWorkspaceCreates();
+	const { machineId } = useLocalHostService();
+	const ensureV2Project = useEnsureV2Project();
 	const [results, setResults] = useState<Record<string, ProjectResult>>({});
 	const [selected, setSelected] = useState<SelectionState>({});
+	const [isV2Importing, setIsV2Importing] = useState(false);
 
 	const allLoaded = projects.every((p) => results[p.id]?.loaded);
 	const total = useMemo(
@@ -221,29 +246,85 @@ function AdoptWorktreesContent({
 
 	const handleImportSelected = async () => {
 		let totalImported = 0;
-		for (const project of projects) {
-			const paths = Array.from(selected[project.id] ?? []);
-			if (paths.length === 0) continue;
+		let firstImportedV2Id: string | undefined;
+
+		if (isV2CloudEnabled) {
+			if (!machineId) {
+				toast.error("No active host");
+				return;
+			}
+			setIsV2Importing(true);
 			try {
-				const result = await importExternalWorktrees.mutateAsync({
-					projectId: project.id,
-					paths,
-				});
-				totalImported += result.imported;
-			} catch (err) {
-				toast.error(
-					err instanceof Error
-						? err.message
-						: `Failed to import worktrees for ${project.name}`,
-				);
+				for (const project of projects) {
+					const paths = Array.from(selected[project.id] ?? []);
+					if (paths.length === 0) continue;
+					const projectResult = results[project.id];
+					if (!projectResult) continue;
+
+					let v2ProjectId: string;
+					try {
+						v2ProjectId = await ensureV2Project({
+							repoPath: project.mainRepoPath,
+							name: project.name,
+						});
+					} catch (err) {
+						toast.error(
+							err instanceof Error
+								? `Could not link "${project.name}" to v2: ${err.message}`
+								: `Could not link "${project.name}" to v2`,
+						);
+						continue;
+					}
+
+					for (const path of paths) {
+						const wt = projectResult.worktrees.find((w) => w.path === path);
+						if (!wt) continue;
+						const result = await submit({
+							hostId: machineId,
+							snapshot: {
+								id: crypto.randomUUID(),
+								projectId: v2ProjectId,
+								name: wt.branch,
+								branch: wt.branch,
+							},
+						});
+						if (result.ok) {
+							totalImported++;
+							firstImportedV2Id = firstImportedV2Id ?? result.workspaceId;
+						} else {
+							toast.error(`Failed to import ${wt.branch}: ${result.error}`);
+						}
+					}
+				}
+			} finally {
+				setIsV2Importing(false);
+			}
+		} else {
+			for (const project of projects) {
+				const paths = Array.from(selected[project.id] ?? []);
+				if (paths.length === 0) continue;
+				try {
+					const result = await importExternalWorktrees.mutateAsync({
+						projectId: project.id,
+						paths,
+					});
+					totalImported += result.imported;
+				} catch (err) {
+					toast.error(
+						err instanceof Error
+							? err.message
+							: `Failed to import worktrees for ${project.name}`,
+					);
+				}
 			}
 		}
+
 		if (totalImported > 0) {
 			toast.success(
 				`Imported ${totalImported} workspace${totalImported === 1 ? "" : "s"}`,
 			);
 		}
-		onFinish();
+		onFinish(firstImportedV2Id);
 	};
 
 	const nothingToAdopt = allLoaded && total === 0;
@@ -282,7 +363,7 @@ function AdoptWorktreesContent({
 			<div className="flex w-[273px] flex-col gap-2 self-center">
 				{nothingToAdopt ? (
 					<>
-						<SetupButton onClick={onFinish}>Continue</SetupButton>
+						<SetupButton onClick={() => onFinish()}>Continue</SetupButton>
 						<SetupButton variant="link" onClick={onSkip}>
 							Skip for now
 						</SetupButton>
@@ -294,10 +375,11 @@ function AdoptWorktreesContent({
 							disabled={
 								!allLoaded ||
 								totalSelected === 0 ||
-								importExternalWorktrees.isPending
+								importExternalWorktrees.isPending ||
+								isV2Importing
 							}
 						>
-							{importExternalWorktrees.isPending
+							{importExternalWorktrees.isPending || isV2Importing
 								? "Importing…"
 								: totalSelected === 0
 									? "Select worktrees"
@@ -306,7 +388,7 @@ function AdoptWorktreesContent({
 						<SetupButton
 							variant="link"
 							onClick={onSkip}
-							disabled={importExternalWorktrees.isPending}
+							disabled={importExternalWorktrees.isPending || isV2Importing}
 						>
 							Skip for now
 						</SetupButton>

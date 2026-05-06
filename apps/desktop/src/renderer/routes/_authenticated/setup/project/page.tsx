@@ -12,8 +12,9 @@ import {
 import { toast } from "@superset/ui/sonner";
 import { Spinner } from "@superset/ui/spinner";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LuFolder, LuX } from "react-icons/lu";
+import { useEnsureV2Project } from "renderer/hooks/useEnsureV2Project";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useOpenProject } from "renderer/react-query/projects/useOpenProject";
@@ -40,6 +41,8 @@ function OnboardingProjectPage() {
 	const { openNew, isPending: isOpenPending } = useOpenProject();
 	const utils = electronTrpc.useUtils();
 	const isV2CloudEnabled = useIsV2CloudEnabled();
+	const ensureV2Project = useEnsureV2Project();
+	const [isContinuing, setIsContinuing] = useState(false);
 	const closeProject = electronTrpc.projects.close.useMutation({
 		onSuccess: async () => {
 			await utils.projects.getRecents.invalidate();
@@ -102,14 +105,53 @@ function OnboardingProjectPage() {
 	const handleSelectNewRepo = async () => {
 		const created = await openNew();
 		const project = created[0];
-		if (project) {
-			markComplete("project");
-			setManualWalkthrough(false);
-			await openProjectInWorkspace(project.id);
+		if (!project) return;
+
+		let navigateProjectId = project.id;
+		if (isV2CloudEnabled) {
+			try {
+				navigateProjectId = await ensureV2Project({
+					repoPath: project.mainRepoPath,
+					name: project.name,
+				});
+				await utils.projects.getRecents.invalidate();
+			} catch (err) {
+				toast.error(
+					err instanceof Error
+						? `Could not link to v2: ${err.message}`
+						: "Could not link project to v2",
+				);
+				return;
+			}
 		}
+
+		markComplete("project");
+		setManualWalkthrough(false);
+		await openProjectInWorkspace(navigateProjectId);
 	};
 
-	const handleContinueWithCurrent = () => {
+	const handleContinueWithCurrent = async () => {
+		if (isV2CloudEnabled && projects) {
+			setIsContinuing(true);
+			try {
+				for (const project of projects) {
+					await ensureV2Project({
+						repoPath: project.mainRepoPath,
+						name: project.name,
+					});
+				}
+				await utils.projects.getRecents.invalidate();
+			} catch (err) {
+				toast.error(
+					err instanceof Error
+						? `Could not link projects to v2: ${err.message}`
+						: "Could not link projects to v2",
+				);
+				setIsContinuing(false);
+				return;
+			}
+			setIsContinuing(false);
+		}
 		markComplete("project");
 		navigate({ to: STEP_ROUTES["adopt-worktrees"] });
 	};
@@ -201,23 +243,31 @@ function OnboardingProjectPage() {
 				</div>
 
 				<div className="flex w-[273px] flex-col gap-2 self-center">
-					<SetupButton onClick={handleContinueWithCurrent}>
-						Continue with current
+					<SetupButton
+						onClick={handleContinueWithCurrent}
+						disabled={isContinuing || isOpenPending}
+					>
+						{isContinuing ? "Linking…" : "Continue with current"}
 					</SetupButton>
 					<SetupButton
 						variant="secondary"
 						onClick={handleSelectNewRepo}
-						disabled={isOpenPending}
+						disabled={isOpenPending || isContinuing}
 					>
 						{isOpenPending ? "Opening…" : "Select new repo"}
 					</SetupButton>
 					<SetupButton
 						variant="secondary"
 						onClick={() => navigate({ to: "/new-project" })}
+						disabled={isContinuing}
 					>
 						Clone from GitHub
 					</SetupButton>
-					<SetupButton variant="link" onClick={handleSkipStep}>
+					<SetupButton
+						variant="link"
+						onClick={handleSkipStep}
+						disabled={isContinuing}
+					>
 						Skip for now
 					</SetupButton>
 				</div>

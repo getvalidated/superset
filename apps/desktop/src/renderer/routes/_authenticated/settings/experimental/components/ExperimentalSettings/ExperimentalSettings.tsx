@@ -59,11 +59,15 @@ export function ExperimentalSettings({
 	const { rerun, isRunning } = useMigrateV1DataToV2({ autoRun: false });
 	const setOptInV2 = useV2LocalOverrideStore((state) => state.setOptInV2);
 	const resetOnboarding = useOnboardingStore((state) => state.reset);
+	const setManualWalkthrough = useOnboardingStore(
+		(state) => state.setManualWalkthrough,
+	);
 	const lastRunAt = useLastMigrationRunAt();
 	const navigate = useNavigate();
 
 	function handleRestartOnboarding() {
 		resetOnboarding();
+		setManualWalkthrough(true);
 		void navigate({ to: STEP_ROUTES.providers });
 	}
 
