@@ -72,18 +72,25 @@ function OnboardingProjectPage() {
 	const projectCount = projects?.length ?? 0;
 	const hasProjects = projectCount > 0;
 
-	// After creating a new project, route to the project page in v2 — that's
-	// where the user creates their first proper worktree workspace (which sets
-	// up the v2 pane layout). The default "branch" workspace auto-created by
-	// openNew → ensureMainWorkspace has no pane layout, so navigating there
-	// renders an empty workspace surface. In v1, navigate to the existing
-	// branch workspace as before.
-	const openProjectInWorkspace = async (projectId: string) => {
+	// In v1, navigate to the project's existing branch workspace (which has a
+	// real layout). v2 users go straight to the just-created main workspace —
+	// `/project/$projectId` is the v1-only page, so v2 must not route through
+	// it from onboarding. Falls back to the v2 workspaces list when no main
+	// workspace id is available (e.g. ensure-v2 returned a linked project that
+	// the host couldn't construct a main workspace for).
+	const openProjectInWorkspace = async (
+		projectId: string,
+		v2MainWorkspaceId: string | null,
+	) => {
 		if (isV2CloudEnabled) {
-			navigate({
-				to: "/project/$projectId",
-				params: { projectId },
-			});
+			if (v2MainWorkspaceId) {
+				navigate({
+					to: "/v2-workspace/$workspaceId",
+					params: { workspaceId: v2MainWorkspaceId },
+				});
+				return;
+			}
+			navigate({ to: "/v2-workspaces" });
 			return;
 		}
 		try {
@@ -113,6 +120,7 @@ function OnboardingProjectPage() {
 		if (!project) return;
 
 		let navigateProjectId = project.id;
+		let v2MainWorkspaceId: string | null = null;
 		if (isV2CloudEnabled) {
 			try {
 				const result = await ensureV2Project({
@@ -125,6 +133,7 @@ function OnboardingProjectPage() {
 					mainWorkspaceId: result.mainWorkspaceId,
 				});
 				navigateProjectId = result.projectId;
+				v2MainWorkspaceId = result.mainWorkspaceId;
 				await utils.projects.getRecents.invalidate();
 			} catch (err) {
 				toast.error(
@@ -138,7 +147,7 @@ function OnboardingProjectPage() {
 
 		markComplete("project");
 		setManualWalkthrough(false);
-		await openProjectInWorkspace(navigateProjectId);
+		await openProjectInWorkspace(navigateProjectId, v2MainWorkspaceId);
 	};
 
 	const handleContinueWithCurrent = async () => {

@@ -63,16 +63,11 @@ function OnboardingAdoptWorktreesPage() {
 					});
 					return;
 				}
-				const project = projects?.[0];
-				if (project) {
-					navigate({
-						to: "/project/$projectId",
-						params: { projectId: project.id },
-						replace,
-					});
-					return;
-				}
-				navigate({ to: "/welcome", replace });
+				// `/project/$projectId` is the v1 dashboard page (with the v1
+				// create-workspace flow). v2 users should never land there from
+				// onboarding — send them to the v2 workspaces list instead so they
+				// can pick or create a workspace via the v2 surface.
+				navigate({ to: "/v2-workspaces", replace });
 				return;
 			}
 			try {
