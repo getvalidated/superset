@@ -349,7 +349,12 @@ function WorkspaceRow({
 					status: "error",
 					reason: message,
 				})
-				.catch(() => {});
+				.catch((auditErr) => {
+					console.warn(
+						"[v1-import] failed to record workspace adopt error in audit",
+						{ workspaceId: workspace.id, auditErr },
+					);
+				});
 			await trpcUtils.migration.listState.invalidate({ organizationId });
 		} finally {
 			setRunning(false);

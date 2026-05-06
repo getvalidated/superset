@@ -109,7 +109,11 @@ function PresetRow({
 				? (preset.name as AgentType)
 				: undefined;
 
-			const v2Id = crypto.randomUUID();
+			// Reuse the audit row's v2Id when present so a retry after a
+			// partial failure (insert succeeded, audit upsert failed) doesn't
+			// create a duplicate v2 preset row. Insert is upsert-by-id, so
+			// re-running with the same id is a no-op.
+			const v2Id = audit?.v2Id ?? crypto.randomUUID();
 			const row: V2TerminalPresetRow = {
 				id: v2Id,
 				name: linkedAgentId ? AGENT_LABELS[linkedAgentId] : preset.name,
@@ -149,7 +153,12 @@ function PresetRow({
 					status: "error",
 					reason: message,
 				})
-				.catch(() => {});
+				.catch((auditErr) => {
+					console.warn(
+						"[v1-import] failed to record preset import error in audit",
+						{ presetId: preset.id, auditErr },
+					);
+				});
 			await trpcUtils.migration.listState.invalidate({ organizationId });
 		} finally {
 			setRunning(false);

@@ -143,7 +143,9 @@ function expectedRemoteUrlFor(project: {
 	// repo path (which is `git rev-parse --show-toplevel`'s last segment
 	// for any clone) — more reliable than the project's display name,
 	// which users can rename.
-	const repoName = project.mainRepoPath.split("/").filter(Boolean).pop();
+	// Split on both separators so a Windows-style v1 path doesn't silently
+	// produce undefined and skip the matchesExpected hint.
+	const repoName = project.mainRepoPath.split(/[\\/]/).filter(Boolean).pop();
 	if (!repoName) return undefined;
 	return `https://github.com/${project.githubOwner}/${repoName}`;
 }
@@ -220,6 +222,16 @@ function ProjectRow({
 			const targetCandidate = linkToProjectId
 				? candidates.find((c) => c.id === linkToProjectId)
 				: candidates[0];
+
+			// Don't silently fall through to project.create when the user
+			// explicitly asked to link to a specific id — that would
+			// duplicate the v2 project. The candidate may have gone stale
+			// between picker render and click; tell the user to refresh.
+			if (linkToProjectId && !targetCandidate) {
+				throw new Error(
+					"Selected v2 project is no longer in the candidate list. Refresh and pick again.",
+				);
+			}
 
 			if (targetCandidate) {
 				try {
@@ -300,7 +312,12 @@ function ProjectRow({
 					status: "error",
 					reason: message,
 				})
-				.catch(() => {});
+				.catch((auditErr) => {
+					console.warn(
+						"[v1-import] failed to record project import error in audit",
+						{ projectId: project.id, auditErr },
+					);
+				});
 			await trpcUtils.migration.listState.invalidate({ organizationId });
 		} finally {
 			setRunning(false);

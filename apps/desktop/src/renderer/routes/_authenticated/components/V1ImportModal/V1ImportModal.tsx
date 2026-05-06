@@ -81,7 +81,7 @@ export function V1ImportModal() {
 					)}
 				>
 					{page === "welcome" && <WelcomePage />}
-					{page !== "welcome" && !activeHostUrl && (
+					{(page === "projects" || page === "workspaces") && !activeHostUrl && (
 						<div className="flex h-[454px] items-center justify-center bg-background px-6 text-center text-sm text-muted-foreground">
 							Host service is not ready yet. This window will populate as soon
 							as the local host service comes online.

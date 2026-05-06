@@ -1,5 +1,5 @@
 import { Button } from "@superset/ui/button";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { LuArrowRight, LuX } from "react-icons/lu";
 import { env } from "renderer/env.renderer";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
@@ -21,10 +21,6 @@ export function V1ImportBanner() {
 		if (typeof window === "undefined") return false;
 		return sessionStorage.getItem(DISMISS_SESSION_KEY) === "1";
 	});
-
-	useEffect(() => {
-		setDismissed(sessionStorage.getItem(DISMISS_SESSION_KEY) === "1");
-	}, []);
 
 	const projectsQuery = electronTrpc.migration.readV1Projects.useQuery(
 		undefined,

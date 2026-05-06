@@ -125,6 +125,10 @@ export const projectRouter = router({
 				repoCloneUrl: string | null;
 				source: "local-path" | "remote";
 				matchesExpected: boolean;
+				/** True when the cloud-URL loop returned this id, which means
+				 *  it's reachable in cloud — lets us skip the per-id v2Project.get
+				 *  staleness check. Internal; not part of the wire response. */
+				cloudConfirmed: boolean;
 				/** True when this v2 project is no longer reachable in cloud
 				 *  (e.g. deleted) but a stale row still lives in this device's
 				 *  local DB. Caller-side filter drops these. */
@@ -206,6 +210,7 @@ export const projectRouter = router({
 					repoCloneUrl: localProject.repoUrl ?? null,
 					source: "local-path",
 					matchesExpected: matches(localProject.repoUrl ?? null),
+					cloudConfirmed: false,
 					staleLocalLink: false,
 				});
 			}
@@ -224,10 +229,13 @@ export const projectRouter = router({
 						if (existing) {
 							// Already have it from local-DB lookup; the cloud
 							// confirms it's reachable, so keep `local-path`
-							// source but populate matchesExpected if needed.
+							// source but populate matchesExpected if needed
+							// and flip `cloudConfirmed` so we skip the post-
+							// loop staleness round-trip.
 							existing.matchesExpected =
 								existing.matchesExpected || matches(parsed.url);
 							existing.repoCloneUrl = existing.repoCloneUrl ?? parsed.url;
+							existing.cloudConfirmed = true;
 						} else {
 							byId.set(c.id, {
 								id: c.id,
@@ -235,6 +243,7 @@ export const projectRouter = router({
 								repoCloneUrl: parsed.url,
 								source: "remote",
 								matchesExpected: matches(parsed.url),
+								cloudConfirmed: true,
 								staleLocalLink: false,
 							});
 						}
@@ -252,22 +261,46 @@ export const projectRouter = router({
 
 			// Detect stale local-DB row: returned by the path lookup but
 			// cloud never confirmed it via any remote URL. Most likely the
-			// cloud project was deleted by another device or user.
+			// cloud project was deleted by another device or user. Skip
+			// when the cloud loop already saw this id (cloudConfirmed) —
+			// no need for a second round-trip.
 			if (localProject) {
 				const candidate = byId.get(localProject.id);
-				if (candidate && candidate.source === "local-path") {
+				if (
+					candidate &&
+					candidate.source === "local-path" &&
+					!candidate.cloudConfirmed
+				) {
 					try {
 						await ctx.api.v2Project.get.query({
 							organizationId: ctx.organizationId,
 							id: localProject.id,
 						});
-					} catch {
-						candidate.staleLocalLink = true;
+					} catch (err) {
+						// Only treat a confirmed not-found as stale. Transient
+						// network/auth/5xx errors should leave the local link
+						// intact and surface via cloudErrors instead, so we
+						// don't drop a probably-still-valid candidate on a
+						// blip.
+						const code =
+							typeof err === "object" && err !== null
+								? ((err as { data?: { code?: string } }).data?.code ?? null)
+								: null;
+						if (code === "NOT_FOUND") {
+							candidate.staleLocalLink = true;
+						} else {
+							cloudErrors.push({
+								url: `v2Project.get(${localProject.id})`,
+								message: err instanceof Error ? err.message : String(err),
+							});
+						}
 					}
 				}
 			}
 
-			// Sort: matchesExpected first, then alphabetic.
+			// Sort: matchesExpected first, then alphabetic. Strip the
+			// internal `cloudConfirmed` flag — it's a server-side
+			// optimization, not part of the wire contract.
 			const candidates = Array.from(byId.values())
 				.filter((c) => !c.staleLocalLink)
 				.sort((a, b) => {
@@ -275,7 +308,8 @@ export const projectRouter = router({
 						return a.matchesExpected ? -1 : 1;
 					}
 					return a.name.localeCompare(b.name);
-				});
+				})
+				.map(({ cloudConfirmed: _omit, ...rest }) => rest);
 
 			// Caller surfaces this when there are no candidates and at least
 			// one cloud query failed — so users see a clear "couldn't reach
