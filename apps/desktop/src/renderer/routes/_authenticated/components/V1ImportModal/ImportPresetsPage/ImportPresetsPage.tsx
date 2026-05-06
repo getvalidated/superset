@@ -29,6 +29,7 @@ export function ImportPresetsPage({ organizationId }: ImportPresetsPageProps) {
 	const auditQuery = electronTrpc.migration.listState.useQuery({
 		organizationId,
 	});
+	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	const isLoading = presetsQuery.isPending || auditQuery.isPending;
 	const presets = presetsQuery.data ?? [];
@@ -43,6 +44,15 @@ export function ImportPresetsPage({ organizationId }: ImportPresetsPageProps) {
 		});
 	}
 
+	const refresh = async () => {
+		setIsRefreshing(true);
+		try {
+			await Promise.all([presetsQuery.refetch(), auditQuery.refetch()]);
+		} finally {
+			setIsRefreshing(false);
+		}
+	};
+
 	return (
 		<ImportPageShell
 			title="Bring over your terminal presets"
@@ -50,6 +60,8 @@ export function ImportPresetsPage({ organizationId }: ImportPresetsPageProps) {
 			isLoading={isLoading}
 			itemCount={presets.length}
 			emptyMessage="No v1 terminal presets found."
+			onRefresh={refresh}
+			isRefreshing={isRefreshing}
 		>
 			{presets.map((preset, index) => (
 				<PresetRow

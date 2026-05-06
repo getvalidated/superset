@@ -1,7 +1,11 @@
 import { basename, resolve as resolvePath } from "node:path";
-import { parseGitHubRemote } from "@superset/shared/github-remote";
+import {
+	type ParsedGitHubRemote,
+	parseGitHubRemote,
+} from "@superset/shared/github-remote";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
+import simpleGit from "simple-git";
 import { z } from "zod";
 import { projects, workspaces } from "../../../db/schema";
 import { protectedProcedure, router } from "../../index";
@@ -12,6 +16,7 @@ import {
 	createFromTemplate,
 } from "./handlers";
 import { ensureMainWorkspace } from "./utils/ensure-main-workspace";
+import { getGitHubRemotes } from "./utils/git-remote";
 import { persistLocalProject } from "./utils/persist-project";
 import {
 	cloneRepoInto,
@@ -32,6 +37,18 @@ export const projectRouter = router({
 			})
 			.from(projects)
 			.all();
+	}),
+
+	/**
+	 * Asks cloud (not the local DB cache) for the live set of v2 projects in
+	 * this org. Used by the v1→v2 importer to detect stale audit-log rows
+	 * that point at projects another device or user has since deleted.
+	 */
+	cloudList: protectedProcedure.query(async ({ ctx }) => {
+		const rows = await ctx.api.v2Project.list.query({
+			organizationId: ctx.organizationId,
+		});
+		return rows.map((row) => ({ id: row.id, name: row.name }));
 	}),
 
 	get: protectedProcedure
@@ -67,30 +84,154 @@ export const projectRouter = router({
 		}),
 
 	findByPath: protectedProcedure
-		.input(z.object({ repoPath: z.string().min(1) }))
+		.input(
+			z.object({
+				repoPath: z.string().min(1),
+				/**
+				 * Optional hint from the caller (e.g. v1→v2 importer) about the
+				 * remote URL the caller *thinks* this project tracks. We cloud-
+				 * query this URL even if it's not currently among the local
+				 * repo's remotes, and tag the matching candidate as
+				 * `matchesExpected: true` so the UI can recommend it. Lets us
+				 * surface the right v2 project when local git remotes have
+				 * drifted (e.g. user cloned a fork as origin).
+				 */
+				expectedRemoteUrl: z.string().optional(),
+			}),
+		)
 		.query(async ({ ctx, input }) => {
+			// `resolveLocalRepo` validates the path is a git working tree and
+			// returns the canonical git root. We then re-read all remotes
+			// (rather than just origin/first) so callers see every cloud
+			// project that could plausibly match.
 			const resolved = await resolveLocalRepo(input.repoPath);
-			const localProject = ctx.db.query.projects
-				.findFirst({ where: eq(projects.repoPath, resolved.repoPath) })
-				.sync();
-			if (localProject) {
-				return {
-					candidates: [
-						{
-							id: localProject.id,
-							name: localProject.repoName ?? basename(resolved.repoPath),
-						},
-					],
-				};
+			const gitRoot = resolved.repoPath;
+			const allRemotes = await getGitHubRemotes(simpleGit(gitRoot));
+
+			const expectedParsed = input.expectedRemoteUrl
+				? parseGitHubRemote(input.expectedRemoteUrl)
+				: null;
+
+			// Build the set of GitHub URLs to ask cloud about: every parseable
+			// remote on this repo, plus the caller's expected URL if any.
+			const urlsToQuery = new Map<string, ParsedGitHubRemote>();
+			for (const parsed of allRemotes.values()) {
+				urlsToQuery.set(parsed.url.toLowerCase(), parsed);
+			}
+			if (expectedParsed) {
+				urlsToQuery.set(expectedParsed.url.toLowerCase(), expectedParsed);
 			}
 
-			const { parsed } = resolved;
-			if (!parsed) return { candidates: [] };
-			const { candidates } = await ctx.api.v2Project.findByGitHubRemote.query({
-				organizationId: ctx.organizationId,
-				repoCloneUrl: parsed.url,
-			});
-			return { candidates };
+			interface Candidate {
+				id: string;
+				name: string;
+				repoCloneUrl: string | null;
+				source: "local-path" | "remote";
+				matchesExpected: boolean;
+				/** True when this v2 project is no longer reachable in cloud
+				 *  (e.g. deleted) but a stale row still lives in this device's
+				 *  local DB. The UI should drop or visibly mark these. */
+				staleLocalLink: boolean;
+			}
+			const byId = new Map<string, Candidate>();
+
+			const expectedUrlLower = expectedParsed?.url.toLowerCase();
+			const matches = (cloneUrl: string | null) =>
+				!!expectedUrlLower &&
+				!!cloneUrl &&
+				cloneUrl.toLowerCase() === expectedUrlLower;
+
+			// Local-DB lookup by path. Don't short-circuit — we still want to
+			// surface other v2 projects in the org so the picker can offer
+			// alternatives when the local row is stale.
+			const localProject = ctx.db.query.projects
+				.findFirst({ where: eq(projects.repoPath, gitRoot) })
+				.sync();
+			if (localProject) {
+				byId.set(localProject.id, {
+					id: localProject.id,
+					name: localProject.repoName ?? basename(gitRoot),
+					repoCloneUrl: localProject.repoUrl ?? null,
+					source: "local-path",
+					matchesExpected: matches(localProject.repoUrl ?? null),
+					// Filled in below after we hear back from cloud.
+					staleLocalLink: false,
+				});
+			}
+
+			// Cloud lookup for every URL we know about.
+			const cloudErrors: { url: string; message: string }[] = [];
+			for (const parsed of urlsToQuery.values()) {
+				try {
+					const { candidates } =
+						await ctx.api.v2Project.findByGitHubRemote.query({
+							organizationId: ctx.organizationId,
+							repoCloneUrl: parsed.url,
+						});
+					for (const c of candidates) {
+						const existing = byId.get(c.id);
+						if (existing) {
+							// Already have it from local-DB lookup; the cloud
+							// confirms it's reachable, so keep `local-path`
+							// source but populate matchesExpected if needed.
+							existing.matchesExpected =
+								existing.matchesExpected || matches(parsed.url);
+							existing.repoCloneUrl = existing.repoCloneUrl ?? parsed.url;
+						} else {
+							byId.set(c.id, {
+								id: c.id,
+								name: c.name,
+								repoCloneUrl: parsed.url,
+								source: "remote",
+								matchesExpected: matches(parsed.url),
+								staleLocalLink: false,
+							});
+						}
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					cloudErrors.push({ url: parsed.url, message });
+					console.warn(
+						"[project.findByPath] cloud findByGitHubRemote failed for",
+						parsed.url,
+						err,
+					);
+				}
+			}
+
+			// Detect stale local-DB row: returned by the path lookup but cloud
+			// never confirmed it via any remote URL. Two ways this happens:
+			// (a) the cloud project was deleted; (b) the local row's tracked
+			// remote URL no longer matches any current remote on the repo.
+			if (localProject) {
+				const candidate = byId.get(localProject.id);
+				if (candidate && candidate.source === "local-path") {
+					try {
+						await ctx.api.v2Project.get.query({
+							organizationId: ctx.organizationId,
+							id: localProject.id,
+						});
+					} catch {
+						candidate.staleLocalLink = true;
+					}
+				}
+			}
+
+			// Sort: matchesExpected first, then alphabetic.
+			const candidates = Array.from(byId.values())
+				.filter((c) => !c.staleLocalLink)
+				.sort((a, b) => {
+					if (a.matchesExpected !== b.matchesExpected) {
+						return a.matchesExpected ? -1 : 1;
+					}
+					return a.name.localeCompare(b.name);
+				});
+
+			// Caller surfaces this when there are no candidates and at least
+			// one cloud query failed — so users see a clear "couldn't reach
+			// cloud" instead of a misleading "Import" (which would create a
+			// duplicate v2 project).
+			return { candidates, cloudErrors };
 		}),
 
 	create: protectedProcedure

@@ -1,15 +1,42 @@
 import { Button } from "@superset/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@superset/ui/dropdown-menu";
 import { Spinner } from "@superset/ui/spinner";
 import { cn } from "@superset/ui/utils";
 import type { ReactNode } from "react";
-import { LuCheck, LuTriangle } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuTriangle } from "react-icons/lu";
+
+export interface PickCandidate {
+	id: string;
+	name: string;
+	repoCloneUrl?: string | null;
+	matchesExpected?: boolean;
+}
 
 export type RowAction =
 	| { kind: "ready"; label: string; onClick: () => void; disabled?: boolean }
 	| { kind: "running" }
 	| { kind: "imported"; label?: string }
 	| { kind: "blocked"; reason: string }
-	| { kind: "error"; message: string; onRetry: () => void };
+	| { kind: "error"; message: string; onRetry: () => void }
+	| {
+			kind: "pick";
+			label: string;
+			candidates: ReadonlyArray<PickCandidate>;
+			onPick: (id: string) => void;
+	  }
+	| {
+			kind: "confirm";
+			message: string;
+			confirmLabel: string;
+			cancelLabel?: string;
+			onConfirm: () => void;
+			onCancel: () => void;
+	  };
 
 interface ImportRowProps {
 	icon?: ReactNode;
@@ -48,6 +75,11 @@ export function ImportRow({
 				{action.kind === "blocked" && (
 					<span className="truncate text-[11px] text-muted-foreground">
 						{action.reason}
+					</span>
+				)}
+				{action.kind === "confirm" && (
+					<span className="select-text cursor-text text-[11px] text-muted-foreground">
+						{action.message}
 					</span>
 				)}
 			</div>
@@ -107,6 +139,66 @@ function RowActionView({ action }: { action: RowAction }) {
 					<LuTriangle className="size-3 text-destructive" strokeWidth={2.5} />
 					Retry
 				</Button>
+			);
+		case "confirm":
+			return (
+				<div className="flex shrink-0 items-center gap-1.5">
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onClick={action.onCancel}
+					>
+						{action.cancelLabel ?? "Cancel"}
+					</Button>
+					<Button
+						type="button"
+						size="sm"
+						variant="default"
+						onClick={action.onConfirm}
+					>
+						{action.confirmLabel}
+					</Button>
+				</div>
+			);
+		case "pick":
+			return (
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							className="shrink-0 gap-1.5"
+						>
+							{action.label}
+							<LuChevronDown className="size-3" strokeWidth={2} />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="max-w-80">
+						{action.candidates.map((candidate) => (
+							<DropdownMenuItem
+								key={candidate.id}
+								onSelect={() => action.onPick(candidate.id)}
+								className="flex flex-col items-start gap-0.5"
+							>
+								<div className="flex w-full items-center gap-2">
+									<span className="truncate text-sm">{candidate.name}</span>
+									{candidate.matchesExpected && (
+										<span className="ml-auto shrink-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+											matches v1
+										</span>
+									)}
+								</div>
+								{candidate.repoCloneUrl && (
+									<span className="truncate font-mono text-[10px] text-muted-foreground">
+										{candidate.repoCloneUrl}
+									</span>
+								)}
+							</DropdownMenuItem>
+						))}
+					</DropdownMenuContent>
+				</DropdownMenu>
 			);
 	}
 }
