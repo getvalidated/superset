@@ -13,12 +13,6 @@ export function register(server: McpServer): void {
 			name: z.string().min(1).optional().describe("New workspace name."),
 		},
 		handler: async (input, ctx) => {
-			const { id: _id, ...fields } = input;
-			if (Object.keys(fields).length === 0) {
-				throw new Error(
-					"No fields to update. Pass at least one field such as --name.",
-				);
-			}
 			const caller = createMcpCaller(ctx);
 			return caller.v2Workspace.update(input);
 		},
