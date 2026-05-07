@@ -156,7 +156,7 @@ type TerminalServerMessage =
 	| { type: "exit"; exitCode: number; signal: number }
 	| { type: "title"; title: string | null };
 
-const MAX_BUFFER_BYTES = 256 * 1024;
+const MAX_BUFFER_BYTES = 64 * 1024;
 
 /**
  * How long an exited (naturally or via killSession) terminal lingers in the
@@ -705,24 +705,16 @@ export async function createTerminalSessionInternal({
 	replayOnAdoption = true,
 }: CreateTerminalSessionOptions): Promise<TerminalSession | { error: string }> {
 	const existing = sessions.get(terminalId);
-	let resurrected: {
-		buffer: Uint8Array[];
-		bufferBytes: number;
-		title: string | null;
-	} | null = null;
+	let resurrectedTitle: string | null = null;
 	if (existing) {
 		if (existing.exited) {
 			// Resurrect: the previous shell is dead but we kept the entry around
-			// for the dropdown. Capture the bits worth carrying over to the
-			// fresh shell — buffered output (so the user sees what the dead
-			// shell printed before it died) and the title (so the dropdown
-			// label doesn't snap back to "Terminal"). The new shell's title
-			// scanner overrides this once OSC sequences arrive.
-			resurrected = {
-				buffer: existing.buffer,
-				bufferBytes: existing.bufferBytes,
-				title: existing.title,
-			};
+			// for the dropdown. Carry the title forward so the dropdown label
+			// doesn't snap back to "Terminal"; the new shell's OSC scanner
+			// overrides this once it broadcasts a title. Don't carry buffered
+			// output — replaying TUI/escape state into a fresh xterm corrupts
+			// the new session (queries get re-issued and echoed at the prompt).
+			resurrectedTitle = existing.title;
 			clearKilledRetention(terminalId);
 			sessions.delete(terminalId);
 		} else {
@@ -877,14 +869,14 @@ export async function createTerminalSessionInternal({
 		pty,
 		unsubscribeDaemon: null,
 		sockets: new Set(),
-		buffer: resurrected?.buffer ?? [],
-		bufferBytes: resurrected?.bufferBytes ?? 0,
+		buffer: [],
+		bufferBytes: 0,
 		createdAt,
 		exited: false,
 		exitCode: 0,
 		exitSignal: 0,
 		listed,
-		title: resurrected?.title ?? null,
+		title: resurrectedTitle,
 		titleScanState: createTerminalTitleScanState(),
 		shellReadyState: shellSupportsReady
 			? "pending"
@@ -948,13 +940,9 @@ export async function createTerminalSessionInternal({
 				);
 				if (hintText.length > 0) portManager.checkOutputForHint(hintText);
 
-				// Always buffer — the ring is bounded and acts as scrollback for
-				// kill→resurrect (it'd be empty here on attached sessions if we
-				// only buffered on detach, leaving nothing to carry over).
-				// Renderer reconnects pass `?replay=0` to suppress server-side
-				// replay; see attachSocketToSession.
-				bufferOutput(session, bytes);
-				broadcastBytes(session, bytes);
+				if (broadcastBytes(session, bytes) === 0) {
+					bufferOutput(session, bytes);
+				}
 			},
 			onExit({ code, signal }) {
 				session.exited = true;
@@ -1084,11 +1072,7 @@ export function registerWorkspaceTerminalRoute({
 					.run();
 
 				sendMessage(ws, { type: "title", title: session.title });
-				// Skip replay when the renderer says it already has the recent
-				// bytes (its xterm scrollback is intact across the WS reconnect).
-				// Without this, always-buffer would double-render on every blip.
-				const skipReplay = c.req.query("replay") === "0";
-				if (!skipReplay) replayBuffer(session, ws);
+				replayBuffer(session, ws);
 				if (session.exited) {
 					sendMessage(ws, {
 						type: "exit",

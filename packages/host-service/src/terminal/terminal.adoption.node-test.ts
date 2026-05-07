@@ -531,14 +531,11 @@ describe("createTerminalSessionInternal — host-service restart adoption", () =
 		const firstPid = "error" in first ? -1 : first.pty.pid;
 		if ("error" in first) return;
 
-		// Seed buffered output and a title so we can assert they carry across
-		// the kill→resurrect boundary.
-		first.pty.write("echo before-kill\n");
-		await waitForOutput(first.pty, "before-kill", 3000);
+		// Seed a title so we can assert it carries across the kill→resurrect
+		// boundary. Scrollback is intentionally NOT carried — replaying TUI
+		// state into a fresh xterm corrupts the new session.
 		const seededTitle = "carry-me-across-kill";
 		first.title = seededTitle;
-		const seededBufferBytes = first.bufferBytes;
-		assert.ok(seededBufferBytes > 0, "expected buffered output before kill");
 
 		markSessionKilled(terminalId, db);
 
@@ -583,10 +580,6 @@ describe("createTerminalSessionInternal — host-service restart adoption", () =
 			second.title,
 			seededTitle,
 			"resurrected session should inherit the killed session's title",
-		);
-		assert.ok(
-			second.bufferBytes >= seededBufferBytes,
-			`resurrected session should inherit buffered output (got ${second.bufferBytes}b, expected >= ${seededBufferBytes}b)`,
 		);
 
 		const afterResurrect = listTerminalSessions({ workspaceId });
