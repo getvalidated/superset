@@ -59,9 +59,9 @@ export class Workspaces extends APIResource {
 	}
 
 	/**
-	 * Update fields on a workspace (cloud-index metadata). Currently only the
-	 * `name` is exposed — git branch and host moves require host-side
-	 * orchestration and aren't safe to set through the cloud directly.
+	 * Update fields on a workspace. At least one field is required. Currently
+	 * only `name` is exposed — branch and host moves require host-side
+	 * orchestration and aren't safe to set directly.
 	 *
 	 * Mirrors `superset workspaces update`.
 	 */
