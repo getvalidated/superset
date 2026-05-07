@@ -17,7 +17,14 @@ export function useDiffStats(workspaceId: string): DiffStats | null {
 	const utils = workspaceTrpc.useUtils();
 	const { data: status } = workspaceTrpc.git.getStatus.useQuery(
 		{ workspaceId },
-		{ enabled: Boolean(workspaceId) },
+		{
+			enabled: Boolean(workspaceId),
+			// Match the pre-RQ behavior: only update on `git:changed`, never
+			// on focus. Multiple sidebar tiles each have their own query key,
+			// so focus refetch would re-fan out the very work this hook is
+			// supposed to consolidate.
+			refetchOnWindowFocus: false,
+		},
 	);
 
 	const invalidate = useCallback(() => {
