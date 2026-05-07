@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { chatSessionLink, terminalLink } from "@superset/shared/deep-links";
 import { z } from "zod";
 import { createMcpCaller } from "../../caller";
 import { defineTool } from "../../define-tool";
@@ -38,7 +39,7 @@ export function register(server: McpServer): void {
 				throw new Error(`Workspace not found: ${input.workspaceId}`);
 			}
 
-			return hostServiceCall<
+			const result = await hostServiceCall<
 				| { kind: "terminal"; sessionId: string; label: string }
 				| { kind: "chat"; sessionId: string; label: string }
 			>(
@@ -57,6 +58,13 @@ export function register(server: McpServer): void {
 					attachmentIds: input.attachmentIds,
 				},
 			);
+
+			const link =
+				result.kind === "chat"
+					? chatSessionLink(input.workspaceId, result.sessionId)
+					: terminalLink(input.workspaceId, result.sessionId);
+
+			return { ...result, link };
 		},
 	});
 }

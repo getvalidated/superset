@@ -1,4 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+	chatSessionLink,
+	terminalLink,
+	workspaceLink,
+} from "@superset/shared/deep-links";
 import { z } from "zod";
 import { defineTool } from "../../define-tool";
 import { hostServiceCall } from "../../host-service-client";
@@ -65,7 +70,12 @@ export function register(server: McpServer): void {
 				),
 		},
 		handler: async (input, ctx) => {
-			return hostServiceCall<{
+			type AgentResult =
+				| { ok: true; kind: "terminal"; sessionId: string; label: string }
+				| { ok: true; kind: "chat"; sessionId: string; label: string }
+				| { ok: false; error: string };
+
+			const result = await hostServiceCall<{
 				workspace: {
 					id: string;
 					projectId: string;
@@ -73,11 +83,7 @@ export function register(server: McpServer): void {
 					branch: string;
 				};
 				terminals: Array<{ terminalId: string; label?: string }>;
-				agents: Array<
-					| { ok: true; kind: "terminal"; sessionId: string; label: string }
-					| { ok: true; kind: "chat"; sessionId: string; label: string }
-					| { ok: false; error: string }
-				>;
+				agents: AgentResult[];
 				alreadyExists: boolean;
 			}>(
 				{
@@ -98,6 +104,28 @@ export function register(server: McpServer): void {
 					agents: input.agents,
 				},
 			);
+
+			const wsId = result.workspace.id;
+			const links = {
+				workspace: workspaceLink(wsId),
+				terminals: result.terminals.map((t) => ({
+					terminalId: t.terminalId,
+					label: t.label,
+					link: terminalLink(wsId, t.terminalId),
+				})),
+				chat: result.agents
+					.filter(
+						(a): a is Extract<AgentResult, { ok: true; kind: "chat" }> =>
+							a.ok === true && a.kind === "chat",
+					)
+					.map((a) => ({
+						sessionId: a.sessionId,
+						label: a.label,
+						link: chatSessionLink(wsId, a.sessionId),
+					}))[0],
+			};
+
+			return { ...result, links };
 		},
 	});
 }

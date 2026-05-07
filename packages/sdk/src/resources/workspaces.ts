@@ -95,6 +95,12 @@ export class Workspaces extends APIResource {
 	}
 }
 
+/** A pair of desktop (`superset://…`) and web (`https://app.superset.sh/…`) URLs. */
+export interface DeepLink {
+	desktop: string;
+	web: string;
+}
+
 /** Cloud-index workspace row (from the API). */
 export interface Workspace {
 	id: string;
@@ -177,6 +183,12 @@ export interface WorkspaceCreateResult {
 	terminals: Array<{ terminalId: string; label?: string }>;
 	agents: WorkspaceCreateAgentResult[];
 	alreadyExists: boolean;
+	/** Deep links added by the CLI/SDK layer (not returned by the host service). */
+	links?: {
+		workspace: DeepLink;
+		terminals: Array<{ terminalId: string; label?: string; link: DeepLink }>;
+		chat?: { sessionId: string; label: string; link: DeepLink };
+	};
 }
 
 export interface WorkspaceDeleteResult {
@@ -185,6 +197,7 @@ export interface WorkspaceDeleteResult {
 
 export declare namespace Workspaces {
 	export type {
+		DeepLink,
 		Workspace,
 		HostWorkspace,
 		WorkspaceListResponse,

@@ -55,6 +55,7 @@ export {
 	type TaskListResponse,
 	Tasks,
 	type TaskUpdateParams,
+	type DeepLink,
 	type Workspace,
 	type WorkspaceAgentLaunch,
 	type WorkspaceCreateAgentResult,

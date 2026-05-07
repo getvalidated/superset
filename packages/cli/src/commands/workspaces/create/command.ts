@@ -1,5 +1,11 @@
 import { boolean, CLIError, number, string } from "@superset/cli-framework";
+import {
+	chatSessionLink,
+	terminalLink,
+	workspaceLink,
+} from "@superset/shared/deep-links";
 import { command } from "../../../lib/command";
+import { env } from "../../../lib/env";
 import { requireHostTarget, resolveHostTarget } from "../../../lib/host-target";
 import { uploadAttachments } from "../../../lib/upload-attachments";
 
@@ -94,11 +100,34 @@ export default command({
 			agents,
 		});
 
+		const linkOpts = { webBaseUrl: env.SUPERSET_WEB_URL };
+		const wsId = result.workspace.id;
+
+		const links = {
+			workspace: workspaceLink(wsId, linkOpts),
+			terminals: result.terminals.map((t) => ({
+				terminalId: t.terminalId,
+				label: t.label,
+				link: terminalLink(wsId, t.terminalId, linkOpts),
+			})),
+			chat: result.agents
+				.filter(
+					(a): a is Extract<typeof a, { ok: true; kind: "chat" }> =>
+						a.ok === true && a.kind === "chat",
+				)
+				.map((a) => ({
+					sessionId: a.sessionId,
+					label: a.label,
+					link: chatSessionLink(wsId, a.sessionId, linkOpts),
+				}))[0],
+		};
+
+		const verb = result.alreadyExists ? "Reused existing" : "Created";
+		const summary = `${verb} workspace "${result.workspace.name}" on host ${target.hostId}`;
+
 		return {
-			data: result,
-			message: result.alreadyExists
-				? `Reused existing workspace "${result.workspace.name}" on host ${target.hostId}`
-				: `Created workspace "${result.workspace.name}" on host ${target.hostId}`,
+			data: { ...result, links },
+			message: `${summary}\n  Open: ${links.workspace.desktop}`,
 		};
 	},
 });

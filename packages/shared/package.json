@@ -8,6 +8,10 @@
 			"types": "./src/constants.ts",
 			"default": "./src/constants.ts"
 		},
+		"./deep-links": {
+			"types": "./src/deep-links.ts",
+			"default": "./src/deep-links.ts"
+		},
 		"./names": {
 			"types": "./src/names/index.ts",
 			"default": "./src/names/index.ts"

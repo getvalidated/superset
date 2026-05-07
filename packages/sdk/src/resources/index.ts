@@ -7,6 +7,7 @@ export {
 	type HostAgentConfig,
 	type PromptTransport,
 } from "./agents";
+export { type DeepLink } from "./workspaces";
 export {
 	type AgentConfig,
 	type Automation,

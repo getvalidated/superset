@@ -111,12 +111,19 @@ interface HostLookup {
 	hostId: string;
 }
 
+/** A pair of desktop (`superset://…`) and web (`https://app.superset.sh/…`) URLs. */
+export interface DeepLink {
+	desktop: string;
+	web: string;
+}
+
 export type AgentRunResult =
-	| { kind: "terminal"; sessionId: string; label: string }
-	| { kind: "chat"; sessionId: string; label: string };
+	| { kind: "terminal"; sessionId: string; label: string; link?: DeepLink }
+	| { kind: "chat"; sessionId: string; label: string; link?: DeepLink };
 
 export declare namespace Agents {
 	export type {
+		DeepLink,
 		HostAgentConfig,
 		AgentListResponse,
 		AgentListParams,

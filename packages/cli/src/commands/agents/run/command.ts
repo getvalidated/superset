@@ -1,5 +1,7 @@
 import { CLIError, string } from "@superset/cli-framework";
+import { chatSessionLink, terminalLink } from "@superset/shared/deep-links";
 import { command } from "../../../lib/command";
+import { env } from "../../../lib/env";
 import { resolveHostTarget } from "../../../lib/host-target";
 import { uploadAttachments } from "../../../lib/upload-attachments";
 
@@ -54,13 +56,19 @@ export default command({
 			attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
 		});
 
+		const linkOpts = { webBaseUrl: env.SUPERSET_WEB_URL };
+		const link =
+			result.kind === "chat"
+				? chatSessionLink(options.workspace, result.sessionId, linkOpts)
+				: terminalLink(options.workspace, result.sessionId, linkOpts);
+
 		const sessionDescriptor =
 			result.kind === "chat"
 				? `chat session ${result.sessionId}`
 				: `terminal ${result.sessionId}`;
 		return {
-			data: result,
-			message: `Launched ${result.label} (${sessionDescriptor}) in workspace ${options.workspace}`,
+			data: { ...result, link },
+			message: `Launched ${result.label} (${sessionDescriptor}) in workspace ${options.workspace}\n  Open: ${link.desktop}`,
 		};
 	},
 });
