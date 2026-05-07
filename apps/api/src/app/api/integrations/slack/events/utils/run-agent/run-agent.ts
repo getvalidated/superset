@@ -553,11 +553,7 @@ export async function runSlackAgent(
 	let useV2 = false;
 	try {
 		useV2 = Boolean(
-			await posthog.getFeatureFlag(
-				FEATURE_FLAGS.SLACK_MCP_V2,
-				params.organizationId,
-				{ groups: { organization: params.organizationId } },
-			),
+			await posthog.getFeatureFlag(FEATURE_FLAGS.SLACK_MCP_V2, params.userId),
 		);
 	} catch (error) {
 		console.warn("[slack-agent] Failed to load mcp-v2 flag:", error);

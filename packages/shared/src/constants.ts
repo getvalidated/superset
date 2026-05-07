@@ -80,8 +80,9 @@ export const FEATURE_FLAGS = {
 	AUTOMATIONS_ACCESS: "automations-access",
 	/**
 	 * Routes the Slack agent to the v2 MCP server (`@superset/mcp-v2`)
-	 * instead of v1 (`@superset/mcp`). Evaluated per-organization so a
-	 * Slack workspace flips wholesale rather than per-user. Off → v1.
+	 * instead of v1 (`@superset/mcp`). Evaluated against the linking
+	 * user's id (the Superset user behind the Slack mention) so it
+	 * piggybacks on the existing All Access cohort. Off → v1.
 	 */
 	SLACK_MCP_V2: "slack-mcp-v2",
 } as const;
