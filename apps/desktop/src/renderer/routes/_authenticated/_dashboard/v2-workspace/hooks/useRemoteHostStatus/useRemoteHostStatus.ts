@@ -88,14 +88,7 @@ export function useRemoteHostStatus(
 	}
 
 	const hostVersion = infoQuery.data.version;
-	// `includePrerelease` keeps dev/staging builds (e.g. 0.9.0-dev.1) from
-	// being rejected by `>=0.8.0` — by default, semver excludes prereleases
-	// from range comparisons unless the range itself names one.
-	if (
-		!semver.satisfies(hostVersion, `>=${MIN_HOST_SERVICE_VERSION}`, {
-			includePrerelease: true,
-		})
-	) {
+	if (!semver.satisfies(hostVersion, `>=${MIN_HOST_SERVICE_VERSION}`)) {
 		return {
 			status: "incompatible",
 			hostName: hostRow.name,
