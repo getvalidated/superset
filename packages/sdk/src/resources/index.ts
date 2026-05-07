@@ -21,6 +21,17 @@ export {
 	type AutomationUpdateParams,
 } from "./automations";
 export { type Host, type HostListResponse, Hosts } from "./hosts";
+export {
+	type Member,
+	type MemberAddParams,
+	type MemberListParams,
+	type MemberListResponse,
+	type MemberRemoveParams,
+	type MemberRemoveResult,
+	Members,
+	Organization,
+	type OrganizationRole,
+} from "./organization";
 export { type Project, type ProjectListResponse, Projects } from "./projects";
 export {
 	type Task,
@@ -29,6 +40,9 @@ export {
 	type TaskListParams,
 	type TaskListResponse,
 	Tasks,
+	type TaskStatus,
+	type TaskStatusListResponse,
+	TaskStatuses,
 	type TaskUpdateParams,
 } from "./tasks";
 export {
