@@ -20,7 +20,7 @@ Real PTY state stays in the daemon across the swap.
 
 Replace the floor check with an equality check against the host-service bundled into this Electron build. Reuse the existing kill+respawn path.
 
-1. Inject `BUNDLED_HOST_SERVICE_VERSION` into the desktop main bundle at build time (read `packages/host-service/package.json` version), mirroring the `EXPECTED_DAEMON_VERSION` pattern at `packages/host-service/src/daemon/expected-version.ts`.
+1. Promote the host-service version to `HOST_SERVICE_VERSION` in `packages/shared/src/host-version.ts` as the single source of truth. Both `host.info` (runtime, returned to the desktop on adoption probe) and the desktop coordinator (compile-time import as `BUNDLED_HOST_SERVICE_VERSION`) read from this constant — so the value the desktop checks against is the same value the bundled host-service reports. Drift between this constant and `packages/host-service/package.json#version` is a manual concern; the auto-derive-from-package.json approach (mirroring `EXPECTED_DAEMON_VERSION` at `packages/host-service/src/daemon/expected-version.ts`) was deferred because host-service's package.json has historically lagged the runtime-reported version (`packages/host-service/src/trpc/router/host/host.ts` previously hardcoded "0.8.0" while `package.json` was still at "0.1.0"); reconciling that is its own change.
 2. In `apps/desktop/src/main/lib/host-service-coordinator.ts:289-308`, replace
    ```ts
    !semver.satisfies(version, `>=${MIN_HOST_SERVICE_VERSION}`)
@@ -29,7 +29,7 @@ Replace the floor check with an equality check against the host-service bundled 
    ```ts
    version !== BUNDLED_HOST_SERVICE_VERSION
    ```
-   The Electron build is the source of truth for which host-service runs against it. Any drift — older or newer — gets killed and respawned from the bundled binary. This keeps the cloud/desktop deploy contract tight (only one host-service version is ever live alongside a given desktop) and avoids the "hand-rolled newer daemon sticks around indefinitely" failure mode.
+   The Electron build is the source of truth for which host-service runs against it. Any drift — older or newer — gets killed and respawned from the bundled binary. This keeps the cloud/desktop deploy contract tight (only one host-service version is ever live alongside a given desktop) and avoids the "hand-rolled newer host-service sticks around indefinitely" failure mode.
 3. Keep `MIN_HOST_SERVICE_VERSION` only for the renderer-side **remote** host gate at `apps/desktop/src/renderer/routes/_authenticated/_dashboard/v2-workspace/hooks/useRemoteHostStatus/useRemoteHostStatus.ts:91`. We can't kill remote hosts — a floor is still the right shape there.
 
 Everything else is unchanged: `detached: true` spawn, manifest re-adoption on next start, crash circuit breaker, daemon lifecycle.
