@@ -3,6 +3,7 @@ import { Input } from "@superset/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@superset/ui/tabs";
 import { cn } from "@superset/ui/utils";
 import { useRef, useState } from "react";
+import { GoGitPullRequest, GoIssueOpened } from "react-icons/go";
 import {
 	HiOutlineMagnifyingGlass,
 	HiOutlinePencilSquare,
@@ -12,13 +13,14 @@ import {
 } from "react-icons/hi2";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { useHotkey } from "renderer/hotkeys";
-import type { ViewMode } from "../../../../stores/tasks-filter-state";
+import type { TypeTab, ViewMode } from "../../../../stores/tasks-filter-state";
 import type { TaskWithStatus } from "../../hooks/useTasksData";
 import { ActiveIcon } from "../shared/icons/ActiveIcon";
 import { AllIssuesIcon } from "../shared/icons/AllIssuesIcon";
 import { BacklogIcon } from "../shared/icons/BacklogIcon";
 import { AssigneeFilter } from "./components/AssigneeFilter";
 import { CreateTaskDialog } from "./components/CreateTaskDialog";
+import { ProjectFilter } from "./components/ProjectFilter";
 import { RunInWorkspacePopover } from "./components/RunInWorkspacePopover";
 import { RunInWorkspacePopoverV2 } from "./components/RunInWorkspacePopoverV2";
 
@@ -35,6 +37,10 @@ interface TasksTopBarProps {
 	onClearSelection?: () => void;
 	viewMode: ViewMode;
 	onViewModeChange: (mode: ViewMode) => void;
+	typeTab: TypeTab;
+	onTypeTabChange: (typeTab: TypeTab) => void;
+	projectFilter: string | null;
+	onProjectFilterChange: (projectId: string | null) => void;
 }
 
 const TABS = [
@@ -55,6 +61,13 @@ const TABS = [
 	},
 ] as const;
 
+const TYPE_TABS = [
+	{ value: "all" as const, label: "All", Icon: AllIssuesIcon },
+	{ value: "tasks" as const, label: "Tasks", Icon: ActiveIcon },
+	{ value: "prs" as const, label: "PRs", Icon: GoGitPullRequest },
+	{ value: "issues" as const, label: "Issues", Icon: GoIssueOpened },
+] as const;
+
 export function TasksTopBar({
 	currentTab,
 	onTabChange,
@@ -66,7 +79,12 @@ export function TasksTopBar({
 	onClearSelection,
 	viewMode,
 	onViewModeChange,
+	typeTab,
+	onTypeTabChange,
+	projectFilter,
+	onProjectFilterChange,
 }: TasksTopBarProps) {
+	const showTaskOnlyControls = typeTab === "all" || typeTab === "tasks";
 	const selectedCount = selectedTasks.length;
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -117,11 +135,11 @@ export function TasksTopBar({
 					) : (
 						<>
 							<Tabs
-								value={currentTab}
-								onValueChange={(value) => onTabChange(value as TabValue)}
+								value={typeTab}
+								onValueChange={(value) => onTypeTabChange(value as TypeTab)}
 							>
 								<TabsList className="h-8 bg-transparent p-0 gap-1">
-									{TABS.map((tab) => {
+									{TYPE_TABS.map((tab) => {
 										const Icon = tab.Icon;
 										return (
 											<TabsTrigger
@@ -139,61 +157,105 @@ export function TasksTopBar({
 
 							<div className="h-4 w-px bg-border" />
 
-							<AssigneeFilter
-								value={assigneeFilter}
-								onChange={onAssigneeFilterChange}
+							<ProjectFilter
+								value={projectFilter}
+								onChange={onProjectFilterChange}
 							/>
+
+							{showTaskOnlyControls && (
+								<>
+									<div className="h-4 w-px bg-border" />
+
+									<Tabs
+										value={currentTab}
+										onValueChange={(value) => onTabChange(value as TabValue)}
+									>
+										<TabsList className="h-8 bg-transparent p-0 gap-1">
+											{TABS.map((tab) => {
+												const Icon = tab.Icon;
+												return (
+													<TabsTrigger
+														key={tab.value}
+														value={tab.value}
+														className="h-8 rounded-md px-3 data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground"
+													>
+														<Icon className="h-3.5 w-3.5" />
+														<span className="text-sm">{tab.label}</span>
+													</TabsTrigger>
+												);
+											})}
+										</TabsList>
+									</Tabs>
+
+									<div className="h-4 w-px bg-border" />
+
+									<AssigneeFilter
+										value={assigneeFilter}
+										onChange={onAssigneeFilterChange}
+									/>
+								</>
+							)}
 						</>
 					)}
 				</div>
 
 				{/* Right side: create + view toggle + search */}
 				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-8 gap-1.5 px-3"
-						onClick={() => setIsCreateTaskOpen(true)}
-					>
-						<HiOutlinePencilSquare className="size-4" />
-						<span>New task</span>
-					</Button>
+					{showTaskOnlyControls && (
+						<>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-8 gap-1.5 px-3"
+								onClick={() => setIsCreateTaskOpen(true)}
+							>
+								<HiOutlinePencilSquare className="size-4" />
+								<span>New task</span>
+							</Button>
 
-					<div className="flex items-center rounded-md border bg-muted/30 p-0.5">
-						<button
-							type="button"
-							title="Table view"
-							className={cn(
-								"flex items-center justify-center size-6 rounded-sm transition-colors",
-								viewMode === "table"
-									? "bg-background shadow-sm text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-							onClick={() => onViewModeChange("table")}
-						>
-							<HiOutlineQueueList className="size-3.5" />
-						</button>
-						<button
-							type="button"
-							title="Board view"
-							className={cn(
-								"flex items-center justify-center size-6 rounded-sm transition-colors",
-								viewMode === "board"
-									? "bg-background shadow-sm text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-							onClick={() => onViewModeChange("board")}
-						>
-							<HiOutlineViewColumns className="size-3.5" />
-						</button>
-					</div>
+							<div className="flex items-center rounded-md border bg-muted/30 p-0.5">
+								<button
+									type="button"
+									title="Table view"
+									className={cn(
+										"flex items-center justify-center size-6 rounded-sm transition-colors",
+										viewMode === "table"
+											? "bg-background shadow-sm text-foreground"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+									onClick={() => onViewModeChange("table")}
+								>
+									<HiOutlineQueueList className="size-3.5" />
+								</button>
+								<button
+									type="button"
+									title="Board view"
+									className={cn(
+										"flex items-center justify-center size-6 rounded-sm transition-colors",
+										viewMode === "board"
+											? "bg-background shadow-sm text-foreground"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+									onClick={() => onViewModeChange("board")}
+								>
+									<HiOutlineViewColumns className="size-3.5" />
+								</button>
+							</div>
+						</>
+					)}
 
 					<div className="relative w-64">
 						<HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
 						<Input
 							ref={searchInputRef}
 							type="text"
-							placeholder="Search tasks..."
+							placeholder={
+								typeTab === "prs"
+									? "Search pull requests..."
+									: typeTab === "issues"
+										? "Search issues..."
+										: "Search tasks..."
+							}
 							value={searchQuery}
 							onChange={(e) => onSearchChange(e.target.value)}
 							onKeyDown={(e) => {
