@@ -67,15 +67,14 @@ export default command({
 		}
 
 		const url = `superset://v2-workspace/${id}`;
-		const printOnly = options.print ?? !process.stdout.isTTY;
 
-		if (!printOnly) {
+		if (!options.print) {
 			openUrl(url);
 		}
 
 		return {
 			data: { id, name, url },
-			message: printOnly ? url : `Opening "${name}" in Superset desktop`,
+			message: options.print ? url : `Opening "${name}" in Superset desktop`,
 		};
 	},
 });
