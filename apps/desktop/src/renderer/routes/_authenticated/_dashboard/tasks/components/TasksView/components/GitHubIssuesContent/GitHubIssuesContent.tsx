@@ -1,6 +1,7 @@
 import { Button } from "@superset/ui/button";
 import { Checkbox } from "@superset/ui/checkbox";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GoIssueClosed, GoIssueOpened } from "react-icons/go";
 import { HiOutlineArrowTopRightOnSquare } from "react-icons/hi2";
@@ -31,6 +32,7 @@ export function GitHubIssuesContent({
 	const showClosedId = useId();
 	const debouncedQuery = useDebouncedValue(searchQuery, 300);
 	const hostUrl = useHostUrl(null);
+	const navigate = useNavigate();
 	const updateDraft = useNewWorkspaceDraftStore((s) => s.updateDraft);
 	const resetDraft = useNewWorkspaceDraftStore((s) => s.resetDraft);
 	const openModal = useOpenNewWorkspaceModal();
@@ -124,6 +126,15 @@ export function GitHubIssuesContent({
 		window.open(url, "_blank", "noopener,noreferrer");
 	};
 
+	const handleOpenPreview = (issueNumber: number) => {
+		if (!projectFilter) return;
+		navigate({
+			to: "/tasks/issue/$issueNumber",
+			params: { issueNumber: String(issueNumber) },
+			search: { project: projectFilter },
+		});
+	};
+
 	if (!projectFilter) {
 		return (
 			<div className="flex h-full items-center justify-center p-8">
@@ -210,11 +221,11 @@ export function GitHubIssuesContent({
 								<div
 									key={issue.issueNumber}
 									className="group flex items-center gap-3 px-4 h-9 cursor-pointer border-b border-border/50 hover:bg-accent/50"
-									onClick={() => handleOpenUrl(issue.url)}
+									onClick={() => handleOpenPreview(issue.issueNumber)}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" || e.key === " ") {
 											e.preventDefault();
-											handleOpenUrl(issue.url);
+											handleOpenPreview(issue.issueNumber);
 										}
 									}}
 									role="button"

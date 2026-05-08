@@ -1,6 +1,7 @@
 import { Button } from "@superset/ui/button";
 import { Checkbox } from "@superset/ui/checkbox";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GoGitPullRequest } from "react-icons/go";
 import { HiOutlineArrowTopRightOnSquare } from "react-icons/hi2";
@@ -43,6 +44,7 @@ export function PullRequestsContent({
 	const showClosedId = useId();
 	const debouncedQuery = useDebouncedValue(searchQuery, 300);
 	const hostUrl = useHostUrl(null);
+	const navigate = useNavigate();
 	const updateDraft = useNewWorkspaceDraftStore((s) => s.updateDraft);
 	const resetDraft = useNewWorkspaceDraftStore((s) => s.resetDraft);
 	const openModal = useOpenNewWorkspaceModal();
@@ -129,6 +131,15 @@ export function PullRequestsContent({
 
 	const handleOpenUrl = (url: string) => {
 		window.open(url, "_blank", "noopener,noreferrer");
+	};
+
+	const handleOpenPreview = (prNumber: number) => {
+		if (!projectFilter) return;
+		navigate({
+			to: "/tasks/pr/$prNumber",
+			params: { prNumber: String(prNumber) },
+			search: { project: projectFilter },
+		});
 	};
 
 	if (!projectFilter) {
@@ -220,11 +231,11 @@ export function PullRequestsContent({
 								<div
 									key={pr.prNumber}
 									className="group flex items-center gap-3 px-4 h-9 cursor-pointer border-b border-border/50 hover:bg-accent/50"
-									onClick={() => handleOpenUrl(pr.url)}
+									onClick={() => handleOpenPreview(pr.prNumber)}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" || e.key === " ") {
 											e.preventDefault();
-											handleOpenUrl(pr.url);
+											handleOpenPreview(pr.prNumber);
 										}
 									}}
 									role="button"
