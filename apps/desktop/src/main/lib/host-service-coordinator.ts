@@ -3,9 +3,6 @@ import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import path from "node:path";
-import hostServicePackageJson from "@superset/host-service/package.json" with {
-	type: "json",
-};
 import { settings } from "@superset/local-db";
 import { getHostId, getHostName } from "@superset/shared/host-info";
 import { app } from "electron";
@@ -30,10 +27,6 @@ import {
 } from "./host-service-utils";
 import { localDb } from "./local-db";
 import { HOOK_PROTOCOL_VERSION } from "./terminal/env";
-
-// Bundled at compile time — kept in lockstep with what `host.info` reports
-// because both sides read the same package.json.
-const BUNDLED_HOST_SERVICE_VERSION: string = hostServicePackageJson.version;
 
 export type HostServiceStatus = "starting" | "running" | "stopped";
 
@@ -306,24 +299,6 @@ export class HostServiceCoordinator extends EventEmitter {
 			return null;
 		}
 
-		const version = await this.fetchHostVersion(
-			manifest.endpoint,
-			manifest.authToken,
-		);
-		if (!version || version !== BUNDLED_HOST_SERVICE_VERSION) {
-			const reason = version
-				? `version ${version} != bundled ${BUNDLED_HOST_SERVICE_VERSION}`
-				: "version unknown";
-			console.log(
-				`[host-service:${organizationId}] Adopted service ${reason}, killing`,
-			);
-			try {
-				process.kill(manifest.pid, "SIGTERM");
-			} catch {}
-			removeManifest(organizationId);
-			return null;
-		}
-
 		this.instances.set(organizationId, {
 			pid: manifest.pid,
 			port,
@@ -337,27 +312,6 @@ export class HostServiceCoordinator extends EventEmitter {
 		);
 		this.emitStatus(organizationId, "running", null);
 		return { port, secret: manifest.authToken, machineId: this.machineId };
-	}
-
-	private async fetchHostVersion(
-		endpoint: string,
-		secret: string,
-	): Promise<string | null> {
-		try {
-			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), 3_000);
-			const response = await fetch(`${endpoint}/trpc/host.info`, {
-				signal: controller.signal,
-				headers: { Authorization: `Bearer ${secret}` },
-			});
-			clearTimeout(timeout);
-			if (!response.ok) return null;
-			const data = await response.json();
-			const result = data?.result?.data;
-			return result?.json?.version ?? result?.version ?? null;
-		} catch {
-			return null;
-		}
 	}
 
 	private readAndValidateManifest(
