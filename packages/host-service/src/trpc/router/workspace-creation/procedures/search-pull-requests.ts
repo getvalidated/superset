@@ -174,7 +174,7 @@ export const searchPullRequests = protectedProcedure
 					pullRequests: [pr],
 					totalCount: 1,
 					hasNextPage: false,
-					page: 1,
+					page,
 				};
 			}
 			const result = await ghApiSearchPullRequests(
@@ -222,7 +222,7 @@ export const searchPullRequests = protectedProcedure
 					],
 					totalCount: 1,
 					hasNextPage: false,
-					page: 1,
+					page,
 				};
 			}
 

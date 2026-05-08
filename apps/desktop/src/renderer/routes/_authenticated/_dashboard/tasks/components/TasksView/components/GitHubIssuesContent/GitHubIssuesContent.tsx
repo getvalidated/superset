@@ -215,7 +215,7 @@ export function GitHubIssuesContent({
 				)}
 
 				{repoMismatch && (
-					<div className="px-4 py-3 text-sm text-muted-foreground">
+					<div className="px-4 py-3 text-sm text-muted-foreground select-text cursor-text">
 						Issue URL must match {repoMismatch}.
 					</div>
 				)}
@@ -238,6 +238,7 @@ export function GitHubIssuesContent({
 									className="group flex items-center gap-3 px-4 h-9 cursor-pointer border-b border-border/50 hover:bg-accent/50"
 									onClick={() => handleOpenPreview(issue.issueNumber)}
 									onKeyDown={(e) => {
+										if (e.target !== e.currentTarget) return;
 										if (e.key === "Enter" || e.key === " ") {
 											e.preventDefault();
 											handleOpenPreview(issue.issueNumber);

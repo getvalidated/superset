@@ -1,5 +1,8 @@
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { QueryClient } from "@tanstack/react-query";
+import {
+	defaultShouldDehydrateQuery,
+	QueryClient,
+} from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { del, get, set } from "idb-keyval";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -64,6 +67,7 @@ export function ElectronTRPCProvider({
 					buster: PERSIST_BUSTER,
 					dehydrateOptions: {
 						shouldDehydrateQuery: (query) => {
+							if (!defaultShouldDehydrateQuery(query)) return false;
 							const head = query.queryKey[0];
 							return typeof head === "string" && PERSIST_KEY_PREFIXES.has(head);
 						},

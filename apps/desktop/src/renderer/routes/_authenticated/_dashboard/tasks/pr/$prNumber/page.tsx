@@ -9,9 +9,10 @@ import { MarkdownRenderer } from "renderer/components/MarkdownRenderer";
 import { useHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import {
+	normalizePRState,
 	PRIcon,
 	type PRState,
-} from "renderer/screens/main/components/PRIcon/PRIcon";
+} from "renderer/screens/main/components/PRIcon";
 import {
 	type LinkedPR,
 	useNewWorkspaceDraftStore,
@@ -24,14 +25,6 @@ export const Route = createFileRoute(
 )({
 	component: PullRequestDetailPage,
 });
-
-function resolveState(state: string, isDraft: boolean): PRState {
-	if (isDraft) return "draft";
-	const lower = state.toLowerCase();
-	if (lower === "merged") return "merged";
-	if (lower === "closed") return "closed";
-	return "open";
-}
 
 function PullRequestDetailPage() {
 	const { prNumber: prNumberRaw } = Route.useParams();
@@ -80,7 +73,7 @@ function PullRequestDetailPage() {
 			prNumber: data.number,
 			title: data.title,
 			url: data.url,
-			state: resolveState(data.state, data.isDraft),
+			state: normalizePRState(data.state, data.isDraft),
 		};
 		resetDraft();
 		updateDraft({ selectedProjectId: projectId, linkedPR });
@@ -120,7 +113,7 @@ function PullRequestDetailPage() {
 		);
 	}
 
-	const state = resolveState(data.state, data.isDraft);
+	const state = normalizePRState(data.state, data.isDraft);
 	const stateLabel = data.isDraft ? "Draft" : data.state;
 	const branchSummary = data.branch
 		? `${data.headRepositoryOwner && data.isCrossRepository ? `${data.headRepositoryOwner}:${data.branch}` : data.branch} → ${data.baseBranch}`

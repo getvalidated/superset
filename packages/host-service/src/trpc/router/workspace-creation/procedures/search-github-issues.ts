@@ -156,14 +156,14 @@ export const searchGitHubIssues = protectedProcedure
 						issues: [],
 						totalCount: 0,
 						hasNextPage: false,
-						page: 1,
+						page,
 					};
 				}
 				return {
 					issues: [issue],
 					totalCount: 1,
 					hasNextPage: false,
-					page: 1,
+					page,
 				};
 			}
 			const result = await ghApiSearchIssues(
@@ -202,7 +202,7 @@ export const searchGitHubIssues = protectedProcedure
 						issues: [],
 						totalCount: 0,
 						hasNextPage: false,
-						page: 1,
+						page,
 					};
 				}
 				return {
@@ -217,7 +217,7 @@ export const searchGitHubIssues = protectedProcedure
 					],
 					totalCount: 1,
 					hasNextPage: false,
-					page: 1,
+					page,
 				};
 			}
 

@@ -131,6 +131,7 @@ export function AssigneeFilter({ value, onChange }: AssigneeFilterProps) {
 					variant="ghost"
 					size="sm"
 					title={selectedUser?.name ?? "Assignee"}
+					aria-label={selectedUser?.name ?? "Assignee"}
 					className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
 				>
 					{selectedUser ? (

@@ -5,16 +5,17 @@ import { LuImageOff } from "react-icons/lu";
  *
  * ALLOWED:
  * - data: URLs (embedded base64 images)
- * - http(s):// URLs (GitHub user-attachments, avatars, etc.)
+ * - https:// URLs (GitHub user-attachments, avatars, etc.)
  *
  * BLOCKED (everything else):
+ * - http:// (cleartext / mixed-content)
  * - file:// URLs (arbitrary local file access)
  * - Absolute paths /... or \... (become file:// in Electron)
  * - Relative paths with .. (can escape repo boundary)
  * - UNC paths //server/share (Windows NTLM credential leak)
  * - Empty or malformed sources
  *
- * Trade-off: http(s) sources can phone home (tracking pixels). Acceptable
+ * Trade-off: https sources can phone home (tracking pixels). Acceptable
  * here because the markdown comes from trusted sources (GitHub PR/issue
  * bodies, user-authored task descriptions) where image embedding is part
  * of the expected UX.
@@ -26,7 +27,7 @@ function isSafeImageSrc(src: string | undefined): boolean {
 	const lower = trimmed.toLowerCase();
 
 	if (lower.startsWith("data:")) return true;
-	if (lower.startsWith("https://") || lower.startsWith("http://")) return true;
+	if (lower.startsWith("https://")) return true;
 	return false;
 }
 

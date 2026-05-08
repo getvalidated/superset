@@ -10,9 +10,9 @@ import { useHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
 import { useDebouncedValue } from "renderer/hooks/useDebouncedValue";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import {
+	normalizePRState,
 	PRIcon,
-	type PRState,
-} from "renderer/screens/main/components/PRIcon/PRIcon";
+} from "renderer/screens/main/components/PRIcon";
 import {
 	type LinkedPR,
 	useNewWorkspaceDraftStore,
@@ -26,14 +26,6 @@ interface PullRequestsContentProps {
 }
 
 const PAGE_SIZE = 30;
-
-function normalizeState(state: string, isDraft: boolean): PRState {
-	if (isDraft) return "draft";
-	const lower = state.toLowerCase();
-	if (lower === "merged") return "merged";
-	if (lower === "closed") return "closed";
-	return "open";
-}
 
 export function PullRequestsContent({
 	projectFilter,
@@ -126,7 +118,7 @@ export function PullRequestsContent({
 			prNumber: pr.prNumber,
 			title: pr.title,
 			url: pr.url,
-			state: normalizeState(pr.state, pr.isDraft),
+			state: normalizePRState(pr.state, pr.isDraft),
 		};
 		resetDraft();
 		updateDraft({ selectedProjectId: projectFilter, linkedPR });
@@ -224,7 +216,7 @@ export function PullRequestsContent({
 				)}
 
 				{repoMismatch && (
-					<div className="px-4 py-3 text-sm text-muted-foreground">
+					<div className="px-4 py-3 text-sm text-muted-foreground select-text cursor-text">
 						PR URL must match {repoMismatch}.
 					</div>
 				)}
@@ -240,7 +232,7 @@ export function PullRequestsContent({
 				) : (
 					<div className="flex flex-col">
 						{pullRequests.map((pr) => {
-							const state = normalizeState(pr.state, pr.isDraft);
+							const state = normalizePRState(pr.state, pr.isDraft);
 							return (
 								// biome-ignore lint/a11y/useSemanticElements: row contains nested action buttons, so the outer element is a div with role/tabIndex
 								<div
@@ -248,6 +240,7 @@ export function PullRequestsContent({
 									className="group flex items-center gap-3 px-4 h-9 cursor-pointer border-b border-border/50 hover:bg-accent/50"
 									onClick={() => handleOpenPreview(pr.prNumber)}
 									onKeyDown={(e) => {
+										if (e.target !== e.currentTarget) return;
 										if (e.key === "Enter" || e.key === " ") {
 											e.preventDefault();
 											handleOpenPreview(pr.prNumber);

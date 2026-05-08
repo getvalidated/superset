@@ -61,6 +61,7 @@ export function ProjectFilter({ value, onChange }: ProjectFilterProps) {
 					variant="ghost"
 					size="sm"
 					title={selected ? selected.name : "Project"}
+					aria-label={selected ? selected.name : "Project"}
 					className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
 				>
 					{selected ? (
