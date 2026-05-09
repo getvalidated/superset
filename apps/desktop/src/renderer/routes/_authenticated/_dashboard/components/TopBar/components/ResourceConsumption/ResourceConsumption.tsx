@@ -427,10 +427,7 @@ export function ResourceConsumption({
 								aria-label="Refresh metrics"
 							>
 								<HiOutlineArrowPath
-									className={cn(
-										"h-3.5 w-3.5",
-										isFetching && "animate-spin",
-									)}
+									className={cn("h-3.5 w-3.5", isFetching && "animate-spin")}
 								/>
 							</button>
 						</div>

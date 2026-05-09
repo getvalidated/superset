@@ -10,6 +10,7 @@ export function UsageSeverityBadge({ severity }: UsageSeverityBadgeProps) {
 
 	return (
 		<span
+			role="img"
 			aria-label={severity === "high" ? "High usage" : "Elevated usage"}
 			className={cn(
 				"h-1.5 w-1.5 shrink-0 rounded-full",

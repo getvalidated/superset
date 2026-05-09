@@ -167,10 +167,7 @@ export function WorkspaceResourceSection({
 		return (
 			<div
 				key={project.projectId}
-				className={cn(
-					"py-1",
-					projectIndex > 0 && "border-t border-border/40",
-				)}
+				className={cn("py-1", projectIndex > 0 && "border-t border-border/40")}
 			>
 				<button
 					type="button"
