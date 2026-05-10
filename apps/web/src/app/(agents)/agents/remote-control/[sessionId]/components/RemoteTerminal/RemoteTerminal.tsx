@@ -8,10 +8,47 @@ import {
 	type RemoteControlStatus,
 } from "@superset/shared/remote-control-protocol";
 import { FitAddon } from "@xterm/addon-fit";
+import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { trpcClient } from "../../../../../../../trpc/client";
+
+// Mirrors apps/desktop/src/shared/themes/built-in/ember.ts (id "dark")
+// so the browser viewer renders the same palette as the desktop default
+// terminal theme. Keep in sync if the desktop default changes.
+const DESKTOP_DARK_TERMINAL_THEME: ITheme = {
+	background: "#151110",
+	foreground: "#eae8e6",
+	cursor: "#e07850",
+	cursorAccent: "#151110",
+	selectionBackground: "rgba(224, 120, 80, 0.25)",
+	black: "#151110",
+	red: "#dc6b6b",
+	green: "#7ec699",
+	yellow: "#e5c07b",
+	blue: "#61afef",
+	magenta: "#c678dd",
+	cyan: "#56b6c2",
+	white: "#eae8e6",
+	brightBlack: "#5c5856",
+	brightRed: "#e88888",
+	brightGreen: "#98d1a8",
+	brightYellow: "#ecd08f",
+	brightBlue: "#7ec0f5",
+	brightMagenta: "#d494e6",
+	brightCyan: "#73c7d3",
+	brightWhite: "#ffffff",
+};
+
+// Mirrors apps/desktop/src/renderer/lib/terminal/appearance/index.ts
+// `DEFAULT_TERMINAL_FONT_FAMILIES` so we fall through the same Nerd Font
+// stack as the desktop and only land on `monospace` when nothing else
+// is installed.
+const DESKTOP_TERMINAL_FONT_FAMILY =
+	'"JetBrains Mono", "JetBrainsMono Nerd Font", "MesloLGM Nerd Font", "MesloLGM NF", "MesloLGS NF", "MesloLGS Nerd Font", "Hack Nerd Font", "FiraCode Nerd Font", "CaskaydiaCove Nerd Font", "Menlo", "Monaco", "Courier New", monospace';
+const DESKTOP_TERMINAL_FONT_SIZE = 14;
+const DESKTOP_TERMINAL_SCROLLBACK = 5000;
 
 interface RemoteTerminalProps {
 	sessionId: string;
@@ -115,14 +152,20 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 		if (!meta || meta.status !== "active") return;
 		if (!containerRef.current) return;
 
+		// `vtExtensions` (kittyKeyboard) and `scrollbar` are only present on
+		// the desktop's xterm beta build; the stable web release omits them.
+		// Everything else here mirrors createTerminal in
+		// apps/desktop/src/renderer/lib/terminal/terminal-runtime.ts.
 		const term = new Terminal({
 			cursorBlink: true,
-			fontFamily:
-				'"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
-			fontSize: 13,
-			scrollback: 5000,
-			theme: { background: "#0a0a0a", foreground: "#d4d4d4" },
+			cursorStyle: "block",
+			cursorInactiveStyle: "outline",
+			fontFamily: DESKTOP_TERMINAL_FONT_FAMILY,
+			fontSize: DESKTOP_TERMINAL_FONT_SIZE,
+			scrollback: DESKTOP_TERMINAL_SCROLLBACK,
+			theme: DESKTOP_DARK_TERMINAL_THEME,
 			allowProposedApi: true,
+			macOptionIsMeta: false,
 		});
 		const fit = new FitAddon();
 		term.loadAddon(fit);
@@ -275,12 +318,19 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 	const isFull = meta?.mode === "full" && state === "open";
 
 	return (
-		<div className="flex h-screen flex-col bg-black text-white">
-			<header className="flex items-center justify-between border-b border-white/10 bg-[#111] px-4 py-2 text-sm">
+		<div
+			className="flex h-screen flex-col font-sans"
+			style={{ backgroundColor: "#151110", color: "#eae8e6" }}
+		>
+			<header
+				className="flex items-center justify-between border-b px-4 py-2 text-sm"
+				style={{ backgroundColor: "#1a1716", borderColor: "#2a2827" }}
+			>
 				<div className="flex min-w-0 items-center gap-3">
 					<a
 						href="/agents"
-						className="text-muted-foreground hover:text-foreground"
+						className="hover:opacity-100"
+						style={{ color: "#a8a5a3" }}
 					>
 						← Back
 					</a>
@@ -288,23 +338,33 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 						{title ?? meta?.terminalId ?? "Remote terminal"}
 					</span>
 					<span
-						className={`rounded px-1.5 py-0.5 text-xs ${
+						className="rounded px-1.5 py-0.5 text-xs"
+						style={
 							state === "open"
-								? "bg-emerald-700/40 text-emerald-300"
+								? {
+										backgroundColor: "rgba(126, 198, 153, 0.18)",
+										color: "#98d1a8",
+									}
 								: state === "connecting" || state === "loading"
-									? "bg-amber-700/40 text-amber-300"
-									: "bg-red-700/40 text-red-300"
-						}`}
+									? {
+											backgroundColor: "rgba(229, 192, 123, 0.18)",
+											color: "#ecd08f",
+										}
+									: {
+											backgroundColor: "rgba(220, 107, 107, 0.18)",
+											color: "#e88888",
+										}
+						}
 					>
 						{state}
 					</span>
 					{meta && (
-						<span className="text-xs text-muted-foreground">
+						<span className="text-xs" style={{ color: "#a8a5a3" }}>
 							mode: {meta.mode}
 						</span>
 					)}
 					{viewerCount !== null && (
-						<span className="text-xs text-muted-foreground">
+						<span className="text-xs" style={{ color: "#a8a5a3" }}>
 							viewers: {viewerCount}
 						</span>
 					)}
@@ -313,53 +373,75 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 					<button
 						type="button"
 						onClick={() => void onCopyLink()}
-						className="rounded border border-white/15 px-2 py-1 text-xs hover:bg-white/10"
+						className="rounded border px-2 py-1 text-xs transition-colors"
+						style={{ borderColor: "#2a2827", color: "#eae8e6" }}
 					>
 						Copy link
 					</button>
 					<button
 						type="button"
 						onClick={() => void onStop()}
-						className="rounded border border-red-500/40 bg-red-700/20 px-2 py-1 text-xs text-red-300 hover:bg-red-700/30"
+						className="rounded border px-2 py-1 text-xs transition-colors"
+						style={{
+							borderColor: "rgba(220, 107, 107, 0.45)",
+							backgroundColor: "rgba(220, 107, 107, 0.12)",
+							color: "#e88888",
+						}}
 					>
 						Stop
 					</button>
 				</div>
 			</header>
 			{errorMsg && (
-				<div className="select-text cursor-text border-b border-red-500/30 bg-red-950/40 px-4 py-1 text-xs text-red-300">
+				<div
+					className="select-text cursor-text border-b px-4 py-1 text-xs"
+					style={{
+						backgroundColor: "rgba(220, 107, 107, 0.12)",
+						borderColor: "rgba(220, 107, 107, 0.35)",
+						color: "#e88888",
+					}}
+				>
 					{errorMsg}
 				</div>
 			)}
 			{state === "revoked" && (
-				<div className="select-text cursor-text bg-red-950/30 px-4 py-2 text-sm text-red-300">
+				<div
+					className="select-text cursor-text px-4 py-2 text-sm"
+					style={{
+						backgroundColor: "rgba(220, 107, 107, 0.12)",
+						color: "#e88888",
+					}}
+				>
 					This session was revoked.
 				</div>
 			)}
 			{state === "expired" && (
-				<div className="select-text cursor-text bg-amber-950/30 px-4 py-2 text-sm text-amber-300">
+				<div
+					className="select-text cursor-text px-4 py-2 text-sm"
+					style={{
+						backgroundColor: "rgba(229, 192, 123, 0.14)",
+						color: "#ecd08f",
+					}}
+				>
 					This session has expired. Ask the host to share a new link.
 				</div>
 			)}
-			<div className="relative flex-1 overflow-hidden">
+			<div
+				className="relative flex-1 overflow-hidden"
+				style={{ backgroundColor: "#151110" }}
+			>
 				<div ref={containerRef} className="absolute inset-0" />
 			</div>
-			{isFull && (
-				<MobileToolbar
-					onSend={sendInputBytes}
-					className="border-t border-white/10 bg-[#111] px-2 py-1 sm:hidden"
-				/>
-			)}
+			{isFull && <MobileToolbar onSend={sendInputBytes} />}
 		</div>
 	);
 }
 
 interface MobileToolbarProps {
 	onSend: (bytes: Uint8Array) => void;
-	className?: string;
 }
 
-function MobileToolbar({ onSend, className }: MobileToolbarProps) {
+function MobileToolbar({ onSend }: MobileToolbarProps) {
 	const send = (seq: string) => {
 		onSend(new TextEncoder().encode(seq));
 	};
@@ -374,14 +456,18 @@ function MobileToolbar({ onSend, className }: MobileToolbarProps) {
 		{ label: "→", seq: "\x1b[C" },
 	];
 	return (
-		<div className={className}>
+		<div
+			className="border-t px-2 py-1 sm:hidden"
+			style={{ borderColor: "#2a2827", backgroundColor: "#1a1716" }}
+		>
 			<div className="flex flex-wrap gap-1">
 				{buttons.map((b) => (
 					<button
 						key={b.label}
 						type="button"
 						onClick={() => send(b.seq)}
-						className="rounded border border-white/15 px-2 py-1 text-xs hover:bg-white/10"
+						className="rounded border px-2 py-1 text-xs"
+						style={{ borderColor: "#2a2827", color: "#eae8e6" }}
 					>
 						{b.label}
 					</button>

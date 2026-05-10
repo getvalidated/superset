@@ -17,12 +17,20 @@ export default async function RemoteControlPage({
 
 	if (!token) {
 		return (
-			<div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-12">
-				<h1 className="text-xl font-semibold">Remote control unavailable</h1>
-				<p className="select-text cursor-text text-sm text-muted-foreground">
-					This link is missing its access token. Open the share link from the
-					original message to view the terminal.
-				</p>
+			<div
+				className="flex h-screen items-center justify-center"
+				style={{ backgroundColor: "#151110", color: "#eae8e6" }}
+			>
+				<div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-12">
+					<h1 className="text-xl font-semibold">Remote control unavailable</h1>
+					<p
+						className="select-text cursor-text text-sm"
+						style={{ color: "#a8a5a3" }}
+					>
+						This link is missing its access token. Open the share link from the
+						original message to view the terminal.
+					</p>
+				</div>
 			</div>
 		);
 	}
