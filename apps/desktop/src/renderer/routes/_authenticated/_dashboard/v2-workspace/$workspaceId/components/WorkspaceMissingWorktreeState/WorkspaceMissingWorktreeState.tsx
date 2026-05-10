@@ -47,15 +47,17 @@ export function WorkspaceMissingWorktreeState({
 
 				{worktreePath ? (
 					<div className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5">
-						<span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+						<span className="shrink-0 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
 							Path
 						</span>
-						<code
-							className="select-text cursor-text min-w-0 truncate font-mono text-[11px] text-muted-foreground"
-							title={worktreePath}
-						>
-							{worktreePath}
-						</code>
+						<div className="min-w-0 flex-1 overflow-x-auto">
+							<code
+								className="inline-block min-w-max select-text cursor-text whitespace-nowrap font-mono text-[11px] text-muted-foreground"
+								title={worktreePath}
+							>
+								{worktreePath}
+							</code>
+						</div>
 					</div>
 				) : null}
 
