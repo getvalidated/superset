@@ -109,7 +109,10 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 		let cancelled = false;
 		(async () => {
 			try {
-				const result = await trpcClient.remoteControl.get.query({ sessionId });
+				const result = await trpcClient.remoteControl.get.query({
+					sessionId,
+					token,
+				});
 				if (cancelled) return;
 				if (result.status !== "active") {
 					setMeta({
@@ -142,7 +145,7 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [sessionId]);
+	}, [sessionId, token]);
 
 	useEffect(() => {
 		// Only run when we have a usable, active session. We deliberately do
@@ -246,8 +249,20 @@ export function RemoteTerminal({ sessionId, token }: RemoteTerminalProps) {
 			setErrorMsg("WebSocket connection failed");
 		};
 
+		// Show a one-time hint in `command` mode the first time the user
+		// types — otherwise keystrokes are silently dropped, with no local
+		// echo or feedback to explain why nothing happens.
+		let readOnlyHintShown = false;
 		const dataDispose = term.onData((data) => {
-			if (meta.mode !== "full") return;
+			if (meta.mode !== "full") {
+				if (!readOnlyHintShown) {
+					readOnlyHintShown = true;
+					term.write(
+						"\r\n\x1b[90m[view-only — host shared this terminal in command mode]\x1b[0m\r\n",
+					);
+				}
+				return;
+			}
 			const bytes = new TextEncoder().encode(data);
 			sendClientMessage({ type: "input", data: bytesToBase64(bytes) });
 		});

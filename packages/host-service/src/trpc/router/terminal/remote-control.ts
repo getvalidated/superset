@@ -1,3 +1,7 @@
+import {
+	REMOTE_CONTROL_MAX_TTL_SEC,
+	REMOTE_CONTROL_MIN_TTL_SEC,
+} from "@superset/shared/remote-control-protocol";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -15,7 +19,17 @@ const mintTokenInput = z.object({
 	workspaceId: z.string().uuid(),
 	mode: z.enum(["command", "full"]),
 	createdByUserId: z.string().uuid(),
-	ttlSec: z.number().int().positive().optional(),
+	// Host is the final HMAC authority — clamp the schema here too so a
+	// bug or compromised upstream caller cannot ask for a viewer credential
+	// that outlives the documented limit. `mintRemoteControlToken` ALSO
+	// clamps the value internally; this is a belt-and-braces guard at the
+	// API boundary.
+	ttlSec: z
+		.number()
+		.int()
+		.min(REMOTE_CONTROL_MIN_TTL_SEC)
+		.max(REMOTE_CONTROL_MAX_TTL_SEC)
+		.optional(),
 });
 
 const revokeInput = z.object({

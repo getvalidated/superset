@@ -8,7 +8,7 @@ import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { Radio } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 
 interface TerminalRemoteControlButtonProps {
@@ -18,18 +18,80 @@ interface TerminalRemoteControlButtonProps {
 
 interface ActiveSession {
 	sessionId: string;
-	webUrl: string;
+	// `webUrl` is only available right after `create` — the cloud only
+	// stores `token_hash`, so we cannot reconstruct the share URL when
+	// hydrating from `listForWorkspace`. `null` means "session is live but
+	// the original link isn't recoverable; user needs to stop + re-share".
+	webUrl: string | null;
 	expiresAt: string;
 }
 
-type Phase = "inactive" | "creating" | "active" | "revoking";
+type Phase = "inactive" | "loading" | "creating" | "active" | "revoking";
+const HYDRATE_REFRESH_MS = 30_000;
 
 export function TerminalRemoteControlButton({
 	workspaceId,
 	terminalId,
 }: TerminalRemoteControlButtonProps) {
-	const [phase, setPhase] = useState<Phase>("inactive");
+	const [phase, setPhase] = useState<Phase>("loading");
 	const [active, setActive] = useState<ActiveSession | null>(null);
+
+	const hydrate = useCallback(
+		async (signal?: AbortSignal): Promise<void> => {
+			try {
+				const rows = await apiTrpcClient.remoteControl.listForWorkspace.query({
+					workspaceId,
+				});
+				if (signal?.aborted) return;
+				const now = Date.now();
+				const live = rows.find(
+					(r) =>
+						r.terminalId === terminalId &&
+						r.status === "active" &&
+						new Date(r.expiresAt).getTime() > now,
+				);
+				if (live) {
+					setActive((prev) => ({
+						sessionId: live.sessionId,
+						// Preserve a previously-captured webUrl if we still have
+						// it for the same session (e.g., we minted it ourselves
+						// in this component lifetime).
+						webUrl:
+							prev && prev.sessionId === live.sessionId ? prev.webUrl : null,
+						expiresAt: live.expiresAt,
+					}));
+					setPhase((prev) =>
+						prev === "creating" || prev === "revoking" ? prev : "active",
+					);
+				} else {
+					setActive(null);
+					setPhase((prev) =>
+						prev === "creating" || prev === "revoking" ? prev : "inactive",
+					);
+				}
+			} catch {
+				// Silent — background refresh; the user still has the optimistic
+				// state from the last successful action.
+				if (!signal?.aborted) {
+					setPhase((prev) => (prev === "loading" ? "inactive" : prev));
+				}
+			}
+		},
+		[workspaceId, terminalId],
+	);
+
+	useEffect(() => {
+		const ac = new AbortController();
+		void hydrate(ac.signal);
+		const timer = setInterval(
+			() => void hydrate(ac.signal),
+			HYDRATE_REFRESH_MS,
+		);
+		return () => {
+			ac.abort();
+			clearInterval(timer);
+		};
+	}, [hydrate]);
 
 	async function copyLink(url: string) {
 		try {
@@ -83,6 +145,22 @@ export function TerminalRemoteControlButton({
 		}
 	}
 
+	if (phase === "loading") {
+		// Render the button but suppress the live badge until hydration
+		// completes — otherwise the badge flashes "off" on every remount even
+		// when a session is in fact still live.
+		return (
+			<button
+				type="button"
+				disabled
+				aria-label="Loading remote control state"
+				className="rounded p-1 text-muted-foreground opacity-50"
+			>
+				<Radio className="size-3.5" />
+			</button>
+		);
+	}
+
 	if (phase === "inactive" || phase === "creating") {
 		return (
 			<Tooltip>
@@ -111,6 +189,8 @@ export function TerminalRemoteControlButton({
 		);
 	}
 
+	const canCopy = Boolean(active?.webUrl);
+
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -133,9 +213,12 @@ export function TerminalRemoteControlButton({
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
 				<DropdownMenuItem
-					onClick={() => active && void copyLink(active.webUrl)}
+					onClick={() => {
+						if (active?.webUrl) void copyLink(active.webUrl);
+					}}
+					disabled={!canCopy}
 				>
-					Copy link
+					{canCopy ? "Copy link" : "Link only available right after sharing"}
 				</DropdownMenuItem>
 				<DropdownMenuItem
 					onClick={() => void stopShare()}

@@ -54,6 +54,12 @@ interface PtyDataDisposer {
 interface DaemonPty {
 	pid: number;
 	write(data: string): void;
+	/**
+	 * Raw-byte input that bypasses the string round-trip in `write`. Used by
+	 * the remote-control path so non-ASCII bytes (pasted UTF-8, non-Latin
+	 * keyboards, control sequences) reach the PTY exactly as sent.
+	 */
+	writeBytes(bytes: Uint8Array): void;
 	resize(cols: number, rows: number): void;
 	kill(signal?: NodeJS.Signals): void;
 	onData(cb: (data: string) => void): PtyDataDisposer;
@@ -71,6 +77,12 @@ function makeDaemonPty(
 		pid,
 		write(data) {
 			daemon.input(sessionId, Buffer.from(data, "utf8"));
+		},
+		writeBytes(bytes) {
+			daemon.input(
+				sessionId,
+				Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+			);
 		},
 		resize(cols, rows) {
 			try {
@@ -435,12 +447,21 @@ function setSessionTitle(session: TerminalSession, title: string | null) {
 }
 
 function pushToTailRing(session: TerminalSession, bytes: Uint8Array) {
-	const copy = new Uint8Array(bytes);
-	session.tailRing.push(copy);
-	session.tailRingBytes += copy.byteLength;
+	if (bytes.byteLength === 0) return;
+	// If a single chunk is larger than the cap, keep only its tail. Otherwise
+	// the FIFO eviction below would push then immediately shift the same
+	// chunk and leave the snapshot empty.
+	const chunk =
+		bytes.byteLength > REMOTE_CONTROL_TAIL_BYTES
+			? new Uint8Array(
+					bytes.subarray(bytes.byteLength - REMOTE_CONTROL_TAIL_BYTES),
+				)
+			: new Uint8Array(bytes);
+	session.tailRing.push(chunk);
+	session.tailRingBytes += chunk.byteLength;
 	while (
 		session.tailRingBytes > REMOTE_CONTROL_TAIL_BYTES &&
-		session.tailRing.length > 0
+		session.tailRing.length > 1
 	) {
 		const removed = session.tailRing.shift();
 		if (removed) session.tailRingBytes -= removed.byteLength;
@@ -547,11 +568,11 @@ export function attachTerminalViewer(
 		},
 		sendInput(bytes) {
 			if (detached || session.exited) return;
-			// pty.write expects a string; existing /terminal/:id path also passes
-			// strings here. We round-trip through latin1 so 0x00–0xFF map 1:1
-			// without any UTF-8 normalization that would corrupt control bytes.
-			const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-			session.pty.write(buf.toString("latin1"));
+			// Raw-byte path. Earlier versions round-tripped via a latin1 string
+			// here, but `pty.write` re-encodes its argument as UTF-8 so any
+			// byte ≥ 0x80 (non-ASCII typed input, pasted UTF-8 sequences,
+			// kitty/keyboard-protocol bytes) was being mangled on the wire.
+			session.pty.writeBytes(bytes);
 		},
 		resize(cols, rows) {
 			if (detached || session.exited) return;

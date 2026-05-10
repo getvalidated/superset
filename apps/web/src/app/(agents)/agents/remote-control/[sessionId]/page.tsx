@@ -1,39 +1,14 @@
-import { REMOTE_CONTROL_TOKEN_PARAM } from "@superset/shared/remote-control-protocol";
-import { RemoteTerminal } from "./components/RemoteTerminal";
+import { use } from "react";
+import { RemoteTerminalLoader } from "./components/RemoteTerminal";
 
 interface PageProps {
 	params: Promise<{ sessionId: string }>;
-	searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function RemoteControlPage({
-	params,
-	searchParams,
-}: PageProps) {
-	const { sessionId } = await params;
-	const search = await searchParams;
-	const tokenRaw = search[REMOTE_CONTROL_TOKEN_PARAM];
-	const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;
-
-	if (!token) {
-		return (
-			<div
-				className="flex h-screen items-center justify-center"
-				style={{ backgroundColor: "#151110", color: "#eae8e6" }}
-			>
-				<div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-12">
-					<h1 className="text-xl font-semibold">Remote control unavailable</h1>
-					<p
-						className="select-text cursor-text text-sm"
-						style={{ color: "#a8a5a3" }}
-					>
-						This link is missing its access token. Open the share link from the
-						original message to view the terminal.
-					</p>
-				</div>
-			</div>
-		);
-	}
-
-	return <RemoteTerminal sessionId={sessionId} token={token} />;
+export default function RemoteControlPage({ params }: PageProps) {
+	const { sessionId } = use(params);
+	// The bearer token is in `location.hash`, not the query string — keeping
+	// it out of server access logs, browser history's query, and `Referer`
+	// headers. `RemoteTerminalLoader` reads it client-side after mount.
+	return <RemoteTerminalLoader sessionId={sessionId} />;
 }

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { mintUserJwt } from "@superset/auth/server";
 import { dbWs } from "@superset/db/client";
 import {
@@ -22,7 +23,11 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "../../env";
-import { createTRPCRouter, protectedProcedure } from "../../trpc";
+import {
+	createTRPCRouter,
+	protectedProcedure,
+	publicProcedure,
+} from "../../trpc";
 import { relayMutation } from "../automation/relay-client";
 import { requireActiveOrgMembership } from "../utils/active-org";
 
@@ -45,12 +50,32 @@ const createInput = z.object({
 });
 
 const sessionIdInput = z.object({ sessionId: z.string().uuid() });
+const getInput = z.object({
+	sessionId: z.string().uuid(),
+	token: z.string().min(1),
+});
 const listInput = z.object({ workspaceId: z.string().uuid() });
+
+function sha256Hex(input: string): string {
+	return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+function constantTimeHexEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	const ab = Buffer.from(a, "hex");
+	const bb = Buffer.from(b, "hex");
+	if (ab.length !== bb.length) return false;
+	return crypto.timingSafeEqual(ab, bb);
+}
 
 function buildWebUrl(sessionId: string, token: string): string {
 	const base = env.NEXT_PUBLIC_WEB_URL.replace(/\/$/, "");
 	const t = encodeURIComponent(token);
-	return `${base}/agents/remote-control/${sessionId}?${REMOTE_CONTROL_TOKEN_PARAM}=${t}`;
+	// Pass the bearer token as a URL fragment, not a query param. The
+	// fragment is never sent to any server, never appears in `Referer`
+	// when the viewer navigates away, and stays out of access logs.
+	// The web viewer reads it client-side from `location.hash`.
+	return `${base}/agents/remote-control/${sessionId}#${REMOTE_CONTROL_TOKEN_PARAM}=${t}`;
 }
 
 function buildWsUrl(routingKey: string, sessionId: string): string {
@@ -187,34 +212,40 @@ export const remoteControlRouter = createTRPCRouter({
 			};
 		}),
 
-	get: protectedProcedure
-		.input(sessionIdInput)
-		.query(async ({ ctx, input }) => {
-			const organizationId = await requireActiveOrgMembership(ctx);
-			const row = await dbWs.query.v2RemoteControlSessions.findFirst({
-				where: and(
-					eq(v2RemoteControlSessions.id, input.sessionId),
-					eq(v2RemoteControlSessions.organizationId, organizationId),
-				),
+	// `get` is intentionally `publicProcedure`: the share-link recipient is
+	// often anonymous (a colleague's browser, a phone, a kiosk). Holding the
+	// raw token IS the credential — we hash it and compare against the row's
+	// `token_hash` in constant time. No org membership required, no other
+	// fields exposed without proof of token possession.
+	get: publicProcedure.input(getInput).query(async ({ input }) => {
+		const row = await dbWs.query.v2RemoteControlSessions.findFirst({
+			where: eq(v2RemoteControlSessions.id, input.sessionId),
+		});
+		if (!row) {
+			throw new TRPCError({
+				code: "NOT_FOUND",
+				message: "Remote control session not found",
 			});
-			if (!row) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Remote control session not found",
-				});
-			}
-			const routingKey = buildHostRoutingKey(organizationId, row.hostId);
-			return {
-				sessionId: row.id,
-				workspaceId: row.workspaceId,
-				terminalId: row.terminalId,
-				mode: row.mode,
-				status: row.status,
-				expiresAt: row.expiresAt.toISOString(),
-				wsUrl: buildWsUrl(routingKey, row.id),
-				routingKey,
-			};
-		}),
+		}
+		const providedHash = sha256Hex(input.token);
+		if (!constantTimeHexEqual(providedHash, row.tokenHash)) {
+			throw new TRPCError({
+				code: "UNAUTHORIZED",
+				message: "Invalid remote control token",
+			});
+		}
+		const routingKey = buildHostRoutingKey(row.organizationId, row.hostId);
+		return {
+			sessionId: row.id,
+			workspaceId: row.workspaceId,
+			terminalId: row.terminalId,
+			mode: row.mode,
+			status: row.status,
+			expiresAt: row.expiresAt.toISOString(),
+			wsUrl: buildWsUrl(routingKey, row.id),
+			routingKey,
+		};
+	}),
 
 	revoke: protectedProcedure
 		.input(sessionIdInput)
@@ -236,6 +267,11 @@ export const remoteControlRouter = createTRPCRouter({
 			// The cloud row gets revoked first so even if the host call fails,
 			// future attaches via the host see "session not found" or are denied
 			// when the host is told later via retry / re-sync.
+			// Belt-and-braces: scope by org to defend against a row mutating
+			// between the SELECT and the UPDATE, and gate on `status='active'`
+			// so a re-revoke (or revoke-after-natural-expiry) doesn't
+			// overwrite the original `revokedAt`/`revokedByUserId` or
+			// transition an `expired` row to `revoked`.
 			await dbWs
 				.update(v2RemoteControlSessions)
 				.set({
@@ -243,7 +279,13 @@ export const remoteControlRouter = createTRPCRouter({
 					revokedAt: new Date(),
 					revokedByUserId: userId,
 				})
-				.where(eq(v2RemoteControlSessions.id, input.sessionId));
+				.where(
+					and(
+						eq(v2RemoteControlSessions.id, input.sessionId),
+						eq(v2RemoteControlSessions.organizationId, organizationId),
+						eq(v2RemoteControlSessions.status, "active"),
+					),
+				);
 
 			try {
 				const [owner] = await dbWs

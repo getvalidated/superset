@@ -6,9 +6,11 @@ import {
 	REMOTE_CONTROL_TOKEN_PARAM,
 	type RemoteControlClientMessage,
 	type RemoteControlErrorCode,
+	type RemoteControlMode,
 	type RemoteControlServerMessage,
 } from "@superset/shared/remote-control-protocol";
 import type { Hono } from "hono";
+import { z } from "zod";
 import {
 	attachTerminalViewer,
 	type TerminalViewerHandle,
@@ -20,6 +22,26 @@ import {
 	onRevoke,
 	removeViewer,
 } from "./session-manager.ts";
+
+// Runtime validation for inbound WebSocket payloads. Without this, a
+// malformed `runCommand` (no `command` field) or `resize` (string `cols`)
+// would propagate as an uncaught exception out of `onMessage`. Mirrors
+// `RemoteControlClientMessage` in `@superset/shared/remote-control-protocol`.
+const clientMessageSchema = z.discriminatedUnion("type", [
+	z.object({ type: z.literal("ping"), nonce: z.string().optional() }),
+	z.object({ type: z.literal("stop") }),
+	z.object({ type: z.literal("input"), data: z.string() }),
+	z.object({
+		type: z.literal("resize"),
+		cols: z.number().int().positive(),
+		rows: z.number().int().positive(),
+	}),
+	z.object({
+		type: z.literal("runCommand"),
+		command: z.string(),
+		commandId: z.string().optional(),
+	}),
+]);
 
 interface RemoteControlSocket {
 	send: (data: string) => void;
@@ -52,6 +74,10 @@ function consume(bucket: TokenBucket): boolean {
 	if (bucket.tokens < 1) return false;
 	bucket.tokens -= 1;
 	return true;
+}
+
+function nowSec(): number {
+	return Math.floor(Date.now() / 1000);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -103,6 +129,12 @@ export function registerRemoteControlRoute(
 				unsubscribeRevoke: (() => void) | null;
 				inputBucket: TokenBucket;
 				resizeBucket: TokenBucket;
+				// Cached at handshake — `authenticateSession` re-hashes the
+				// HMAC every call, which we do NOT want at 200 msg/s/viewer.
+				// Per-message handling now just checks `expiresAt` against now.
+				authedMode: RemoteControlMode | null;
+				expiresAt: number | null;
+				cleaned: boolean;
 			} = {
 				viewer: null,
 				listener: null,
@@ -110,6 +142,38 @@ export function registerRemoteControlRoute(
 				unsubscribeRevoke: null,
 				inputBucket: makeBucket(REMOTE_CONTROL_INPUT_RATE_PER_SEC),
 				resizeBucket: makeBucket(REMOTE_CONTROL_RESIZE_RATE_PER_SEC),
+				authedMode: null,
+				expiresAt: null,
+				cleaned: false,
+			};
+
+			// Single cleanup path. `onClose` and `onError` both delegate here —
+			// `onError` may fire without a subsequent `onClose` on abrupt
+			// teardown, so we cannot rely on `onClose` alone. `cleaned` makes
+			// it idempotent.
+			const cleanup = (): void => {
+				if (ctx.cleaned) return;
+				ctx.cleaned = true;
+				if (ctx.unsubscribeRevoke) {
+					try {
+						ctx.unsubscribeRevoke();
+					} catch {
+						// best-effort
+					}
+					ctx.unsubscribeRevoke = null;
+				}
+				if (ctx.viewer) {
+					try {
+						ctx.viewer.detach();
+					} catch {
+						// best-effort
+					}
+					ctx.viewer = null;
+				}
+				if (ctx.viewerSocket) {
+					removeViewer(sessionId, ctx.viewerSocket);
+					ctx.viewerSocket = null;
+				}
 			};
 
 			return {
@@ -175,6 +239,8 @@ export function registerRemoteControlRoute(
 					}
 					ctx.viewer = handle;
 					ctx.listener = listener;
+					ctx.authedMode = auth.mode;
+					ctx.expiresAt = auth.expiresAt;
 
 					const viewerSocket = {
 						close: () => {
@@ -238,24 +304,30 @@ export function registerRemoteControlRoute(
 				},
 
 				onMessage: (event, ws) => {
-					if (!ctx.viewer) return;
-					let parsed: RemoteControlClientMessage;
+					if (!ctx.viewer || ctx.authedMode === null) return;
+					let raw: unknown;
 					try {
-						parsed = JSON.parse(
-							String(event.data),
-						) as RemoteControlClientMessage;
+						raw = JSON.parse(String(event.data));
 					} catch {
 						sendError(ws, "internal", "Invalid message payload");
 						return;
 					}
+					const validated = clientMessageSchema.safeParse(raw);
+					if (!validated.success) {
+						sendError(ws, "internal", "Invalid message payload");
+						return;
+					}
+					const parsed: RemoteControlClientMessage = validated.data;
 
-					const auth = authenticateSession(sessionId, token);
-					if (!auth.ok) {
-						sendError(ws, "session-expired", "Session no longer valid");
+					// Lightweight expiry check — handshake already verified the
+					// HMAC + token-hash. Re-running them per message at 200/s
+					// is wasted CPU.
+					if (ctx.expiresAt !== null && ctx.expiresAt <= nowSec()) {
+						sendError(ws, "session-expired", "Session expired");
 						ws.close(1008, "session-expired");
 						return;
 					}
-					const capabilities = capabilitiesForMode(auth.mode);
+					const capabilities = capabilitiesForMode(ctx.authedMode);
 
 					switch (parsed.type) {
 						case "ping":
@@ -298,7 +370,12 @@ export function registerRemoteControlRoute(
 								sendError(ws, "rate-limited", "Resize rate limit exceeded");
 								return;
 							}
-							ctx.viewer.resize(parsed.cols, parsed.rows);
+							try {
+								ctx.viewer.resize(parsed.cols, parsed.rows);
+							} catch (err) {
+								console.warn("[remote-control] resize failed:", err);
+								sendError(ws, "internal", "Failed to resize");
+							}
 							return;
 						}
 						case "runCommand": {
@@ -310,44 +387,23 @@ export function registerRemoteControlRoute(
 								sendError(ws, "rate-limited", "Command rate limit exceeded");
 								return;
 							}
-							ctx.viewer.runCommand(parsed.command);
+							try {
+								ctx.viewer.runCommand(parsed.command);
+							} catch (err) {
+								console.warn("[remote-control] runCommand failed:", err);
+								sendError(ws, "internal", "Failed to run command");
+							}
 							return;
 						}
 					}
 				},
 
 				onClose: (_event, _ws) => {
-					if (ctx.unsubscribeRevoke) {
-						try {
-							ctx.unsubscribeRevoke();
-						} catch {
-							// best-effort
-						}
-						ctx.unsubscribeRevoke = null;
-					}
-					if (ctx.viewer) {
-						try {
-							ctx.viewer.detach();
-						} catch {
-							// best-effort
-						}
-						ctx.viewer = null;
-					}
-					if (ctx.viewerSocket) {
-						removeViewer(sessionId, ctx.viewerSocket);
-						ctx.viewerSocket = null;
-					}
+					cleanup();
 				},
 
 				onError: (_event, _ws) => {
-					if (ctx.viewer) {
-						try {
-							ctx.viewer.detach();
-						} catch {
-							// best-effort
-						}
-						ctx.viewer = null;
-					}
+					cleanup();
 				},
 			};
 		}),
