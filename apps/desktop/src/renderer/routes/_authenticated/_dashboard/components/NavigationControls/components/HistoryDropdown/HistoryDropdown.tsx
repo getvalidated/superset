@@ -296,6 +296,7 @@ export function HistoryDropdown() {
 			return (v2WorkspaceData ?? []).some((w) => w.id === entry.entityId);
 		}
 		if (entry.type === "automation") {
+			if (!isV2CloudEnabled) return false;
 			return (automationData ?? []).some((a) => a.id === entry.entityId);
 		}
 		return (taskData ?? []).some(
