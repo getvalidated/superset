@@ -4,6 +4,7 @@ import type { TRPCClient } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import SuperJSON from "superjson";
 import { getApiUrl } from "./config";
+import { env } from "./env";
 
 export type ApiClient = TRPCClient<AppRouter>;
 
@@ -26,6 +27,9 @@ export function createApiClient(opts: {
 					)
 						? { "x-api-key": opts.bearer }
 						: { Authorization: `Bearer ${opts.bearer}` };
+					// Server-side telemetry uses `session.userAgent` to attribute
+					// the request surface (web/mcp/cli) — see surfaceFromSession.
+					headers["User-Agent"] = `superset-cli/${env.VERSION}`;
 					if (opts.organizationId) {
 						headers[ORGANIZATION_HEADER] = opts.organizationId;
 					}

@@ -24,6 +24,17 @@ export function promptSourceFromSession(session: {
 	return session.session.userAgent === "mcp-v2" ? "agent" : "human";
 }
 
+export type AutomationSurface = "web" | "mcp" | "cli" | "scheduler";
+
+export function surfaceFromSession(session: {
+	session: { userAgent: string | null };
+}): Exclude<AutomationSurface, "scheduler"> {
+	const ua = session.session.userAgent;
+	if (ua === "mcp-v2") return "mcp";
+	if (ua?.startsWith("superset-cli/")) return "cli";
+	return "web";
+}
+
 export type AutomationDbExecutor =
 	| typeof dbWs
 	| Parameters<Parameters<typeof dbWs.transaction>[0]>[0];

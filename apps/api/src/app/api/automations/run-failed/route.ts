@@ -4,8 +4,8 @@ import { automationRuns, automations } from "@superset/db/schema";
 import { Receiver } from "@upstash/qstash";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-
 import { env } from "@/env";
+import { posthog } from "@/lib/analytics";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +77,7 @@ export async function POST(request: Request): Promise<Response> {
 	const [automation] = await dbWs
 		.select({
 			organizationId: automations.organizationId,
+			ownerUserId: automations.ownerUserId,
 			name: automations.name,
 		})
 		.from(automations)
@@ -89,7 +90,7 @@ export async function POST(request: Request): Promise<Response> {
 
 	const errorText = `delivery failed after retries (status ${parsed.data.status}): ${parsed.data.error ?? "unknown"}`;
 
-	await dbWs
+	const [run] = await dbWs
 		.insert(automationRuns)
 		.values({
 			automationId,
@@ -102,7 +103,26 @@ export async function POST(request: Request): Promise<Response> {
 		.onConflictDoUpdate({
 			target: [automationRuns.automationId, automationRuns.scheduledFor],
 			set: { status: "dispatch_failed", error: errorText },
-		});
+		})
+		.returning({ id: automationRuns.id });
+
+	posthog.capture({
+		distinctId: automation.ownerUserId,
+		event: "automation_run_dispatched",
+		properties: {
+			automation_id: automationId,
+			organization_id: automation.organizationId,
+			owner_user_id: automation.ownerUserId,
+			surface: "scheduler",
+			trigger: "scheduled",
+			outcome: "dispatch_failed",
+			run_id: run?.id ?? null,
+			session_kind: null,
+			error: errorText,
+			qstash_status: parsed.data.status,
+		},
+		groups: { organization: automation.organizationId },
+	});
 
 	Sentry.captureException(
 		new Error(`automation dispatch failed: ${automationId}`),

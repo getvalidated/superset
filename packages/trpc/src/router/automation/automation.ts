@@ -21,6 +21,7 @@ import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
 import { and, desc, eq, getTableColumns, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "../../env";
+import { posthog } from "../../lib/analytics";
 import { protectedProcedure } from "../../trpc";
 import {
 	requireActiveOrgMembership,
@@ -31,6 +32,7 @@ import {
 	getAutomationForUser,
 	promptSourceFromSession,
 	recordPromptVersion,
+	surfaceFromSession,
 } from "./helpers";
 import {
 	createAutomationSchema,
@@ -43,6 +45,31 @@ import { automationVersionsRouter } from "./versions";
 
 function escapeLikePattern(value: string): string {
 	return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function captureAutomationLifecycle(
+	ctx: {
+		session: {
+			user: { id: string };
+			session: { userAgent: string | null };
+		};
+	},
+	event: string,
+	automation: { id: string; organizationId: string; ownerUserId: string },
+	extras: Record<string, unknown> = {},
+): void {
+	posthog.capture({
+		distinctId: ctx.session.user.id,
+		event,
+		properties: {
+			automation_id: automation.id,
+			organization_id: automation.organizationId,
+			owner_user_id: automation.ownerUserId,
+			surface: surfaceFromSession(ctx.session),
+			...extras,
+		},
+		groups: { organization: automation.organizationId },
+	});
 }
 
 function requirePaidSubscription(subscription: SelectSubscription | null) {
@@ -298,6 +325,13 @@ export const automationRouter = {
 				return row;
 			});
 
+			captureAutomationLifecycle(ctx, "automation_created", created, {
+				has_workspace: created.v2WorkspaceId !== null,
+				has_host: created.targetHostId !== null,
+				agent_kind: created.agentConfig.kind,
+				timezone: created.timezone,
+			});
+
 			return { ...created, scheduleText: safeDescribeRrule(created) };
 		}),
 
@@ -361,6 +395,25 @@ export const automationRouter = {
 				.where(eq(automations.id, input.id))
 				.returning();
 
+			if (updated) {
+				const fieldsChanged = (
+					[
+						"name",
+						"agentConfig",
+						"targetHostId",
+						"v2ProjectId",
+						"v2WorkspaceId",
+						"rrule",
+						"dtstart",
+						"timezone",
+						"mcpScope",
+					] as const
+				).filter((key) => input[key] !== undefined);
+				captureAutomationLifecycle(ctx, "automation_updated", updated, {
+					fields_changed: fieldsChanged,
+				});
+			}
+
 			return { ...updated, scheduleText: safeDescribeRrule(updated) };
 		}),
 
@@ -414,6 +467,10 @@ export const automationRouter = {
 				return row;
 			});
 
+			captureAutomationLifecycle(ctx, "automation_updated", updated, {
+				fields_changed: ["prompt"],
+			});
+
 			return { ...updated, scheduleText: safeDescribeRrule(updated) };
 		}),
 
@@ -421,9 +478,15 @@ export const automationRouter = {
 		.input(z.object({ id: z.string().uuid() }))
 		.mutation(async ({ ctx, input }) => {
 			const organizationId = await requireActiveOrgMembership(ctx);
-			await getAutomationForUser(ctx.session.user.id, organizationId, input.id);
+			const existing = await getAutomationForUser(
+				ctx.session.user.id,
+				organizationId,
+				input.id,
+			);
 
 			await dbWs.delete(automations).where(eq(automations.id, input.id));
+
+			captureAutomationLifecycle(ctx, "automation_deleted", existing);
 
 			return { ok: true };
 		}),
@@ -462,6 +525,12 @@ export const automationRouter = {
 				.where(eq(automations.id, input.id))
 				.returning();
 
+			if (updated && existing.enabled !== input.enabled) {
+				captureAutomationLifecycle(ctx, "automation_enabled_toggled", updated, {
+					enabled: input.enabled,
+				});
+			}
+
 			return { ...updated, scheduleText: safeDescribeRrule(updated) };
 		}),
 
@@ -481,6 +550,9 @@ export const automationRouter = {
 				automation,
 				scheduledFor: new Date(),
 				relayUrl: env.RELAY_URL,
+				surface: surfaceFromSession(ctx.session),
+				trigger: "manual",
+				actorUserId: ctx.session.user.id,
 			});
 
 			if (outcome.status === "conflict") {

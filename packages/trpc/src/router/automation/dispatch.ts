@@ -27,6 +27,8 @@ import {
 	slugifyForBranch,
 } from "@superset/shared/workspace-launch";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { posthog } from "../../lib/analytics";
+import type { AutomationSurface } from "./helpers";
 import { RelayDispatchError, relayMutation } from "./relay-client";
 
 export type DispatchOutcome =
@@ -36,10 +38,55 @@ export type DispatchOutcome =
 	| { status: "dispatch_failed"; runId: string | null; error: string }
 	| { status: "conflict" };
 
+export type DispatchTrigger = "scheduled" | "manual";
+
 export interface DispatchOptions {
 	automation: SelectAutomation;
 	scheduledFor: Date;
 	relayUrl: string;
+	/** How the request reached this dispatcher — drives the `surface` event prop. */
+	surface: AutomationSurface;
+	/** "scheduled" for cron-driven runs, "manual" for runNow. */
+	trigger: DispatchTrigger;
+	/**
+	 * The user who initiated this dispatch. For manual runs, the invoker;
+	 * for scheduled runs, the automation owner is used as a fallback.
+	 */
+	actorUserId?: string;
+}
+
+interface RunCaptureExtras {
+	outcome: DispatchOutcome["status"];
+	runId: string | null;
+	sessionKind?: "chat" | "terminal" | null;
+	hostId?: string | null;
+	error?: string;
+	startedAt: number;
+}
+
+function captureRunDispatched(
+	opts: DispatchOptions,
+	extras: RunCaptureExtras,
+): void {
+	const { automation, surface, trigger, actorUserId } = opts;
+	posthog.capture({
+		distinctId: actorUserId ?? automation.ownerUserId,
+		event: "automation_run_dispatched",
+		properties: {
+			automation_id: automation.id,
+			organization_id: automation.organizationId,
+			owner_user_id: automation.ownerUserId,
+			surface,
+			trigger,
+			outcome: extras.outcome,
+			run_id: extras.runId,
+			session_kind: extras.sessionKind ?? null,
+			host_id: extras.hostId ?? automation.targetHostId ?? null,
+			error: extras.error,
+			latency_ms: Date.now() - extras.startedAt,
+		},
+		groups: { organization: automation.organizationId },
+	});
 }
 
 /**
@@ -53,11 +100,19 @@ export async function dispatchAutomation(
 	opts: DispatchOptions,
 ): Promise<DispatchOutcome> {
 	const { automation, scheduledFor, relayUrl } = opts;
+	const startedAt = Date.now();
 
 	const resolved = await resolveTargetHost(automation);
 	if (!resolved) {
 		const error = "no host available";
 		const inserted = await recordSkipped(automation, scheduledFor, null, error);
+		captureRunDispatched(opts, {
+			outcome: "skipped_offline",
+			runId: inserted?.id ?? null,
+			error,
+			hostId: null,
+			startedAt,
+		});
 		return { status: "skipped_offline", runId: inserted?.id ?? null, error };
 	}
 	const { host, paidPlan } = resolved;
@@ -66,11 +121,15 @@ export async function dispatchAutomation(
 	// SELECT and dispatch. Bail without writing a run row to avoid muddying
 	// dashboards with paywall blocks under the offline metric.
 	if (!paidPlan) {
-		return {
-			status: "skipped_unpaid",
+		const error = "automations require a Pro plan";
+		captureRunDispatched(opts, {
+			outcome: "skipped_unpaid",
 			runId: null,
-			error: "automations require a Pro plan",
-		};
+			error,
+			hostId: host.machineId,
+			startedAt,
+		});
+		return { status: "skipped_unpaid", runId: null, error };
 	}
 	if (!host.isOnline) {
 		const error = "target host offline";
@@ -80,6 +139,13 @@ export async function dispatchAutomation(
 			host.machineId,
 			error,
 		);
+		captureRunDispatched(opts, {
+			outcome: "skipped_offline",
+			runId: inserted?.id ?? null,
+			error,
+			hostId: host.machineId,
+			startedAt,
+		});
 		return { status: "skipped_offline", runId: inserted?.id ?? null, error };
 	}
 
@@ -101,6 +167,7 @@ export async function dispatchAutomation(
 	if (!run) return { status: "conflict" };
 
 	let workspaceId: string | null = null;
+	let sessionKind: "chat" | "terminal" | null = null;
 	try {
 		const [owner] = await dbWs
 			.select({ email: users.email })
@@ -171,6 +238,7 @@ export async function dispatchAutomation(
 					dispatchedAt: new Date(),
 				})
 				.where(eq(automationRuns.id, run.id));
+			sessionKind = "chat";
 		} else {
 			const command = buildTerminalCommand({
 				prompt: automation.prompt,
@@ -194,6 +262,7 @@ export async function dispatchAutomation(
 					dispatchedAt: new Date(),
 				})
 				.where(eq(automationRuns.id, run.id));
+			sessionKind = "terminal";
 		}
 	} catch (err) {
 		const error = describeError(err, "dispatch");
@@ -205,9 +274,23 @@ export async function dispatchAutomation(
 				error,
 			})
 			.where(eq(automationRuns.id, run.id));
+		captureRunDispatched(opts, {
+			outcome: "dispatch_failed",
+			runId: run.id,
+			error,
+			hostId: host.machineId,
+			startedAt,
+		});
 		return { status: "dispatch_failed", runId: run.id, error };
 	}
 
+	captureRunDispatched(opts, {
+		outcome: "dispatched",
+		runId: run.id,
+		sessionKind,
+		hostId: host.machineId,
+		startedAt,
+	});
 	return { status: "dispatched", runId: run.id };
 }
 
