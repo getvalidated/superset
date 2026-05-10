@@ -174,6 +174,17 @@ describe("workspace.create + workspace.delete integration", () => {
 		expect(persisted?.worktreePath).toBe(explicitPath);
 		expect(persisted?.branch).toBe(actualBranch);
 		expect(existsSync(explicitPath)).toBe(true);
+		const pushAutoSetupRemote = (
+			await scenario.repo.git.raw([
+				"-C",
+				explicitPath,
+				"config",
+				"--local",
+				"--get",
+				"push.autoSetupRemote",
+			])
+		).trim();
+		expect(pushAutoSetupRemote).toBe("true");
 	});
 
 	test("create() prunes a stale worktree (rm-ed dir) before adding a new one", async () => {

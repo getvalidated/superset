@@ -69,10 +69,8 @@ const createInputSchema = z
 		agents: z.array(agentLaunchSchema).optional(),
 		id: z.string().uuid().optional(),
 		// Adopt the worktree git already has at this path instead of
-		// inferring the path from `branch`. Set by callers that listed
-		// the path themselves (e.g. adopt-existing-worktrees onboarding)
-		// — pre-empts the `worktreeMap` miss that #4229's catch-arm
-		// recovers from for branch-name-only callers.
+		// inferring the path from `branch`. When present, `branch` is
+		// caller context only; the server reads the current branch from git.
 		worktreePath: z.string().min(1).optional(),
 	})
 	.refine((value) => !(value.branch && value.pr), {
@@ -730,7 +728,7 @@ export const workspacesRouter = router({
 				if (!actualBranch) {
 					throw new TRPCError({
 						code: "NOT_FOUND",
-						message: `No git worktree registered at "${input.worktreePath}"`,
+						message: `No branch-checked git worktree registered at "${input.worktreePath}"`,
 					});
 				}
 				resolvedBranch = actualBranch;
@@ -749,6 +747,11 @@ export const workspacesRouter = router({
 				});
 				workspaceRow = result.workspace;
 				alreadyExists = result.alreadyExists;
+				await enablePushAutoSetupRemote(
+					git,
+					worktreePath,
+					"[workspaces.create]",
+				);
 			} else {
 				const typedBranch = input.branch?.trim();
 				let plan: BranchSourcePlan;
