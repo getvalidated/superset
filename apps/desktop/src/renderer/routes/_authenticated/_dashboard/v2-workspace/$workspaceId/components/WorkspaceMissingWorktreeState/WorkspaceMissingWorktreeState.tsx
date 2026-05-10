@@ -36,10 +36,10 @@ export function WorkspaceMissingWorktreeState({
 				</div>
 
 				<div className="flex flex-col gap-1.5">
-					<h1 className="text-[15px] font-medium tracking-tight text-foreground">
+					<h1 className="select-text cursor-text text-[15px] font-medium tracking-tight text-foreground">
 						Worktree missing
 					</h1>
-					<p className="text-[13px] leading-relaxed text-muted-foreground">
+					<p className="select-text cursor-text text-[13px] leading-relaxed text-muted-foreground">
 						This workspace record still exists, but its worktree folder is no
 						longer on this host. Terminals and file actions are unavailable.
 					</p>
@@ -51,7 +51,7 @@ export function WorkspaceMissingWorktreeState({
 							Path
 						</span>
 						<code
-							className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+							className="select-text cursor-text min-w-0 truncate font-mono text-[11px] text-muted-foreground"
 							title={worktreePath}
 						>
 							{worktreePath}

@@ -141,7 +141,7 @@ describe("workspaceCleanup.destroy integration", () => {
 		expect(branches.all).not.toContain(scenario.branch);
 	});
 
-	test("missing worktree is pruned and can still delete the branch", async () => {
+	test("missing worktree is removed and can still delete the branch", async () => {
 		rmSync(scenario.worktreePath, { recursive: true, force: true });
 
 		const result = await scenario.host.trpc.workspaceCleanup.destroy.mutate({
@@ -154,6 +154,42 @@ describe("workspaceCleanup.destroy integration", () => {
 
 		const branches = await scenario.repo.git.branchLocal();
 		expect(branches.all).not.toContain(scenario.branch);
+	});
+
+	test("missing worktree cleanup does not prune unrelated stale worktree metadata", async () => {
+		const otherBranch = "feature/other-missing";
+		const otherWorktreePath = join(
+			scenario.repo.repoPath,
+			".worktrees",
+			"feature-other-missing",
+		);
+		await scenario.repo.git.raw([
+			"worktree",
+			"add",
+			"-b",
+			otherBranch,
+			otherWorktreePath,
+		]);
+		seedWorkspace(scenario.host, {
+			projectId: scenario.projectId,
+			worktreePath: otherWorktreePath,
+			branch: otherBranch,
+		});
+		rmSync(scenario.worktreePath, { recursive: true, force: true });
+		rmSync(otherWorktreePath, { recursive: true, force: true });
+
+		const result = await scenario.host.trpc.workspaceCleanup.destroy.mutate({
+			workspaceId: scenario.featureWorkspaceId,
+		});
+		expect(result.worktreeRemoved).toBe(true);
+
+		const worktreeList = await scenario.repo.git.raw([
+			"worktree",
+			"list",
+			"--porcelain",
+		]);
+		expect(worktreeList).not.toContain(scenario.worktreePath);
+		expect(worktreeList).toContain(otherWorktreePath);
 	});
 
 	test("returns success when no local workspace row exists, still calls cloud delete", async () => {

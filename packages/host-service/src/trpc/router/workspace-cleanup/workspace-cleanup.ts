@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -284,23 +283,9 @@ async function runDestroy(ctx: HostServiceContext, input: DestroyInput) {
 		}
 
 		if (git) {
-			if (!existsSync(local.worktreePath)) {
-				try {
-					await git.raw(["worktree", "prune"]);
-					worktreeRemoved = true;
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					warnings.push(
-						`Failed to prune missing worktree metadata for ${local.worktreePath}: ${message}`,
-					);
-				}
-			}
-
 			try {
-				if (!worktreeRemoved) {
-					await git.raw(["worktree", "remove", "--force", local.worktreePath]);
-					worktreeRemoved = true;
-				}
+				await git.raw(["worktree", "remove", "--force", local.worktreePath]);
+				worktreeRemoved = true;
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				if (
