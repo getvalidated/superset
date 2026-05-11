@@ -17,7 +17,10 @@ import { protectedProcedure, router } from "../../index";
 import { type AgentRunResult, runAgentInWorkspace } from "../agents";
 import { ensureMainWorkspace } from "../project/utils/ensure-main-workspace";
 import { adoptExistingWorktree } from "../workspace-creation/shared/adopt-existing-worktree";
-import { listWorktreeBranches } from "../workspace-creation/shared/branch-search";
+import {
+	getWorktreeBranchAtPath,
+	listWorktreeBranches,
+} from "../workspace-creation/shared/branch-search";
 import { enablePushAutoSetupRemote } from "../workspace-creation/shared/git-config";
 import { requireLocalProject } from "../workspace-creation/shared/local-project";
 import { startSetupTerminalIfPresent } from "../workspace-creation/shared/setup-terminal";
@@ -64,10 +67,18 @@ const createInputSchema = z
 		baseBranch: z.string().min(1).optional(),
 		taskId: z.string().uuid().optional(),
 		agents: z.array(agentLaunchSchema).optional(),
+		namingPrompt: z.string().min(1).optional(),
 		id: z.string().uuid().optional(),
+		// Adopt the worktree git already has at this path instead of
+		// inferring the path from `branch`. When present, `branch` is
+		// caller context only; the server reads the current branch from git.
+		worktreePath: z.string().min(1).optional(),
 	})
 	.refine((value) => !(value.branch && value.pr), {
 		message: "`branch` and `pr` cannot both be set",
+	})
+	.refine((value) => !(value.worktreePath && value.pr), {
+		message: "`worktreePath` and `pr` cannot both be set",
 	});
 
 type AgentLaunchResult =
@@ -496,7 +507,8 @@ export const workspacesRouter = router({
 			// resolution, so by the time we need the resolved values for
 			// `worktree add` they're already in hand. PR path skips entirely
 			// — PR title + derived branch are already meaningful.
-			const composerPrompt = input.agents?.[0]?.prompt?.trim() ?? "";
+			const composerPrompt =
+				input.agents?.[0]?.prompt?.trim() || input.namingPrompt?.trim() || "";
 			const wantAi =
 				input.pr === undefined &&
 				(input.branch === undefined || input.name === undefined) &&
@@ -707,6 +719,41 @@ export const workspacesRouter = router({
 						}
 					}
 				}
+			} else if (input.worktreePath) {
+				// Read the branch from git rather than trusting `input.branch`
+				// — a stale name on the caller side would otherwise mis-target
+				// the registration.
+				const actualBranch = await getWorktreeBranchAtPath(
+					git,
+					input.worktreePath,
+				);
+				if (!actualBranch) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: `No branch-checked git worktree registered at "${input.worktreePath}"`,
+					});
+				}
+				resolvedBranch = actualBranch;
+				worktreePath = input.worktreePath;
+				const result = await adoptExistingWorktree({
+					ctx,
+					git,
+					projectId: input.projectId,
+					branch: resolvedBranch,
+					worktreePath,
+					workspaceName: input.name ?? resolvedBranch,
+					baseBranch: input.baseBranch,
+					idempotencyId: input.id,
+					taskId: input.taskId,
+					hostPromise,
+				});
+				workspaceRow = result.workspace;
+				alreadyExists = result.alreadyExists;
+				await enablePushAutoSetupRemote(
+					git,
+					worktreePath,
+					"[workspaces.create]",
+				);
 			} else {
 				const typedBranch = input.branch?.trim();
 				let plan: BranchSourcePlan;
