@@ -67,7 +67,7 @@ const createInputSchema = z
 		baseBranch: z.string().min(1).optional(),
 		taskId: z.string().uuid().optional(),
 		agents: z.array(agentLaunchSchema).optional(),
-		namingPrompt: z.string().optional(),
+		namingPrompt: z.string().min(1).optional(),
 		id: z.string().uuid().optional(),
 		// Adopt the worktree git already has at this path instead of
 		// inferring the path from `branch`. When present, `branch` is
