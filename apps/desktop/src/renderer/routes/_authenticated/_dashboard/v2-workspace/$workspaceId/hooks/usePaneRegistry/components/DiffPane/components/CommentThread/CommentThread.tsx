@@ -184,21 +184,6 @@ export function CommentThread({
 }
 
 function CommentRow({ comment }: { comment: Comment }) {
-	const [isCopied, setIsCopied] = useState(false);
-	useEffect(() => {
-		if (!isCopied) return;
-		const timer = setTimeout(() => setIsCopied(false), 2000);
-		return () => clearTimeout(timer);
-	}, [isCopied]);
-	const handleCopy = () => {
-		navigator.clipboard
-			.writeText(comment.body)
-			.then(() => setIsCopied(true))
-			.catch((err) => {
-				console.error("[CommentRow/copy] Failed to copy:", err);
-				toast.error("Couldn't copy comment");
-			});
-	};
 	return (
 		<li className="flex gap-2 px-2.5 py-2">
 			<Avatar className="mt-0.5 size-5 shrink-0">
@@ -222,18 +207,6 @@ function CommentRow({ comment }: { comment: Comment }) {
 							{formatRelative(comment.createdAt)}
 						</time>
 					)}
-					<button
-						type="button"
-						onClick={handleCopy}
-						className="ml-auto shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground"
-						aria-label={isCopied ? "Copied" : "Copy comment"}
-					>
-						{isCopied ? (
-							<LuCheck className="size-3 text-green-500" />
-						) : (
-							<LuCopy className="size-3" />
-						)}
-					</button>
 				</div>
 				<div className="diff-comment-body mt-1">
 					<CommentMarkdown body={comment.body} />
