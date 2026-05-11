@@ -134,9 +134,13 @@ async function ensureUserOnHost(
 	}
 }
 
-// Best-effort tear-down on the host. The cloud row should already be
+// Authoritative tear-down on the host. The cloud row should already be
 // transitioned to `revoked` BEFORE calling this so future viewer attaches
-// fail even if the relay call below fails.
+// fail (via `get`) even if the host call below fails. Throwing here is
+// deliberate: the host owns the in-memory session/viewer set, so if we
+// can't reach it we cannot promise the user that connected viewers were
+// disconnected. The caller surfaces this to the user, who can retry —
+// the cloud UPDATE is gated on `status='active'`, so retries are idempotent.
 async function callHostRevoke(args: {
 	organizationId: string;
 	hostId: string;
@@ -144,26 +148,19 @@ async function callHostRevoke(args: {
 	actorUserId: string;
 	actorEmail?: string;
 }): Promise<void> {
-	try {
-		const jwt = await mintUserJwt({
-			userId: args.actorUserId,
-			email: args.actorEmail,
-			organizationIds: [args.organizationId],
-			scope: "remote-control",
-			ttlSeconds: 60,
-		});
-		const routingKey = buildHostRoutingKey(args.organizationId, args.hostId);
-		await relayMutation<{ sessionId: string }, unknown>(
-			{ relayUrl: env.RELAY_URL, hostId: routingKey, jwt, timeoutMs: 5000 },
-			"terminal.remoteControl.revoke",
-			{ sessionId: args.sessionId },
-		);
-	} catch (err) {
-		console.warn(
-			"[remote-control] best-effort host revoke failed:",
-			err instanceof Error ? err.message : String(err),
-		);
-	}
+	const jwt = await mintUserJwt({
+		userId: args.actorUserId,
+		email: args.actorEmail,
+		organizationIds: [args.organizationId],
+		scope: "remote-control",
+		ttlSeconds: 60,
+	});
+	const routingKey = buildHostRoutingKey(args.organizationId, args.hostId);
+	await relayMutation<{ sessionId: string }, unknown>(
+		{ relayUrl: env.RELAY_URL, hostId: routingKey, jwt, timeoutMs: 5000 },
+		"terminal.remoteControl.revoke",
+		{ sessionId: args.sessionId },
+	);
 }
 
 export const remoteControlRouter = createTRPCRouter({
@@ -329,13 +326,22 @@ export const remoteControlRouter = createTRPCRouter({
 				.from(users)
 				.where(eq(users.id, userId))
 				.limit(1);
-			await callHostRevoke({
-				organizationId,
-				hostId: row.hostId,
-				sessionId: input.sessionId,
-				actorUserId: userId,
-				actorEmail: owner?.email,
-			});
+			try {
+				await callHostRevoke({
+					organizationId,
+					hostId: row.hostId,
+					sessionId: input.sessionId,
+					actorUserId: userId,
+					actorEmail: owner?.email,
+				});
+			} catch (err) {
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message:
+						"Marked the session revoked, but could not reach the host to disconnect connected viewers. Retry to ensure viewers are disconnected.",
+					cause: err,
+				});
+			}
 
 			return { sessionId: input.sessionId, status: "revoked" as const };
 		}),
@@ -374,20 +380,32 @@ export const remoteControlRouter = createTRPCRouter({
 						eq(v2RemoteControlSessions.status, "active"),
 					),
 				);
-			// Best-effort host tear-down using the row creator's identity
+			// Authoritative host tear-down using the row creator's identity
 			// (the JWT only needs to be valid enough to traverse the relay).
+			// If the host call fails we still keep the cloud row as `revoked`
+			// — but we MUST surface the error so the viewer doesn't see a
+			// success toast while still controlling the terminal.
 			const [owner] = await dbWs
 				.select({ email: users.email })
 				.from(users)
 				.where(eq(users.id, row.createdByUserId))
 				.limit(1);
-			await callHostRevoke({
-				organizationId: row.organizationId,
-				hostId: row.hostId,
-				sessionId: input.sessionId,
-				actorUserId: row.createdByUserId,
-				actorEmail: owner?.email,
-			});
+			try {
+				await callHostRevoke({
+					organizationId: row.organizationId,
+					hostId: row.hostId,
+					sessionId: input.sessionId,
+					actorUserId: row.createdByUserId,
+					actorEmail: owner?.email,
+				});
+			} catch (err) {
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message:
+						"Marked the session revoked, but could not reach the host to disconnect connected viewers. Retry to ensure viewers are disconnected.",
+					cause: err,
+				});
+			}
 			return { sessionId: input.sessionId, status: "revoked" as const };
 		}),
 
