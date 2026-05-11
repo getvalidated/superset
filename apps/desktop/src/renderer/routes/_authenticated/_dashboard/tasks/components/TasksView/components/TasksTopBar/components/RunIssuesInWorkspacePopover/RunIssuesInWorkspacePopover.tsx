@@ -258,13 +258,8 @@ export function RunIssuesInWorkspacePopover({
 			error: (err) => (err instanceof Error ? err.message : String(err)),
 		});
 
-		promise.then(
-			() => {
-				setOpen(false);
-				onComplete();
-			},
-			() => {},
-		);
+		setOpen(false);
+		onComplete();
 	};
 
 	return (
