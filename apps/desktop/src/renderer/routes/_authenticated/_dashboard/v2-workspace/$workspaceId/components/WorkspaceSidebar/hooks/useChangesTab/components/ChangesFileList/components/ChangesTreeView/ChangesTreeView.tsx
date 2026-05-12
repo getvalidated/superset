@@ -1,5 +1,4 @@
 import type {
-	FileTree,
 	FileTreeDirectoryHandle,
 	FileTreeRowDecoration,
 	FileTreeRowDecorationContext,
@@ -136,14 +135,7 @@ export const ChangesTreeView = memo(function ChangesTreeView({
 		return map;
 	}, [files]);
 
-	// Pierre's host element is `height: 100%` when virtualized — inside this
-	// section's auto-height container that collapses to 0, so the tree would be
-	// invisible. We size the tree explicitly to its content. `dirs` is sorted
-	// shallow→deep so `countVisibleRows` can resolve each dir's ancestors first.
-	const { dirs, fileParents, dirFileCount } = useMemo(
-		() => buildTreeShape(paths),
-		[paths],
-	);
+	const { dirs, dirFileCount } = useMemo(() => buildTreeShape(paths), [paths]);
 
 	const initialGitStatusEntriesRef = useRef(buildPierreGitStatus(files));
 
@@ -184,18 +176,49 @@ export const ChangesTreeView = memo(function ChangesTreeView({
 		model.setGitStatus(buildPierreGitStatus(files));
 	}, [model, files]);
 
-	// Track the visible row count (shrinks when the user collapses a folder) so
-	// the explicit tree height tracks the actual content height.
-	const [visibleRowCount, setVisibleRowCount] = useState(
-		() => dirs.length + paths.length,
-	);
+	// Pierre's host is `height: 100%` when virtualized — inside this section's
+	// auto-height container that collapses to 0, so the tree would be
+	// invisible. Size it to the content. Pierre already computes that height
+	// (rendered rows × itemHeight, *after* it flattens single-child directory
+	// chains into one row) and writes it to the virtualized list's inline
+	// `style.height` — mirror that. A naive `dirs + files` count would
+	// massively over-estimate because it doesn't know about flattening.
+	const [contentHeight, setContentHeight] = useState<number | null>(null);
 	useEffect(() => {
-		const recompute = () =>
-			setVisibleRowCount(countVisibleRows(model, dirs, fileParents));
-		recompute();
-		return model.subscribe(recompute);
-	}, [model, dirs, fileParents]);
-	const treeHeight = visibleRowCount * ROW_BOX + HEIGHT_CUSHION;
+		const readHeight = (): boolean => {
+			const list = model
+				.getFileTreeContainer()
+				?.shadowRoot?.querySelector<HTMLElement>(
+					"[data-file-tree-virtualized-list]",
+				);
+			const h = list ? Number.parseFloat(list.style.height) : Number.NaN;
+			if (Number.isFinite(h) && h > 0) {
+				setContentHeight(h);
+				return true;
+			}
+			return false;
+		};
+		let raf = 0;
+		let attempts = 0;
+		const retryUntilReady = () => {
+			if (readHeight() || attempts++ > 30) return;
+			raf = requestAnimationFrame(retryUntilReady);
+		};
+		retryUntilReady();
+		// Pierre rewrites `style.height` when the rendered row count changes
+		// (resetPaths, expand/collapse); re-read on the next frame after each.
+		const unsubscribe = model.subscribe(() => {
+			raf = requestAnimationFrame(readHeight);
+		});
+		return () => {
+			cancelAnimationFrame(raf);
+			unsubscribe();
+		};
+	}, [model]);
+	const treeHeight =
+		contentHeight != null
+			? contentHeight + HEIGHT_CUSHION
+			: (dirs.length + paths.length) * ROW_BOX + HEIGHT_CUSHION;
 
 	const collapseAll = useCallback(() => {
 		for (const dir of dirs) {
@@ -417,25 +440,19 @@ export const ChangesTreeView = memo(function ChangesTreeView({
 });
 
 /**
- * From a flat list of file paths, return: every directory path implied by them
- * (sorted shallow→deep), the parent directory of each file, and a map of
- * directory → count of files anywhere beneath it. Root-level files report `""`
- * as their parent and don't contribute to any directory's count.
+ * From a flat list of file paths, return every directory path implied by them
+ * (sorted shallow→deep, so a directory's ancestors precede it) and a map of
+ * directory → count of files anywhere beneath it.
  */
 function buildTreeShape(paths: string[]): {
 	dirs: string[];
-	fileParents: string[];
 	dirFileCount: Map<string, number>;
 } {
 	const dirs: string[] = [];
 	const seen = new Set<string>();
-	const fileParents: string[] = [];
 	const dirFileCount = new Map<string, number>();
 	for (const path of paths) {
 		const segments = path.split("/");
-		fileParents.push(
-			segments.length > 1 ? segments.slice(0, -1).join("/") : "",
-		);
 		let acc = "";
 		for (let i = 0; i < segments.length - 1; i++) {
 			acc = acc ? `${acc}/${segments[i]}` : segments[i];
@@ -449,39 +466,7 @@ function buildTreeShape(paths: string[]): {
 	dirs.sort(
 		(a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b),
 	);
-	return { dirs, fileParents, dirFileCount };
-}
-
-/**
- * Count the rows Pierre currently renders: every directory whose ancestors are
- * all expanded, plus every file under such a directory. `dirs` must be sorted
- * shallow→deep. Pierre defaults directories to expanded (`initialExpansion`),
- * so a missing/unknown handle counts as expanded.
- */
-function countVisibleRows(
-	model: FileTree,
-	dirs: string[],
-	fileParents: string[],
-): number {
-	const renderedDirs = new Set<string>();
-	const expandedAndVisible = new Set<string>();
-	for (const dir of dirs) {
-		const lastSlash = dir.lastIndexOf("/");
-		const parent = lastSlash < 0 ? "" : dir.slice(0, lastSlash);
-		if (parent !== "" && !expandedAndVisible.has(parent)) continue;
-		renderedDirs.add(dir);
-		const handle = model.getItem(`${dir}/`);
-		const expanded =
-			handle?.isDirectory() === true
-				? (handle as FileTreeDirectoryHandle).isExpanded()
-				: true;
-		if (expanded) expandedAndVisible.add(dir);
-	}
-	let count = renderedDirs.size;
-	for (const parent of fileParents) {
-		if (parent === "" || expandedAndVisible.has(parent)) count += 1;
-	}
-	return count;
+	return { dirs, dirFileCount };
 }
 
 function buildPierreGitStatus(files: ChangesetFile[]): {
