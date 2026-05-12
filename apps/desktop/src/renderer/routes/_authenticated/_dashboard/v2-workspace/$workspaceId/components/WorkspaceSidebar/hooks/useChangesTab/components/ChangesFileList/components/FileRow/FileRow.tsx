@@ -47,6 +47,8 @@ interface FileRowProps {
 	file: ChangesetFile;
 	workspaceId: string;
 	worktreePath?: string;
+	/** Hide the directory prefix — used when the row sits under a folder group. */
+	hideDir?: boolean;
 	onSelect?: (path: string, openInNewTab?: boolean) => void;
 	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
 	onOpenInEditor?: (path: string) => void;
@@ -56,11 +58,13 @@ export const FileRow = memo(function FileRow({
 	file,
 	workspaceId,
 	worktreePath,
+	hideDir,
 	onSelect,
 	onOpenFile,
 	onOpenInEditor,
 }: FileRowProps) {
-	const { dir, basename } = splitPath(file.path);
+	const { dir: fullDir, basename } = splitPath(file.path);
+	const dir = hideDir ? "" : fullDir;
 	const oldBasename =
 		file.oldPath && (file.status === "renamed" || file.status === "copied")
 			? splitPath(file.oldPath).basename

@@ -27,8 +27,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { FileStatus } from "renderer/hooks/host-service/useGitStatusMap";
 import { useGitStatusMap } from "renderer/hooks/host-service/useGitStatusMap";
 import {
-	folderIntentFor,
 	ShadowClickHint,
+	usePierreRowClickPolicy,
 	useSidebarFilePolicy,
 } from "renderer/lib/clickPolicy";
 import { useOpenInExternalEditor } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useOpenInExternalEditor";
@@ -37,9 +37,9 @@ import {
 	ROW_HEIGHT,
 	TREE_INDENT,
 } from "renderer/screens/main/components/WorkspaceView/RightSidebar/FilesView/constants";
+import { PierreRowContextMenu } from "../PierreRowContextMenu";
 import { FileMenuItems } from "./components/FileMenuItems";
 import { FolderMenuItems } from "./components/FolderMenuItems";
-import { RowContextMenu } from "./components/RowContextMenu";
 import { useFilesTabBridge } from "./hooks/useFilesTabBridge";
 import { loadFallthroughIcons } from "./utils/loadFallthroughIcons";
 import {
@@ -491,69 +491,19 @@ export function FilesTab({
 		[workspaceId, deletePath],
 	);
 
-	// Pierre mounts its tree inside an open shadow root on a custom element
-	// (`<file-tree-container>`). Events bubbling out retarget to that host,
-	// so `e.target.closest(...)` from our wrapper finds nothing — walk
-	// `composedPath()` to cross the shadow boundary and find the row by its
-	// `data-item-path` attribute (stamped by render/rowAttributes.ts in
-	// @pierre/trees — pin coverage with the version in package.json).
-	const findRow = useCallback((e: React.MouseEvent): HTMLElement | null => {
-		const path = e.nativeEvent.composedPath();
-		for (const node of path) {
-			if (!(node instanceof HTMLElement)) continue;
-			if (node.getAttribute("data-item-path")) return node;
-		}
-		return null;
-	}, []);
-
-	// Capture-phase click intercept routes every row click through clickPolicy.
-	// File rows: settings-driven via `useSidebarFilePolicy`. Folders: fixed
-	// rule via `folderIntentFor` (meta=reveal, metaShift=external) — they're
-	// not user-configurable because the action vocabulary doesn't fit.
-	// Unbound tiers and plain "pane" defer to Pierre's onSelectionChange so
-	// the visual selection stays in sync; intercepting would swallow the click.
-	const handleClickCapture = useCallback(
-		(e: React.MouseEvent<HTMLDivElement>) => {
-			if (!rootPath) return;
-			const treePath = findRow(e)?.getAttribute("data-item-path");
-			if (!treePath) return;
-			const abs = toAbs(rootPath, treePath);
-
-			if (treePath.endsWith("/")) {
-				const intent = folderIntentFor(e);
-				if (intent === null) return;
-				e.preventDefault();
-				e.stopPropagation();
-				if (intent === "external") openInExternalEditor(abs);
-				// "reveal" is a no-op — folder is already in this sidebar.
-				return;
-			}
-
-			const { tier, action } = filePolicy.resolve(e);
-			if (action === null) return;
-			if (tier === "plain" && action === "pane") return;
-			e.preventDefault();
-			e.stopPropagation();
-			if (action === "external") openInExternalEditor(abs);
-			else if (action === "newTab") onSelectFile(abs, true);
-			else if (action === "pane") onSelectFile(abs, false);
-		},
-		[rootPath, openInExternalEditor, onSelectFile, findRow, filePolicy],
-	);
-
 	// Hint tooltip uses ShadowClickHint to anchor a single shadcn Tooltip
 	// over the hovered row's bounding rect — Pierre owns the row DOM inside
 	// an open shadow root, so per-row Tooltip wrappers aren't possible.
 	// Folders are excluded since folder intents are hardcoded.
-	const findFileRow = useCallback(
-		(e: React.MouseEvent): HTMLElement | null => {
-			const row = findRow(e);
-			const itemPath = row?.getAttribute("data-item-path");
-			if (!row || !itemPath || itemPath.endsWith("/")) return null;
-			return row;
-		},
-		[findRow],
-	);
+	// The hook fires Pierre's relative path; this surface's external
+	// contract is absolute, so wrap each callback to join with `rootPath`.
+	const { onClickCapture: handleClickCapture, findFileRow } =
+		usePierreRowClickPolicy({
+			filePolicy,
+			onSelectFile: (rel, openInNewTab) =>
+				onSelectFile(toAbs(rootPath, rel), openInNewTab),
+			openInExternalEditor: (rel) => openInExternalEditor(toAbs(rootPath, rel)),
+		});
 
 	const renderContextMenu = useCallback(
 		(item: PierreContextMenuItem, ctx: PierreContextMenuOpenContext) => {
@@ -564,7 +514,7 @@ export function FilesTab({
 			const abs = toAbs(rootPath, item.path);
 			const rel = stripTrailingSlash(item.path);
 			return (
-				<RowContextMenu
+				<PierreRowContextMenu
 					anchorRect={ctx.anchorRect}
 					onClose={ctx.close}
 					data-file-tree-context-menu-root="true"
@@ -589,7 +539,7 @@ export function FilesTab({
 							onDelete={() => handleDelete(abs, item.name, false)}
 						/>
 					)}
-				</RowContextMenu>
+				</PierreRowContextMenu>
 			);
 		},
 		[

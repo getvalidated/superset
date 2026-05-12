@@ -1,9 +1,13 @@
 import { GitBranch, Pencil } from "lucide-react";
 import { useRef, useState } from "react";
-import type { ChangesFilter } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
+import type {
+	ChangesFilter,
+	ChangesViewMode,
+} from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import type { Branch, Commit } from "../../types";
 import { BaseBranchSelector } from "../BaseBranchSelector";
 import { CommitFilterDropdown } from "../CommitFilterDropdown";
+import { ViewModeToggle } from "./components/ViewModeToggle";
 
 interface ChangesHeaderProps {
 	currentBranch: { name: string; aheadCount: number; behindCount: number };
@@ -14,6 +18,8 @@ interface ChangesHeaderProps {
 	totalDeletions: number;
 	filter: ChangesFilter;
 	onFilterChange: (filter: ChangesFilter) => void;
+	viewMode: ChangesViewMode;
+	onViewModeChange: (viewMode: ChangesViewMode) => void;
 	commits: Commit[];
 	uncommittedCount: number;
 	branches: Branch[];
@@ -33,6 +39,8 @@ export function ChangesHeader({
 	canRename,
 	filter,
 	onFilterChange,
+	viewMode,
+	onViewModeChange,
 	commits,
 	uncommittedCount,
 	branches,
@@ -115,6 +123,7 @@ export function ChangesHeader({
 					uncommittedCount={uncommittedCount}
 				/>
 				<div className="flex shrink-0 items-center gap-1.5">
+					<ViewModeToggle viewMode={viewMode} onChange={onViewModeChange} />
 					<span>
 						{totalFiles} {totalFiles === 1 ? "file" : "files"}
 					</span>

@@ -1,12 +1,15 @@
 import { memo, useMemo } from "react";
 import type { ChangesetFile } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useChangeset";
+import type { ChangesViewMode } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
+import { ChangesFoldersView } from "./components/ChangesFoldersView";
 import { ChangesSection } from "./components/ChangesSection";
-import { FileRow } from "./components/FileRow";
+import { ChangesTreeView } from "./components/ChangesTreeView";
 
 interface ChangesFileListProps {
 	files: ChangesetFile[];
 	workspaceId: string;
 	isLoading?: boolean;
+	viewMode: ChangesViewMode;
 	worktreePath?: string;
 	onSelectFile?: (path: string, openInNewTab?: boolean) => void;
 	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
@@ -33,6 +36,7 @@ export const ChangesFileList = memo(function ChangesFileList({
 	files,
 	workspaceId,
 	isLoading,
+	viewMode,
 	worktreePath,
 	onSelectFile,
 	onOpenFile,
@@ -84,17 +88,26 @@ export const ChangesFileList = memo(function ChangesFileList({
 								: undefined
 						}
 					>
-						{groupFiles.map((file) => (
-							<FileRow
-								key={`${file.source.kind}:${file.path}`}
-								file={file}
+						{viewMode === "tree" ? (
+							<ChangesTreeView
+								files={groupFiles}
+								sectionKind={key}
 								workspaceId={workspaceId}
 								worktreePath={worktreePath}
-								onSelect={onSelectFile}
+								onSelectFile={onSelectFile}
 								onOpenFile={onOpenFile}
 								onOpenInEditor={onOpenInEditor}
 							/>
-						))}
+						) : (
+							<ChangesFoldersView
+								files={groupFiles}
+								workspaceId={workspaceId}
+								worktreePath={worktreePath}
+								onSelectFile={onSelectFile}
+								onOpenFile={onOpenFile}
+								onOpenInEditor={onOpenInEditor}
+							/>
+						)}
 					</ChangesSection>
 				);
 			})}

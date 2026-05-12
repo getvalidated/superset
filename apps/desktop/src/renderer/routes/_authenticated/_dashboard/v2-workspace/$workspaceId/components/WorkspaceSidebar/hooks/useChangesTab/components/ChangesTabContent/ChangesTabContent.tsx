@@ -1,7 +1,10 @@
 import type { AppRouter } from "@superset/host-service";
 import type { inferRouterOutputs } from "@trpc/server";
 import { memo } from "react";
-import type { ChangesFilter } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
+import type {
+	ChangesFilter,
+	ChangesViewMode,
+} from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import type { ChangesetFile } from "../../../../../../hooks/useChangeset";
 import { ChangesFileList } from "../ChangesFileList";
 import { ChangesHeader } from "../ChangesHeader";
@@ -17,6 +20,7 @@ interface ChangesTabContentProps {
 	commits: { data: RouterOutputs["git"]["listCommits"] | undefined };
 	branches: { data: RouterOutputs["git"]["listBranches"] | undefined };
 	filter: ChangesFilter;
+	viewMode: ChangesViewMode;
 	baseBranch: string | null;
 	files: ChangesetFile[];
 	isLoading: boolean;
@@ -28,6 +32,7 @@ interface ChangesTabContentProps {
 	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
 	onOpenInEditor?: (path: string) => void;
 	onFilterChange: (filter: ChangesFilter) => void;
+	onViewModeChange: (viewMode: ChangesViewMode) => void;
 	onBaseBranchChange: (branchName: string) => void;
 	onRenameBranch: (newName: string) => void;
 	canRenameBranch: boolean;
@@ -39,6 +44,7 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 	commits,
 	branches,
 	filter,
+	viewMode,
 	baseBranch,
 	files,
 	isLoading,
@@ -50,6 +56,7 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 	onOpenFile,
 	onOpenInEditor,
 	onFilterChange,
+	onViewModeChange,
 	onBaseBranchChange,
 	onRenameBranch,
 	canRenameBranch,
@@ -81,6 +88,8 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 				totalDeletions={totalDeletions}
 				filter={filter}
 				onFilterChange={onFilterChange}
+				viewMode={viewMode}
+				onViewModeChange={onViewModeChange}
 				commits={commits.data?.commits ?? []}
 				uncommittedCount={
 					status.data.staged.length + status.data.unstaged.length
@@ -95,6 +104,7 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 					files={files}
 					workspaceId={workspaceId}
 					isLoading={isLoading}
+					viewMode={viewMode}
 					worktreePath={worktreePath}
 					onSelectFile={onSelectFile}
 					onOpenFile={onOpenFile}
