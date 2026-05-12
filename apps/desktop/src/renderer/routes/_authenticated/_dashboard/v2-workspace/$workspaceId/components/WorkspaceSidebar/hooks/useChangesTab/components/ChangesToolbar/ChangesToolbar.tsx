@@ -28,7 +28,7 @@ export function ChangesToolbar({
 	const label = collapsed ? "Expand all" : "Collapse all";
 	const Icon = collapsed ? UnfoldVertical : FoldVertical;
 	return (
-		<div className="flex items-center justify-between gap-2 border-b border-border px-2 py-0.5">
+		<div className="flex items-center justify-end gap-1 border-b border-border px-2 py-0.5">
 			<ViewModeToggle viewMode={viewMode} onChange={onViewModeChange} />
 			<Tooltip>
 				<TooltipTrigger asChild>
