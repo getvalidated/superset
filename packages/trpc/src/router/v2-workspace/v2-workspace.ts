@@ -10,7 +10,7 @@ import {
 import { getCurrentTxid } from "@superset/db/utils";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
-import { and, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { posthog } from "../../lib/analytics";
 import { jwtProcedure, protectedProcedure } from "../../trpc";
@@ -127,7 +127,11 @@ export const v2WorkspaceRouter = {
 				});
 			}
 
-			const searchPattern = input.search ? `%${input.search}%` : null;
+			const escapeLike = (value: string) =>
+				value.replace(/[\\%_]/g, (char) => `\\${char}`);
+			const searchPattern = input.search
+				? `%${escapeLike(input.search)}%`
+				: null;
 			const searchMatch = searchPattern
 				? or(
 						ilike(v2Workspaces.name, searchPattern),
@@ -162,7 +166,7 @@ export const v2WorkspaceRouter = {
 							? eq(v2Workspaces.projectId, input.projectId)
 							: undefined,
 						input.projectName
-							? ilike(v2Projects.name, input.projectName)
+							? sql`lower(${v2Projects.name}) = lower(${input.projectName})`
 							: undefined,
 						searchMatch,
 					),
