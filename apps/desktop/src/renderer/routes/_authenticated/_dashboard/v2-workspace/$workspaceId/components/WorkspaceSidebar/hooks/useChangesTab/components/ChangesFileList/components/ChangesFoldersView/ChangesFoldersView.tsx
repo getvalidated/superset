@@ -77,9 +77,9 @@ export const ChangesFoldersView = memo(function ChangesFoldersView({
 			{groups.map((group) => {
 				const isRoot = group.folderPath === ROOT_FOLDER_KEY;
 				const isOpen = !closedFolders.has(group.folderPath);
+				// `folderPath` ("" for the root group) is already the unique
+				// per-group discriminator — `groupFilesByFolder` keys a Map by it.
 				return (
-					{/* `folderPath` (`""` for the root group) is already the unique
-					    discriminator — `groupFilesByFolder` keys a Map by it. */}
 					<div key={group.folderPath}>
 						<FolderHeader
 							label={isRoot ? ROOT_FOLDER_LABEL : group.folderPath}
