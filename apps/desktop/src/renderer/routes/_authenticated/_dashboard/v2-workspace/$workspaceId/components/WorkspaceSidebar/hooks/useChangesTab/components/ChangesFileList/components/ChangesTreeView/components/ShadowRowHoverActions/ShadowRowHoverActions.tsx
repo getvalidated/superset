@@ -66,6 +66,15 @@ export function ShadowRowHoverActions({
 		setHover(null);
 	}, [menuOpen]);
 
+	// Scrolling the virtualized list moves rows out from under the captured
+	// rect, so drop the overlay (it re-anchors on the next mouseover). Skip
+	// while the dropdown is open — closing the overlay would tear it down.
+	const handleScrollCapture = useCallback(() => {
+		if (menuOpen || !hoverRowRef.current) return;
+		hoverRowRef.current = null;
+		setHover(null);
+	}, [menuOpen]);
+
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: wraps a custom-element host with its own keyboard nav
 		// biome-ignore lint/a11y/useKeyWithMouseEvents: hover-action anchoring is mouse-only by nature
@@ -73,6 +82,7 @@ export function ShadowRowHoverActions({
 			className="contents"
 			onMouseOver={handleMouseOver}
 			onMouseLeave={handleMouseLeave}
+			onScrollCapture={handleScrollCapture}
 		>
 			{children}
 			{hover && (
