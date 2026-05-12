@@ -105,9 +105,6 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 				currentBranch={status.data.currentBranch}
 				defaultBranchName={status.data.defaultBranch.name}
 				baseBranch={baseBranch}
-				totalFiles={totalChanges}
-				totalAdditions={totalAdditions}
-				totalDeletions={totalDeletions}
 				branches={branches.data?.branches ?? []}
 				onBaseBranchChange={onBaseBranchChange}
 				onRenameBranch={onRenameBranch}
@@ -120,6 +117,9 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 				uncommittedCount={
 					status.data.staged.length + status.data.unstaged.length
 				}
+				totalFiles={totalChanges}
+				totalAdditions={totalAdditions}
+				totalDeletions={totalDeletions}
 				viewMode={viewMode}
 				onViewModeChange={onViewModeChange}
 				collapsed={foldCollapsed}

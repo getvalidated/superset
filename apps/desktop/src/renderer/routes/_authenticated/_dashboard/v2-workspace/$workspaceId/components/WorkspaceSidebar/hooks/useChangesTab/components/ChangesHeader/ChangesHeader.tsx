@@ -7,9 +7,6 @@ interface ChangesHeaderProps {
 	currentBranch: { name: string; aheadCount: number; behindCount: number };
 	defaultBranchName: string;
 	baseBranch: string | null;
-	totalFiles: number;
-	totalAdditions: number;
-	totalDeletions: number;
 	branches: Branch[];
 	onBaseBranchChange: (branchName: string) => void;
 	onRenameBranch: (newName: string) => void;
@@ -20,9 +17,6 @@ export function ChangesHeader({
 	currentBranch,
 	defaultBranchName,
 	baseBranch,
-	totalFiles,
-	totalAdditions,
-	totalDeletions,
 	onRenameBranch,
 	canRename,
 	branches,
@@ -49,70 +43,51 @@ export function ChangesHeader({
 	};
 
 	return (
-		<div className="space-y-1 px-3 py-2">
-			<div className="group flex items-center gap-1.5 text-xs">
-				<GitBranch className="size-3 shrink-0 text-muted-foreground" />
-				{isEditing ? (
-					<input
-						ref={inputRef}
-						value={editValue}
-						onChange={(e) => setEditValue(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") {
-								skipBlurRef.current = true;
-								handleSubmit();
-							}
-							if (e.key === "Escape") {
-								skipBlurRef.current = true;
-								setIsEditing(false);
-							}
-						}}
-						onBlur={() => {
-							if (skipBlurRef.current) return;
+		<div className="group flex items-center gap-1.5 px-3 py-2 text-xs">
+			<GitBranch className="size-3 shrink-0 text-muted-foreground" />
+			{isEditing ? (
+				<input
+					ref={inputRef}
+					value={editValue}
+					onChange={(e) => setEditValue(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							skipBlurRef.current = true;
 							handleSubmit();
-						}}
-						className="min-w-0 flex-1 truncate rounded-sm bg-transparent px-1 font-medium outline-none ring-1 ring-ring"
-					/>
-				) : (
-					<>
-						<span className="min-w-0 truncate font-medium">
-							{currentBranch.name}
-						</span>
-						{canRename && (
-							<button
-								type="button"
-								onClick={startEditing}
-								className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-							>
-								<Pencil className="size-3" />
-							</button>
-						)}
-						<span className="shrink-0 text-muted-foreground/60">from</span>
-						<BaseBranchSelector
-							branches={branches}
-							currentValue={baseBranch ?? defaultBranchName}
-							onChange={onBaseBranchChange}
-						/>
-					</>
-				)}
-			</div>
-
-			<div className="flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
-				<span>
-					{totalFiles} {totalFiles === 1 ? "file" : "files"}
-				</span>
-				{(totalAdditions > 0 || totalDeletions > 0) && (
-					<span>
-						{totalAdditions > 0 && (
-							<span className="text-green-400">+{totalAdditions}</span>
-						)}
-						{totalAdditions > 0 && totalDeletions > 0 && " "}
-						{totalDeletions > 0 && (
-							<span className="text-red-400">-{totalDeletions}</span>
-						)}
+						}
+						if (e.key === "Escape") {
+							skipBlurRef.current = true;
+							setIsEditing(false);
+						}
+					}}
+					onBlur={() => {
+						if (skipBlurRef.current) return;
+						handleSubmit();
+					}}
+					className="min-w-0 flex-1 truncate rounded-sm bg-transparent px-1 font-medium outline-none ring-1 ring-ring"
+				/>
+			) : (
+				<>
+					<span className="min-w-0 truncate font-medium">
+						{currentBranch.name}
 					</span>
-				)}
-			</div>
+					{canRename && (
+						<button
+							type="button"
+							onClick={startEditing}
+							className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+						>
+							<Pencil className="size-3" />
+						</button>
+					)}
+					<span className="shrink-0 text-muted-foreground/60">from</span>
+					<BaseBranchSelector
+						branches={branches}
+						currentValue={baseBranch ?? defaultBranchName}
+						onChange={onBaseBranchChange}
+					/>
+				</>
+			)}
 		</div>
 	);
 }
