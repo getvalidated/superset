@@ -1,3 +1,4 @@
+import { getPresetById } from "@superset/shared/host-agent-presets";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -31,9 +32,13 @@ export function AgentPicker({
 	const hostUrl = useHostUrl(hostId);
 	const { agents } = useV2AgentChoices(hostUrl);
 	const isDark = useIsDarkTheme();
-	const selectedAgent = agents.find((agent) => agent.id === value);
-	const selectedIcon = selectedAgent
-		? getPresetIcon(selectedAgent.iconId ?? selectedAgent.id, isDark)
+	const hostMatch = agents.find((agent) => agent.id === value);
+	const presetMatch = hostMatch ? null : getPresetById(value);
+	const selectedLabel =
+		hostMatch?.label ?? presetMatch?.label ?? (value ? value : null);
+	const selectedIconKey = hostMatch?.iconId ?? presetMatch?.presetId ?? value;
+	const selectedIcon = selectedIconKey
+		? getPresetIcon(selectedIconKey, isDark)
 		: null;
 
 	return (
@@ -52,7 +57,7 @@ export function AgentPicker({
 							<LuCpu className="size-4 shrink-0" />
 						)
 					}
-					label={selectedAgent?.label ?? "Select agent"}
+					label={selectedLabel ?? "Select agent"}
 				/>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-56">
