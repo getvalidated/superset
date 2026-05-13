@@ -1,4 +1,9 @@
-import type { SelectAutomation } from "@superset/db/schema";
+import type {
+	SelectAutomation,
+	SelectUser,
+	SelectV2Host,
+	SelectV2Workspace,
+} from "@superset/db/schema";
 import { COMPANY } from "@superset/shared/constants";
 import { describeSchedule } from "@superset/shared/rrule";
 import {
@@ -57,7 +62,6 @@ import { CellWithIcon } from "./components/CellWithIcon";
 import { CreateAutomationDialog } from "./components/CreateAutomationDialog";
 import { useRecentProjects } from "./hooks/useRecentProjects";
 import type { AutomationTemplate } from "./templates";
-import { indexBy } from "./utils/indexBy";
 
 export const Route = createFileRoute("/_authenticated/_dashboard/automations/")(
 	{
@@ -150,17 +154,37 @@ function AutomationsPage() {
 		[collections.v2Hosts],
 	);
 
-	const usersById = useMemo(() => indexBy(userRows, (u) => u.id), [userRows]);
+	// Live queries can briefly surface nullish rows while syncing (see #4519).
+	const usersById = useMemo(
+		() =>
+			new Map(
+				(userRows as Pick<SelectUser, "id" | "name" | "email">[])
+					.filter((u) => u != null)
+					.map((u) => [u.id, u]),
+			),
+		[userRows],
+	);
 	const projectsById = useMemo(
-		() => indexBy(recentProjects, (p) => p.id),
+		() =>
+			new Map(recentProjects.filter((p) => p != null).map((p) => [p.id, p])),
 		[recentProjects],
 	);
 	const workspacesById = useMemo(
-		() => indexBy(workspaceRows, (w) => w.id),
+		() =>
+			new Map(
+				(workspaceRows as Pick<SelectV2Workspace, "id" | "name">[])
+					.filter((w) => w != null)
+					.map((w) => [w.id, w]),
+			),
 		[workspaceRows],
 	);
 	const hostsById = useMemo(
-		() => indexBy(hostRows, (h) => h.machineId),
+		() =>
+			new Map(
+				(hostRows as Pick<SelectV2Host, "machineId" | "name">[])
+					.filter((h) => h != null)
+					.map((h) => [h.machineId, h]),
+			),
 		[hostRows],
 	);
 
