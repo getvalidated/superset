@@ -59,6 +59,26 @@ export function ThemeFrame() {
 
 	const showSystem = matchesQuery(`System ${SYSTEM_THEME_ID}`, query);
 
+	const visibleLight = filterThemes(
+		lightThemes.filter((t) => !t.isCustom),
+		"Light",
+		query,
+	);
+	const visibleDark = filterThemes(
+		darkThemes.filter((t) => !t.isCustom),
+		"Dark",
+		query,
+	);
+	const visibleCustom = filterThemes(
+		[...customLight, ...customDark],
+		"Custom",
+		query,
+	);
+	const hasThemeGroup =
+		visibleLight.length > 0 ||
+		visibleDark.length > 0 ||
+		visibleCustom.length > 0;
+
 	return (
 		<CommandList>
 			<CommandEmpty>No themes found.</CommandEmpty>
@@ -81,34 +101,39 @@ export function ThemeFrame() {
 				</CommandGroup>
 			)}
 
-			{showSystem && <CommandSeparator />}
+			{showSystem && hasThemeGroup && <CommandSeparator />}
 
 			<ThemeGroup
 				heading="Light"
-				themes={lightThemes.filter((t) => !t.isCustom)}
+				themes={visibleLight}
 				activeId={activeThemeId}
 				onSelect={pickTheme}
-				query={query}
 			/>
 
 			<ThemeGroup
 				heading="Dark"
-				themes={darkThemes.filter((t) => !t.isCustom)}
+				themes={visibleDark}
 				activeId={activeThemeId}
 				onSelect={pickTheme}
-				query={query}
 			/>
 
-			{(customLight.length > 0 || customDark.length > 0) && (
-				<ThemeGroup
-					heading="Custom"
-					themes={[...customLight, ...customDark]}
-					activeId={activeThemeId}
-					onSelect={pickTheme}
-					query={query}
-				/>
-			)}
+			<ThemeGroup
+				heading="Custom"
+				themes={visibleCustom}
+				activeId={activeThemeId}
+				onSelect={pickTheme}
+			/>
 		</CommandList>
+	);
+}
+
+function filterThemes(
+	themes: Theme[],
+	heading: string,
+	query: string,
+): Theme[] {
+	return themes.filter((theme) =>
+		matchesQuery(`${heading} ${theme.name} ${theme.id}`, query),
 	);
 }
 
@@ -117,23 +142,13 @@ interface ThemeGroupProps {
 	themes: Theme[];
 	activeId: string;
 	onSelect: (themeId: string) => void;
-	query: string;
 }
 
-function ThemeGroup({
-	heading,
-	themes,
-	activeId,
-	onSelect,
-	query,
-}: ThemeGroupProps) {
-	const visible = themes.filter((theme) =>
-		matchesQuery(`${heading} ${theme.name} ${theme.id}`, query),
-	);
-	if (visible.length === 0) return null;
+function ThemeGroup({ heading, themes, activeId, onSelect }: ThemeGroupProps) {
+	if (themes.length === 0) return null;
 	return (
 		<CommandGroup heading={heading}>
-			{visible.map((theme) => (
+			{themes.map((theme) => (
 				<CommandItem
 					key={`${heading}:${theme.id}`}
 					value={`${heading} ${theme.name} ${theme.id}`}
