@@ -12,7 +12,6 @@ import { toast } from "@superset/ui/sonner";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { Archive, ChevronDown, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { getRelativeTime } from "renderer/screens/main/components/WorkspacesListView/utils";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
@@ -83,7 +82,6 @@ export function BackgroundTerminalsButton({
 	const handleKill = async (terminalId: string) => {
 		try {
 			await killSession.mutateAsync({ terminalId, workspaceId });
-			terminalRuntimeRegistry.dispose(terminalId);
 		} catch (error) {
 			console.error(
 				"[BackgroundTerminalsButton] Failed to kill session:",

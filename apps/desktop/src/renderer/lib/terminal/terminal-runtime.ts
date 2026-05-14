@@ -9,7 +9,6 @@ import { loadAddons } from "./terminal-addons";
 import { installImagePasteFallback } from "./terminal-image-paste-fallback";
 import { installTerminalKeyEventHandler } from "./terminal-key-event-handler";
 import { getTerminalParkingContainer } from "./terminal-parking";
-import { markTerminalSessionReplayBlocked } from "./terminal-session-replay";
 
 const SERIALIZE_SCROLLBACK = 1000;
 const STORAGE_KEY_PREFIX = "terminal-buffer:";
@@ -17,21 +16,6 @@ const DIMS_KEY_PREFIX = "terminal-dims:";
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 32;
 const RESIZE_DEBOUNCE_MS = 75;
-const OUTPUT_CHUNK_BYTES = 4096;
-const BACKGROUND_OUTPUT_WRITES_PER_FRAME = 2;
-
-type TerminalOutputData = string | Uint8Array;
-
-interface TerminalOutputQueueItem {
-	data: TerminalOutputData;
-	callback?: () => void;
-}
-
-const runtimesWithQueuedOutput = new Set<TerminalRuntime>();
-let outputFlushRafId: number | null = null;
-let outputFlushTimeoutId: ReturnType<typeof setTimeout> | null = null;
-let pendingFocusRuntime: TerminalRuntime | null = null;
-let focusRafId: number | null = null;
 
 export interface TerminalRuntime {
 	terminalId: string;
@@ -48,116 +32,6 @@ export interface TerminalRuntime {
 	lastRows: number;
 	_disposeAddons: (() => void) | null;
 	_disposeImagePasteFallback: (() => void) | null;
-	_outputQueue: TerminalOutputQueueItem[];
-	_outputEnqueued: boolean;
-	hasBufferedContent: boolean;
-}
-
-function getOutputByteLength(data: TerminalOutputData): number {
-	if (typeof data === "string") return data.length;
-	return data.byteLength;
-}
-
-function splitStringAtOutputBoundary(value: string, start: number): number {
-	const end = Math.min(value.length, start + OUTPUT_CHUNK_BYTES);
-	if (end >= value.length) return value.length;
-	const code = value.charCodeAt(end - 1);
-	return code >= 0xd800 && code <= 0xdbff ? end - 1 : end;
-}
-
-function splitOutputData(
-	data: TerminalOutputData,
-	callback?: () => void,
-): TerminalOutputQueueItem[] {
-	const byteLength = getOutputByteLength(data);
-	if (byteLength <= OUTPUT_CHUNK_BYTES) {
-		return [{ data, callback }];
-	}
-
-	const items: TerminalOutputQueueItem[] = [];
-	if (typeof data === "string") {
-		for (let start = 0; start < data.length; ) {
-			const end = splitStringAtOutputBoundary(data, start);
-			const chunk = data.slice(start, end);
-			items.push({ data: chunk });
-			start = end;
-		}
-	} else {
-		for (let start = 0; start < data.byteLength; start += OUTPUT_CHUNK_BYTES) {
-			const chunk = data.slice(start, start + OUTPUT_CHUNK_BYTES);
-			items.push({ data: chunk });
-		}
-	}
-
-	const lastItem = items.at(-1);
-	if (lastItem) lastItem.callback = callback;
-	return items;
-}
-
-function scheduleQueuedOutputFlush() {
-	if (outputFlushRafId !== null || outputFlushTimeoutId !== null) return;
-	if (typeof requestAnimationFrame !== "function") {
-		outputFlushTimeoutId = setTimeout(flushQueuedOutput, 0);
-		return;
-	}
-	outputFlushRafId = requestAnimationFrame(flushQueuedOutput);
-}
-
-function flushQueuedOutput() {
-	outputFlushRafId = null;
-	if (outputFlushTimeoutId !== null) {
-		clearTimeout(outputFlushTimeoutId);
-		outputFlushTimeoutId = null;
-	}
-
-	let processed = 0;
-	for (const runtime of Array.from(runtimesWithQueuedOutput)) {
-		runtimesWithQueuedOutput.delete(runtime);
-		const item = runtime._outputQueue.shift();
-		if (!item) {
-			runtime._outputEnqueued = false;
-			continue;
-		}
-
-		processed += 1;
-		runtime.terminal.write(item.data, item.callback);
-
-		if (runtime._outputQueue.length > 0) {
-			runtimesWithQueuedOutput.add(runtime);
-		} else {
-			runtime._outputEnqueued = false;
-		}
-
-		if (processed >= BACKGROUND_OUTPUT_WRITES_PER_FRAME) break;
-	}
-
-	if (runtimesWithQueuedOutput.size > 0) {
-		scheduleQueuedOutputFlush();
-	}
-}
-
-function scheduleRuntimeQueuedOutput(runtime: TerminalRuntime) {
-	if (runtime._outputQueue.length === 0 || runtime._outputEnqueued) return;
-	runtime._outputEnqueued = true;
-	runtimesWithQueuedOutput.add(runtime);
-	scheduleQueuedOutputFlush();
-}
-
-function enqueueRuntimeOutput(
-	runtime: TerminalRuntime,
-	item: TerminalOutputQueueItem,
-) {
-	runtime._outputQueue.push(item);
-	scheduleRuntimeQueuedOutput(runtime);
-}
-
-function clearQueuedRuntimeOutput(runtime: TerminalRuntime) {
-	runtimesWithQueuedOutput.delete(runtime);
-	runtime._outputEnqueued = false;
-	const queue = runtime._outputQueue.splice(0);
-	for (const item of queue) {
-		item.callback?.();
-	}
 }
 
 function createTerminal(
@@ -198,15 +72,11 @@ function persistBuffer(terminalId: string, serializeAddon: SerializeAddon) {
 	} catch {}
 }
 
-function restoreBuffer(terminalId: string, terminal: XTerm): boolean {
+function restoreBuffer(terminalId: string, terminal: XTerm) {
 	try {
 		const data = localStorage.getItem(`${STORAGE_KEY_PREFIX}${terminalId}`);
-		if (data) {
-			terminal.write(data);
-			return true;
-		}
+		if (data) terminal.write(data);
 	} catch {}
-	return false;
 }
 
 function clearPersistedBuffer(terminalId: string) {
@@ -244,23 +114,6 @@ function clearPersistedDimensions(terminalId: string) {
 	try {
 		localStorage.removeItem(`${DIMS_KEY_PREFIX}${terminalId}`);
 	} catch {}
-}
-
-function disposeTerminalAfterPendingRefresh(terminal: XTerm) {
-	const disposeTerminal = () => {
-		try {
-			terminal.dispose();
-		} catch {}
-	};
-
-	if (typeof requestAnimationFrame !== "function") {
-		setTimeout(disposeTerminal, 0);
-		return;
-	}
-
-	requestAnimationFrame(() => {
-		requestAnimationFrame(disposeTerminal);
-	});
 }
 
 function hostIsVisible(container: HTMLDivElement | null): boolean {
@@ -352,7 +205,6 @@ export function createRuntime(
 	const wrapper = document.createElement("div");
 	wrapper.style.width = "100%";
 	wrapper.style.height = "100%";
-	markTerminalSessionReplayBlocked(wrapper);
 	terminal.open(wrapper);
 
 	installTerminalKeyEventHandler(terminal);
@@ -360,14 +212,10 @@ export function createRuntime(
 	// Activate Unicode 11 widths (inside loadAddons) before restoring the buffer,
 	// else CJK/emoji/ZWJ widths get baked wrong into the replay. (#3572)
 	const addonsResult = loadAddons(terminal);
-	let hasBufferedContent = false;
 	if (options.initialBuffer !== undefined) {
-		if (options.initialBuffer.length > 0) {
-			terminal.write(options.initialBuffer);
-			hasBufferedContent = true;
-		}
+		terminal.write(options.initialBuffer);
 	} else {
-		hasBufferedContent = restoreBuffer(terminalId, terminal);
+		restoreBuffer(terminalId, terminal);
 	}
 
 	const disposeImagePasteFallback = installImagePasteFallback(
@@ -390,33 +238,7 @@ export function createRuntime(
 		lastRows: rows,
 		_disposeAddons: addonsResult.dispose,
 		_disposeImagePasteFallback: disposeImagePasteFallback,
-		_outputQueue: [],
-		_outputEnqueued: false,
-		hasBufferedContent,
 	};
-}
-
-export function shouldReplayTerminalRuntime(runtime: TerminalRuntime): boolean {
-	return !runtime.hasBufferedContent;
-}
-
-export function writeRuntimeOutput(
-	runtime: TerminalRuntime,
-	data: TerminalOutputData,
-	callback?: () => void,
-) {
-	const byteLength = getOutputByteLength(data);
-	if (byteLength > 0) {
-		runtime.hasBufferedContent = true;
-	}
-	const items = splitOutputData(data, callback);
-	if (runtime._outputQueue.length === 0 && items.length === 1) {
-		runtime.terminal.write(data, callback);
-		return;
-	}
-	for (const item of items) {
-		enqueueRuntimeOutput(runtime, item);
-	}
 }
 
 export function attachToContainer(
@@ -436,7 +258,6 @@ export function attachToContainer(
 
 	runtime.container = container;
 	container.appendChild(runtime.wrapper);
-
 	if (measureAndResize(runtime)) onResize?.();
 
 	runtime._disposeResizeObserver?.();
@@ -448,30 +269,7 @@ export function attachToContainer(
 	runtime.resizeObserver = observer;
 	runtime._disposeResizeObserver = scheduler.dispose;
 
-	scheduleRuntimeQueuedOutput(runtime);
-}
-
-function focusRuntimeNow(runtime: TerminalRuntime) {
-	if (!runtime.container) return;
-	const element = runtime.terminal.element;
-	if (element?.contains(document.activeElement)) return;
-	const textarea = runtime.terminal.textarea;
-	if (textarea) {
-		textarea.focus({ preventScroll: true });
-		return;
-	}
 	runtime.terminal.focus();
-}
-
-export function focusRuntime(runtime: TerminalRuntime) {
-	pendingFocusRuntime = runtime;
-	if (focusRafId !== null) return;
-	focusRafId = requestAnimationFrame(() => {
-		focusRafId = null;
-		const nextRuntime = pendingFocusRuntime;
-		pendingFocusRuntime = null;
-		if (nextRuntime) focusRuntimeNow(nextRuntime);
-	});
 }
 
 export function detachFromContainer(runtime: TerminalRuntime) {
@@ -485,7 +283,6 @@ export function detachFromContainer(runtime: TerminalRuntime) {
 	// see getTerminalParkingContainer.
 	getTerminalParkingContainer().appendChild(runtime.wrapper);
 	runtime.container = null;
-	scheduleRuntimeQueuedOutput(runtime);
 }
 
 export function updateRuntimeAppearance(
@@ -521,15 +318,14 @@ export function disposeRuntime(
 	runtime._disposeImagePasteFallback = null;
 	runtime._disposeAddons?.();
 	runtime._disposeAddons = null;
-	clearQueuedRuntimeOutput(runtime);
 	runtime._disposeResizeObserver?.();
 	runtime._disposeResizeObserver = null;
 	runtime.resizeObserver?.disconnect();
 	runtime.resizeObserver = null;
 	runtime.wrapper.remove();
+	runtime.terminal.dispose();
 	if (clearPersistedState) {
 		clearPersistedBuffer(runtime.terminalId);
 		clearPersistedDimensions(runtime.terminalId);
 	}
-	disposeTerminalAfterPendingRefresh(runtime.terminal);
 }

@@ -13,6 +13,7 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Check, ChevronDown, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { markTerminalForBackground } from "renderer/lib/terminal/terminal-background-intents";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import type {
 	PaneViewerData,
@@ -166,6 +167,10 @@ export function TerminalSessionDropdown({
 			return;
 		}
 
+		if ((terminalPaneLocations.get(terminalId)?.length ?? 0) === 0) {
+			markTerminalForBackground(terminalId);
+		}
+
 		state.setPaneData({
 			paneId: context.pane.id,
 			data: {
@@ -216,6 +221,10 @@ export function TerminalSessionDropdown({
 
 	const handleNewTerminal = () => {
 		const state = context.store.getState();
+		const terminalPaneLocations = getTerminalPaneLocations(context);
+		if ((terminalPaneLocations.get(terminalId)?.length ?? 0) === 0) {
+			markTerminalForBackground(terminalId);
+		}
 		state.setPaneData({
 			paneId: context.pane.id,
 			data: {

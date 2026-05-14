@@ -11,11 +11,8 @@ import {
 	createRuntime,
 	detachFromContainer,
 	disposeRuntime,
-	focusRuntime,
-	shouldReplayTerminalRuntime,
 	type TerminalRuntime,
 	updateRuntimeAppearance,
-	writeRuntimeOutput,
 } from "./terminal-runtime";
 import { isTerminalWebglCanvas } from "./terminal-webgl-canvas-registry";
 import {
@@ -126,9 +123,6 @@ class TerminalRuntimeRegistryImpl {
 		let entry = this.entries.get(key);
 		if (entry) return entry;
 
-		entry = this.takeParkedEntry(terminalId, instanceId);
-		if (entry) return entry;
-
 		entry = {
 			terminalId,
 			instanceId,
@@ -145,35 +139,6 @@ class TerminalRuntimeRegistryImpl {
 			this.entryKeysByTerminalId.set(terminalId, keys);
 		}
 		keys.add(key);
-		return entry;
-	}
-
-	private takeParkedEntry(
-		terminalId: string,
-		instanceId: string,
-	): RegistryEntry | undefined {
-		for (const entry of this.getEntries(terminalId)) {
-			if (entry.instanceId === instanceId) continue;
-			if (!entry.runtime || entry.runtime.container) continue;
-			return this.rekeyEntry(entry, instanceId);
-		}
-		return undefined;
-	}
-
-	private rekeyEntry(
-		entry: RegistryEntry,
-		nextInstanceId: string,
-	): RegistryEntry {
-		const prevKey = this.getEntryKey(entry.terminalId, entry.instanceId);
-		const nextKey = this.getEntryKey(entry.terminalId, nextInstanceId);
-		this.entries.delete(prevKey);
-		entry.instanceId = nextInstanceId;
-		this.entries.set(nextKey, entry);
-
-		const keys = this.entryKeysByTerminalId.get(entry.terminalId) ?? new Set();
-		keys.delete(prevKey);
-		keys.add(nextKey);
-		this.entryKeysByTerminalId.set(entry.terminalId, keys);
 		return entry;
 	}
 
@@ -292,18 +257,7 @@ class TerminalRuntimeRegistryImpl {
 	connect(terminalId: string, wsUrl: string, instanceId = terminalId) {
 		const entry = this.getEntry(terminalId, instanceId);
 		if (!entry?.runtime) return;
-		const { runtime } = entry;
-		connect(
-			entry.transport,
-			runtime.terminal,
-			wsUrl,
-			(data) => {
-				writeRuntimeOutput(runtime, data);
-			},
-			{
-				replay: shouldReplayTerminalRuntime(runtime),
-			},
-		);
+		connect(entry.transport, entry.runtime.terminal, wsUrl);
 	}
 
 	/**
@@ -323,18 +277,7 @@ class TerminalRuntimeRegistryImpl {
 		if (!entry?.runtime) return;
 		if (entry.transport.connectionState === "disconnected") return;
 		if (entry.transport.currentUrl === wsUrl) return;
-		const { runtime } = entry;
-		connect(
-			entry.transport,
-			runtime.terminal,
-			wsUrl,
-			(data) => {
-				writeRuntimeOutput(runtime, data);
-			},
-			{
-				replay: shouldReplayTerminalRuntime(runtime),
-			},
-		);
+		connect(entry.transport, entry.runtime.terminal, wsUrl);
 	}
 
 	/**
@@ -364,13 +307,6 @@ class TerminalRuntimeRegistryImpl {
 		if (!entry?.runtime) return;
 
 		detachFromContainer(entry.runtime);
-	}
-
-	focus(terminalId: string, instanceId = terminalId) {
-		const entry = this.getEntry(terminalId, instanceId);
-		if (!entry?.runtime) return;
-
-		focusRuntime(entry.runtime);
 	}
 
 	updateAppearance(
@@ -462,32 +398,16 @@ class TerminalRuntimeRegistryImpl {
 		terminalId: string,
 		data: string,
 		instanceId?: string,
-		timeoutMs = 5000,
 	): Promise<boolean> {
 		const entry = this.getEntry(terminalId, instanceId);
 		if (!entry?.runtime) return Promise.resolve(false);
-		const { runtime } = entry;
 
-		return new Promise<boolean>((resolve) => {
-			let settled = false;
-			let timeoutId: ReturnType<typeof setTimeout> | null = null;
-			const settle = (value: boolean) => {
-				if (settled) return;
-				settled = true;
-				if (timeoutId !== null) {
-					clearTimeout(timeoutId);
-				}
-				resolve(value);
-			};
-
-			timeoutId = setTimeout(() => settle(false), timeoutMs);
-			try {
-				writeRuntimeOutput(runtime, data);
-				queueMicrotask(() => settle(true));
-			} catch {
-				settle(false);
-			}
-		});
+		try {
+			entry.runtime.terminal.write(data);
+			return Promise.resolve(true);
+		} catch {
+			return Promise.resolve(false);
+		}
 	}
 
 	forceWebglContextLossForStress(

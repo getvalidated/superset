@@ -11,7 +11,7 @@ import type { TerminalAppearance } from "./appearance";
 import type { TerminalRuntime } from "./terminal-runtime";
 
 type FakeTerminal = TerminalRuntime["terminal"] & {
-	emitWriteComplete: () => void;
+	write: ReturnType<typeof mock>;
 };
 
 type FakeRuntime = TerminalRuntime & {
@@ -27,11 +27,11 @@ type MockedTerminalRuntimeModule = typeof import("./terminal-runtime");
 const createdRuntimes: FakeRuntime[] = [];
 const createRuntimeMock = mock(
 	(
-		_terminalId: string,
+		terminalId: string,
 		_appearance: TerminalAppearance,
 		_options?: { initialBuffer?: string },
 	): TerminalRuntime => {
-		const runtime = createFakeRuntime(_terminalId);
+		const runtime = createFakeRuntime(terminalId);
 		createdRuntimes.push(runtime);
 		return runtime;
 	},
@@ -61,22 +61,6 @@ const disposeRuntimeMock = mock((runtime: TerminalRuntime) => {
 const updateRuntimeAppearanceMock = mock(
 	(_runtime: TerminalRuntime, _appearance: TerminalAppearance) => {},
 );
-const focusRuntimeMock = mock((_runtime: TerminalRuntime) => {});
-const writeRuntimeOutputMock = mock(
-	(
-		runtime: TerminalRuntime,
-		data: string | Uint8Array,
-		callback?: () => void,
-	) => {
-		if ((typeof data === "string" ? data.length : data.byteLength) > 0) {
-			runtime.hasBufferedContent = true;
-		}
-		runtime.terminal.write(data, callback);
-	},
-);
-const shouldReplayTerminalRuntimeMock = mock(
-	(runtime: TerminalRuntime) => !runtime.hasBufferedContent,
-);
 
 mock.module(
 	"./terminal-runtime",
@@ -85,10 +69,7 @@ mock.module(
 		createRuntime: createRuntimeMock,
 		detachFromContainer: detachFromContainerMock,
 		disposeRuntime: disposeRuntimeMock,
-		focusRuntime: focusRuntimeMock,
-		shouldReplayTerminalRuntime: shouldReplayTerminalRuntimeMock,
 		updateRuntimeAppearance: updateRuntimeAppearanceMock,
-		writeRuntimeOutput: writeRuntimeOutputMock,
 	}),
 );
 
@@ -102,14 +83,10 @@ const appearance: TerminalAppearance = {
 };
 
 function createFakeTerminal(): FakeTerminal {
-	let writeCallback: (() => void) | undefined;
 	return {
 		cols: 120,
 		rows: 32,
-		write: mock((_data: string | Uint8Array, callback?: () => void) => {
-			writeCallback = callback;
-		}),
-		emitWriteComplete: () => writeCallback?.(),
+		write: mock((_data: string | Uint8Array) => {}),
 		getSelection: mock(() => ""),
 		clear: mock(() => {}),
 		scrollToBottom: mock(() => {}),
@@ -145,9 +122,6 @@ function createFakeRuntime(terminalId: string): FakeRuntime {
 		lastRows: 32,
 		_disposeAddons: null,
 		_disposeImagePasteFallback: null,
-		_outputQueue: [],
-		_outputEnqueued: false,
-		hasBufferedContent: false,
 	};
 }
 
@@ -165,14 +139,12 @@ function createCanvas(options: {
 	if (options.isTerminalWebglCanvas) {
 		attributes.set("data-terminal-webgl-canvas", "true");
 	}
-	const canvas = {
+	return {
 		getAttribute: mock((name: string) => attributes.get(name) ?? null),
 		getContext: mock((_contextId: string) => options.context ?? null),
 	} as unknown as HTMLCanvasElement & {
 		getContext: ReturnType<typeof mock>;
 	};
-
-	return canvas;
 }
 
 function createWebglContext(extension: unknown): WebGL2RenderingContext {
@@ -195,9 +167,6 @@ beforeEach(() => {
 		detachFromContainerMock,
 		disposeRuntimeMock,
 		updateRuntimeAppearanceMock,
-		focusRuntimeMock,
-		shouldReplayTerminalRuntimeMock,
-		writeRuntimeOutputMock,
 	]) {
 		fn.mockClear();
 	}
@@ -240,34 +209,6 @@ describe("terminalRuntimeRegistry", () => {
 			expect.objectContaining({
 				terminalId: "terminal-1",
 				instanceId: "workspace-a",
-				hasRuntime: true,
-				isAttached: true,
-			}),
-		]);
-	});
-
-	it("reuses a parked runtime when a background terminal opens in a new pane", () => {
-		terminalRuntimeRegistry.mount(
-			"terminal-1",
-			createContainer(),
-			appearance,
-			"old-pane",
-		);
-		terminalRuntimeRegistry.detach("terminal-1", "old-pane");
-
-		terminalRuntimeRegistry.mount(
-			"terminal-1",
-			createContainer(),
-			appearance,
-			"new-pane",
-		);
-
-		expect(createRuntimeMock).toHaveBeenCalledTimes(1);
-		expect(attachToContainerMock).toHaveBeenCalledTimes(2);
-		expect(terminalRuntimeRegistry.getStressDebugInfo("terminal-1")).toEqual([
-			expect.objectContaining({
-				terminalId: "terminal-1",
-				instanceId: "new-pane",
 				hasRuntime: true,
 				isAttached: true,
 			}),
@@ -412,8 +353,7 @@ describe("terminalRuntimeRegistry", () => {
 		);
 
 		expect(accepted).toBe(true);
-		expect(writeRuntimeOutputMock).toHaveBeenCalledWith(
-			createdRuntimes[0],
+		expect(createdRuntimes[0]?.terminal.write).toHaveBeenCalledWith(
 			"large output",
 		);
 	});
