@@ -70,6 +70,11 @@ mock.module("electron-log/main", () => ({
 		info: () => {},
 		warn: () => {},
 		error: () => {},
+		transports: {
+			file: {
+				level: "info",
+			},
+		},
 	},
 }));
 
