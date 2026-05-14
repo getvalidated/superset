@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDiffStats } from "renderer/hooks/host-service/useDiffStats";
 import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/hooks/useOptimisticCollectionActions";
 import { useDeletingWorkspaces } from "renderer/routes/_authenticated/providers/DeletingWorkspacesProvider";
@@ -15,20 +15,18 @@ import { useDashboardSidebarWorkspaceItemActions } from "./hooks/useDashboardSid
 
 interface DashboardSidebarWorkspaceItemProps {
 	workspace: DashboardSidebarWorkspace;
-	onWorkspaceHover?: (workspaceId: string) => void | Promise<void>;
+	onHoverCardOpen?: () => void;
 	shortcutLabel?: string;
 	isCollapsed?: boolean;
 	isInSection?: boolean;
-	isActive?: boolean;
 }
 
-function DashboardSidebarWorkspaceItemComponent({
+export function DashboardSidebarWorkspaceItem({
 	workspace,
-	onWorkspaceHover,
+	onHoverCardOpen,
 	shortcutLabel,
 	isCollapsed = false,
 	isInSection = false,
-	isActive = false,
 }: DashboardSidebarWorkspaceItemProps) {
 	const {
 		id,
@@ -44,9 +42,6 @@ function DashboardSidebarWorkspaceItemComponent({
 	const isMainWorkspace = workspace.type === "main";
 	const isPending = !!creationStatus;
 	const isFailedInFlight = creationStatus === "failed";
-	const diffStats = useDiffStats(id, {
-		enabled: !isCollapsed && !isPending && isActive,
-	});
 	const workspaceStatus = useV2WorkspaceNotificationStatus(id);
 	const {
 		cancelRename,
@@ -58,6 +53,7 @@ function DashboardSidebarWorkspaceItemComponent({
 		handleOpenInFinder,
 		handleRemoveFromSidebar,
 		handleToggleUnread,
+		isActive,
 		isDeleteDialogOpen,
 		isUnread,
 		isRenaming,
@@ -72,8 +68,10 @@ function DashboardSidebarWorkspaceItemComponent({
 		projectId,
 		workspaceName: name,
 		branch,
-		isActive,
 		isMainWorkspace,
+	});
+	const diffStats = useDiffStats(id, {
+		enabled: !isCollapsed && !isPending && isActive,
 	});
 
 	const { v2Workspaces: v2WorkspaceActions } = useOptimisticCollectionActions();
@@ -115,8 +113,8 @@ function DashboardSidebarWorkspaceItemComponent({
 
 	const isHovered = hoverHoveredId === id;
 	useEffect(() => {
-		if (isHovered && hostType === "local-device") onWorkspaceHover?.(id);
-	}, [isHovered, hostType, onWorkspaceHover, id]);
+		if (isHovered && hostType === "local-device") onHoverCardOpen?.();
+	}, [isHovered, hostType, onHoverCardOpen]);
 	useEffect(() => {
 		if (!isHovered) return;
 		hoverSyncIfHovered(id, hoverPayload);
@@ -297,7 +295,3 @@ function DashboardSidebarWorkspaceItemComponent({
 		</>
 	);
 }
-
-export const DashboardSidebarWorkspaceItem = memo(
-	DashboardSidebarWorkspaceItemComponent,
-);
