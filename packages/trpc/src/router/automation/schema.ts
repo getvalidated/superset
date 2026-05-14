@@ -27,7 +27,9 @@ export const createAutomationSchema = z
 	.object({
 		name: z.string().min(1).max(200),
 		prompt: z.string().min(1).max(100_000),
-		agent: agentSchema,
+		// Default "claude" for backwards-compat: SDK <alpha.10 / CLI <0.2.16 omit
+		// `agent` (sent as undefined) after the agentConfig→agent rename in #4481.
+		agent: agentSchema.default("claude"),
 		targetHostId: z.string().min(1).nullish(),
 		v2ProjectId: z.string().uuid().optional(),
 		v2WorkspaceId: z.string().uuid().nullish(),
