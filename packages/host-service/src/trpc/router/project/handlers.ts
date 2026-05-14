@@ -66,32 +66,16 @@ async function createCloudProjectWithSlugRetry(
 	args: { id: string; name: string; repoCloneUrl?: string },
 ) {
 	const baseSlug = slugifyProjectName(args.name);
-
-	// Ask the cloud for a slug it knows is currently free, so the common
-	// case is one round-trip. The retry loop below is only there to handle
-	// races (another device claiming the same slug between proposal and
-	// insert) — those retries jump straight to random hex suffixes since
-	// any sequential `${baseSlug}-${N}` we'd try is already known taken.
-	let firstSlug = baseSlug;
-	try {
-		const proposed = await ctx.api.v2Project.proposeSlug.query({
-			organizationId: ctx.organizationId,
-			baseSlug,
-		});
-		firstSlug = proposed.slug;
-	} catch (err) {
-		console.warn("[project.create] proposeSlug failed, using baseSlug", {
-			err: err instanceof Error ? err.message : String(err),
-		});
-	}
-
 	let lastError: unknown;
-	const maxAttempts = 50;
+	// 1 attempt at the bare baseSlug + 9 random-hex retries. With 6 hex
+	// chars (16M options), a per-attempt collision needs ~thousands of
+	// existing slugs sharing the base before risk shows up.
+	const maxAttempts = 10;
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		const slug =
 			attempt === 0
-				? firstSlug
-				: `${baseSlug}-${randomBytes(2).toString("hex")}`;
+				? baseSlug
+				: `${baseSlug}-${randomBytes(3).toString("hex")}`;
 		try {
 			return await ctx.api.v2Project.create.mutate({
 				organizationId: ctx.organizationId,

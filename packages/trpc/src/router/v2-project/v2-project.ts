@@ -122,56 +122,6 @@ export const v2ProjectRouter = {
 			return row;
 		}),
 
-	// Returns a slug that is currently free for this org, derived from
-	// `baseSlug`. Either `baseSlug` itself, or `${baseSlug}-${N}` where N
-	// is one greater than the highest existing numeric suffix.
-	//
-	// Best-effort hint, not a reservation — a concurrent create can still
-	// claim the same slug between proposeSlug and v2Project.create. The
-	// host service retries on conflict; this endpoint just makes the
-	// common case a single round-trip.
-	proposeSlug: jwtProcedure
-		.input(
-			z.object({
-				organizationId: z.string().uuid(),
-				baseSlug: z.string().min(1),
-			}),
-		)
-		.query(async ({ ctx, input }) => {
-			if (!ctx.organizationIds.includes(input.organizationId)) {
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Not a member of this organization",
-				});
-			}
-			const escaped = input.baseSlug.replace(/[\\%_]/g, (m) => `\\${m}`);
-			const rows = await dbWs
-				.select({ slug: v2Projects.slug })
-				.from(v2Projects)
-				.where(
-					and(
-						eq(v2Projects.organizationId, input.organizationId),
-						sql`${v2Projects.slug} ILIKE ${`${escaped}%`} ESCAPE '\\'`,
-					),
-				);
-			const taken = new Set(rows.map((r) => r.slug));
-			if (!taken.has(input.baseSlug)) {
-				return { slug: input.baseSlug };
-			}
-			const suffixPattern = new RegExp(
-				`^${input.baseSlug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`,
-			);
-			let highest = 1;
-			for (const slug of taken) {
-				const match = slug.match(suffixPattern);
-				if (match) {
-					const n = Number.parseInt(match[1] ?? "0", 10);
-					if (n > highest) highest = n;
-				}
-			}
-			return { slug: `${input.baseSlug}-${highest + 1}` };
-		}),
-
 	findByGitHubRemote: jwtProcedure
 		.input(
 			z.object({
