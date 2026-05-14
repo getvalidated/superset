@@ -11,11 +11,10 @@ const handler = (req: Request) =>
 		router: appRouter,
 		createContext,
 		onError: ({ path, error }) => {
-			// NOT_FOUND is expected from old desktop clients calling removed
-			// procedures (e.g. device.heartbeat removed in #4490). Those clients
-			// are gated behind UpdateRequiredPage and their calls have no
-			// downstream consumer — suppress to avoid false-positive error noise.
-			if (error.code === "NOT_FOUND") return;
+			// Suppress NOT_FOUND only for the known-dead device.heartbeat path
+			// (removed in #4490). Old desktop clients gated behind UpdateRequiredPage
+			// still call it; all other NOT_FOUND errors should remain visible.
+			if (error.code === "NOT_FOUND" && path === "device.heartbeat") return;
 			console.error(`❌ tRPC error on ${path ?? "<no-path>"}:`, error);
 		},
 	});
