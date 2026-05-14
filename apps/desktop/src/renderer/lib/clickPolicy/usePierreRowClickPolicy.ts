@@ -34,9 +34,12 @@ interface UsePierreRowClickPolicyResult {
  *   - folder rows → `folderIntentFor` (meta=reveal/no-op, metaShift=external)
  *   - file rows   → settings-driven via the injected `filePolicy`
  *
- * Unbound tiers and plain "pane" defer to Pierre's own `onSelectionChange`
- * so the visual selection stays in sync; intercepting would swallow the
- * click and leave Pierre out of date.
+ * Every resolved action is intercepted (preventDefault + stopPropagation) —
+ * we never defer to Pierre's own click → `onSelectionChange` pipeline.
+ * Pierre's `selectOnlyPath` no-ops when the clicked row is already selected,
+ * which would otherwise silently drop legitimate re-clicks (click-to-pin,
+ * reopen after Cmd+W). Pierre's selection is reconciled separately via the
+ * reveal flow keyed off the active file pane.
  */
 export function usePierreRowClickPolicy({
 	filePolicy,

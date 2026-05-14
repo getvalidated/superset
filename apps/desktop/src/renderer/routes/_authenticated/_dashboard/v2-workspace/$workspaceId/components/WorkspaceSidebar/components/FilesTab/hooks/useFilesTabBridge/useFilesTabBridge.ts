@@ -123,11 +123,18 @@ export function useFilesTabBridge({
 						relDir,
 						error,
 					});
-				} finally {
-					inflightDirsRef.current.delete(relDir);
 				}
 			})();
 			inflightDirsRef.current.set(relDir, promise);
+			// Identity-check before deleting: on a workspace switch the map is
+			// cleared and a new promise can be registered under the same key.
+			// Without this guard, a late-resolving stale promise would evict
+			// the live one and reopen duplicate fetches.
+			void promise.finally(() => {
+				if (inflightDirsRef.current.get(relDir) === promise) {
+					inflightDirsRef.current.delete(relDir);
+				}
+			});
 			return promise;
 		},
 		[model, rootPath, workspaceId, utils.filesystem.listDirectory],
