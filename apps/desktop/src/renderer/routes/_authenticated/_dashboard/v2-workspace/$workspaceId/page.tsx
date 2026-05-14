@@ -3,6 +3,7 @@ import { workspaceTrpc } from "@superset/workspace-client";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useQuickOpenStore } from "renderer/commandPalette/ui/QuickOpen/quickOpenStore";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
 import { CommandPalette } from "renderer/screens/main/components/CommandPalette";
@@ -10,6 +11,7 @@ import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel"
 import { getV2NotificationSourcesForTab } from "renderer/stores/v2-notifications";
 import { useWorkspace } from "../providers/WorkspaceProvider";
 import { AddTabMenu } from "./components/AddTabMenu";
+import { BackgroundTerminalsButton } from "./components/BackgroundTerminalsButton";
 import { V2NotificationStatusIndicator } from "./components/V2NotificationStatusIndicator";
 import { V2PresetsBar } from "./components/V2PresetsBar";
 import { V2WorkspaceRunButton } from "./components/V2WorkspaceRunButton";
@@ -147,6 +149,7 @@ function V2WorkspaceContent() {
 
 	const {
 		openFilePane,
+		openFilePaneFromTreeClick,
 		revealPath,
 		selectedFilePath,
 		pendingReveal,
@@ -161,6 +164,7 @@ function V2WorkspaceContent() {
 	const paneRegistry = usePaneRegistry({
 		onOpenFile: openFilePane,
 		onRevealPath: revealPath,
+		launcher,
 	});
 	const defaultContextMenuActions = useDefaultContextMenuActions({
 		paneRegistry,
@@ -174,8 +178,32 @@ function V2WorkspaceContent() {
 		openCommentPane,
 	} = useWorkspacePaneOpeners({ store, launcher });
 
-	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
-	const handleQuickOpen = useCallback(() => setQuickOpenOpen(true), []);
+	const quickOpenOpen = useQuickOpenStore(
+		(s) => s.open && s.target?.workspaceId === workspaceId,
+	);
+	const closeQuickOpen = useQuickOpenStore((s) => s.close);
+	const openQuickOpenFor = useQuickOpenStore((s) => s.openFor);
+	const handleQuickOpen = useCallback(
+		() => openQuickOpenFor({ workspaceId }),
+		[openQuickOpenFor, workspaceId],
+	);
+	const handleQuickOpenChange = useCallback(
+		(next: boolean) => {
+			if (!next) closeQuickOpen();
+		},
+		[closeQuickOpen],
+	);
+	// Picking a file from Quick Open should surface the sidebar/Files tab so
+	// the reveal (expand + highlight + scroll) is actually visible. Tree
+	// clicks and other openFilePane callers already have the sidebar open.
+	const handleQuickOpenSelectFile = useCallback(
+		(filePath: string, openInNewTab?: boolean) => {
+			setRightSidebarOpen(true);
+			setRightSidebarTab("files");
+			openFilePane(filePath, openInNewTab);
+		},
+		[openFilePane, setRightSidebarOpen, setRightSidebarTab],
+	);
 	const defaultPaneActions = useDefaultPaneActions({ launcher });
 	const onBeforeCloseTab = useDirtyTabCloseGuard();
 
@@ -275,6 +303,12 @@ function V2WorkspaceContent() {
 								onToggleShowPresetsBar={setShowPresetsBar}
 							/>
 						)}
+						renderTabBarTrailing={() => (
+							<BackgroundTerminalsButton
+								workspaceId={workspaceId}
+								store={store}
+							/>
+						)}
 						renderEmptyState={() => (
 							<WorkspaceEmptyState
 								onOpenBrowser={addBrowserTab}
@@ -304,7 +338,7 @@ function V2WorkspaceContent() {
 					>
 						<WorkspaceSidebar
 							workspaceId={workspaceId}
-							onSelectFile={openFilePane}
+							onSelectFile={openFilePaneFromTreeClick}
 							onSelectDiffFile={openDiffPane}
 							onOpenComment={openCommentPane}
 							onSearch={handleQuickOpen}
@@ -317,8 +351,8 @@ function V2WorkspaceContent() {
 			<CommandPalette
 				workspaceId={workspaceId}
 				open={quickOpenOpen}
-				onOpenChange={setQuickOpenOpen}
-				onSelectFile={openFilePane}
+				onOpenChange={handleQuickOpenChange}
+				onSelectFile={handleQuickOpenSelectFile}
 				variant="v2"
 				recentlyViewedFiles={recentFiles}
 				openFilePaths={openFilePaths}

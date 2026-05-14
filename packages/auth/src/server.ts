@@ -310,7 +310,7 @@ export const auth = betterAuth({
 			},
 			organizationHooks: {
 				beforeCreateInvitation: async (data) => {
-					const { inviterId, organizationId, role } = data.invitation;
+					const { inviterId, organizationId, role, teamId } = data.invitation;
 
 					const { success } = await invitationRateLimit.limit(inviterId);
 					if (!success) {
@@ -337,6 +337,19 @@ export const auth = betterAuth({
 						)
 					) {
 						throw new Error("Cannot invite users with this role");
+					}
+
+					if (!teamId) {
+						const oldestTeam = await db.query.teams.findFirst({
+							where: eq(authSchema.teams.organizationId, organizationId),
+							orderBy: asc(authSchema.teams.createdAt),
+							columns: { id: true },
+						});
+						if (oldestTeam) {
+							return {
+								data: { ...data.invitation, teamId: oldestTeam.id },
+							};
+						}
 					}
 				},
 
@@ -814,7 +827,11 @@ export const auth = betterAuth({
 					}
 				},
 
-				getCheckoutSessionParams: async ({ user, plan, subscription }) => {
+				getCheckoutSessionParams: async (
+					{ user, plan, subscription },
+					_request,
+					ctx,
+				) => {
 					if (plan.name === "enterprise") {
 						throw new Error(
 							"Enterprise subscriptions are managed by admins. Contact founders@superset.sh.",
@@ -828,10 +845,14 @@ export const auth = betterAuth({
 						),
 					});
 
+					const annual = Boolean(
+						(ctx?.body as { annual?: boolean } | undefined)?.annual,
+					);
+
 					return {
 						params: {
 							customer: org?.stripeCustomerId ?? undefined,
-							allow_promotion_codes: true,
+							allow_promotion_codes: !annual,
 							billing_address_collection: "required",
 							metadata: {
 								organizationId: org?.id ?? "",

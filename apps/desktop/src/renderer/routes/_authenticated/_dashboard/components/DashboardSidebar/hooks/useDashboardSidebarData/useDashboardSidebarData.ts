@@ -2,7 +2,7 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
-import { env } from "renderer/env.renderer";
+import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
@@ -129,6 +129,7 @@ function useStableDashboardSidebarProjects(
 export function useDashboardSidebarData() {
 	const collections = useCollections();
 	const { machineId, activeHostUrl } = useLocalHostService();
+	const relayUrl = useRelayUrl();
 	const { toggleProjectCollapsed } = useDashboardSidebarState();
 	const queryClient = useQueryClient();
 
@@ -249,6 +250,7 @@ export function useDashboardSidebarData() {
 					hostIsOnline: hosts.isOnline,
 					name: workspaces.name,
 					branch: workspaces.branch,
+					taskId: workspaces.taskId,
 					createdAt: workspaces.createdAt,
 					updatedAt: workspaces.updatedAt,
 					tabOrder: sidebarWorkspaces.sidebarState.tabOrder,
@@ -284,6 +286,7 @@ export function useDashboardSidebarData() {
 					hostIsOnline: hosts.isOnline,
 					name: workspaces.name,
 					branch: workspaces.branch,
+					taskId: workspaces.taskId,
 					createdAt: workspaces.createdAt,
 					updatedAt: workspaces.updatedAt,
 					tabOrder: MAIN_WORKSPACE_TAB_ORDER,
@@ -318,6 +321,7 @@ export function useDashboardSidebarData() {
 					hostIsOnline: host?.isOnline ?? false,
 					name: cloudRow.name,
 					branch: cloudRow.branch,
+					taskId: cloudRow.taskId,
 					createdAt: cloudRow.createdAt,
 					updatedAt: cloudRow.updatedAt,
 					tabOrder:
@@ -361,10 +365,10 @@ export function useDashboardSidebarData() {
 				activeHostUrl,
 				hosts,
 				machineId,
-				relayUrl: env.RELAY_URL,
+				relayUrl,
 				workspaces: visibleSidebarWorkspaces,
 			}),
-		[activeHostUrl, hosts, machineId, visibleSidebarWorkspaces],
+		[activeHostUrl, hosts, machineId, relayUrl, visibleSidebarWorkspaces],
 	);
 
 	const pullRequestQueries = useQueries({
@@ -490,6 +494,7 @@ export function useDashboardSidebarData() {
 				behindCount: null,
 				createdAt: workspace.createdAt,
 				updatedAt: workspace.updatedAt,
+				taskId: workspace.taskId,
 			};
 
 			if (workspace.sectionId) {
@@ -540,6 +545,7 @@ export function useDashboardSidebarData() {
 				behindCount: null,
 				createdAt: new Date(),
 				updatedAt: new Date(),
+				taskId: null,
 				creationStatus: pw.status,
 			};
 

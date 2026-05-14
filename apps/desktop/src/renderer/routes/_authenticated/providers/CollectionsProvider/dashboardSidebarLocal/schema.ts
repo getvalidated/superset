@@ -28,6 +28,8 @@ const changesFilterSchema = z.discriminatedUnion("kind", [
 
 export type ChangesFilter = z.infer<typeof changesFilterSchema>;
 
+export type ChangesViewMode = "folders" | "tree";
+
 const workspaceRunStateSchema = z.enum([
 	"running",
 	"stopped-by-user",
@@ -56,6 +58,7 @@ export const workspaceLocalStateSchema = z.object({
 		tabOrder: z.number().int().default(0),
 		sectionId: z.string().uuid().nullable().default(null),
 		changesFilter: changesFilterSchema.default({ kind: "all" }),
+		changesViewMode: z.enum(["folders", "tree"]).default("folders"),
 		activeTab: z.enum(["changes", "files", "review"]).default("changes"),
 		isHidden: z.boolean().default(false),
 	}),
@@ -82,6 +85,7 @@ const SIDEBAR_STATE_DEFAULTS = {
 	tabOrder: 0,
 	sectionId: null,
 	changesFilter: { kind: "all" },
+	changesViewMode: "folders",
 	activeTab: "changes",
 	isHidden: false,
 } as const;
@@ -203,6 +207,7 @@ export const v2UserPreferencesSchema = z.object({
 	fileLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
 	urlLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
 	sidebarFileLinks: linkTierMapSchema.default(DEFAULT_SIDEBAR_FILE_LINKS),
+	terminalPresetsInitialized: z.boolean().default(false),
 	rightSidebarOpen: z.boolean().default(true),
 	rightSidebarTab: z.enum(["changes", "files"]).default("changes"),
 	rightSidebarWidth: z.number().default(340),
@@ -219,6 +224,7 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	fileLinks: DEFAULT_LINK_TIER_MAP,
 	urlLinks: DEFAULT_LINK_TIER_MAP,
 	sidebarFileLinks: DEFAULT_SIDEBAR_FILE_LINKS,
+	terminalPresetsInitialized: false,
 	rightSidebarOpen: true,
 	rightSidebarTab: "changes",
 	rightSidebarWidth: 340,

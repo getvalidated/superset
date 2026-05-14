@@ -17,12 +17,12 @@ import {
 	LuPower,
 } from "react-icons/lu";
 import { useHotkeyDisplay } from "renderer/hotkeys";
+import { FileIcon } from "renderer/lib/fileIcons";
 import { getBaseName } from "renderer/lib/pathBasename";
 import { consumeTerminalBackgroundIntent } from "renderer/lib/terminal/terminal-background-intents";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { useWorkspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceProvider";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
-import { FileIcon } from "renderer/screens/main/components/WorkspaceView/RightSidebar/FilesView/utils";
 import {
 	clearV2TerminalRunStatus,
 	getV2NotificationSourcesForPane,
@@ -41,6 +41,7 @@ import type {
 	PaneViewerData,
 	TerminalPaneData,
 } from "../../types";
+import type { TerminalLauncher } from "../useV2TerminalLauncher";
 import { BrowserPane, BrowserPaneToolbar } from "./components/BrowserPane";
 import { ChatPane } from "./components/ChatPane";
 import { ChatPaneTitle } from "./components/ChatPane/components/ChatPaneTitle";
@@ -102,11 +103,13 @@ const MOD_KEY = navigator.platform.toLowerCase().includes("mac")
 interface UsePaneRegistryOptions {
 	onOpenFile: (path: string, openInNewTab?: boolean) => void;
 	onRevealPath: (path: string) => void;
+	launcher: TerminalLauncher;
 }
 
 export function usePaneRegistry({
 	onOpenFile,
 	onRevealPath,
+	launcher,
 }: UsePaneRegistryOptions): PaneRegistry<PaneViewerData> {
 	const { workspace } = useWorkspace();
 	const workspaceId = workspace.id;
@@ -282,7 +285,11 @@ export function usePaneRegistry({
 				},
 				renderTitle: (ctx: RendererContext<PaneViewerData>) => (
 					<div className="flex min-w-0 flex-1 items-center gap-1.5">
-						<TerminalSessionDropdown context={ctx} workspaceId={workspaceId} />
+						<TerminalSessionDropdown
+							context={ctx}
+							launcher={launcher}
+							workspaceId={workspaceId}
+						/>
 						<V2NotificationStatusIndicator
 							sources={getV2NotificationSourcesForPane(ctx.pane)}
 						/>
@@ -501,6 +508,7 @@ export function usePaneRegistry({
 			killTerminalSession,
 			killTerminalSessionSilently,
 			isKillingTerminalSession,
+			launcher,
 			onOpenFile,
 			onRevealPath,
 		],
