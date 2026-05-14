@@ -91,7 +91,7 @@ export function RunIssuesInWorkspacePopover({
 			q
 				.from({ projects: collections.v2Projects })
 				.where(({ projects }) =>
-					eq(projects.organizationId, activeOrganizationId ?? ""),
+					eq(projects.organizationId, activeOrganizationId),
 				)
 				.select(({ projects }) => ({ ...projects })),
 		[collections, activeOrganizationId],
