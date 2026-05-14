@@ -45,7 +45,7 @@ function DashboardSidebarWorkspaceItemComponent({
 	const isPending = !!creationStatus;
 	const isFailedInFlight = creationStatus === "failed";
 	const diffStats = useDiffStats(id, {
-		enabled: !isCollapsed && !isPending,
+		enabled: !isCollapsed && !isPending && isActive,
 	});
 	const workspaceStatus = useV2WorkspaceNotificationStatus(id);
 	const {
