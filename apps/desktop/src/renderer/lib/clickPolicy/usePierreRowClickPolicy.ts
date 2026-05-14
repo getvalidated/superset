@@ -78,9 +78,12 @@ export function usePierreRowClickPolicy({
 				return;
 			}
 
-			const { tier, action } = filePolicy.resolve(e);
+			const { action } = filePolicy.resolve(e);
 			if (action === null) return;
-			if (tier === "plain" && action === "pane") return;
+			// Always intercept — never defer to Pierre's own selection-change
+			// pipeline. Pierre's selectOnlyPath no-ops when the clicked row is
+			// already selected, which silently drops legitimate re-clicks
+			// (e.g. click-to-pin, or reopening a file after Cmd+W).
 			e.preventDefault();
 			e.stopPropagation();
 			if (action === "external") openInExternalEditor(trimmed);

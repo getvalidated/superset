@@ -170,6 +170,7 @@ function V2WorkspaceContent({
 
 	const {
 		openFilePane,
+		openFilePaneFromTreeClick,
 		revealPath,
 		selectedFilePath,
 		pendingReveal,
@@ -380,7 +381,7 @@ function V2WorkspaceContent({
 					>
 						<WorkspaceSidebar
 							workspaceId={workspaceId}
-							onSelectFile={openFilePane}
+							onSelectFile={openFilePaneFromTreeClick}
 							onSelectDiffFile={openDiffPane}
 							onOpenComment={openCommentPane}
 							onSearch={handleQuickOpen}
