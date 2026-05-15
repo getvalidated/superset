@@ -130,6 +130,15 @@ export class TunnelClient {
 							`[host-service:tunnel] relay rejected connection (code=${event.code}, reason=${event.reason ?? ""}); retrying`,
 						);
 					}
+					// Clean close from the relay (1001 = "Going Away", typically a
+					// deploy drain). Reset backoff so we don't sit in 30s retry
+					// mode while the relay is restarting in <2s.
+					if (event.code === 1001) {
+						this.reconnectAttempts = 0;
+						console.log(
+							"[host-service:tunnel] relay draining; reconnecting immediately",
+						);
+					}
 				} catch (err) {
 					console.warn(
 						"[host-service:tunnel] error during onclose cleanup",

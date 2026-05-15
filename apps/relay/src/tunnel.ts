@@ -159,6 +159,25 @@ export class TunnelManager {
 		console.log(`[relay] tunnel unregistered: ${hostId}`);
 	}
 
+	// SIGTERM-driven graceful drain. Closes every open tunnel with WS code
+	// 1001 ("Going Away") so the host-service can recognize this as a deploy
+	// drain (not a hard disconnect) and reconnect immediately, instead of
+	// entering exponential backoff against TCP-RST'd sockets. Used by the
+	// SIGTERM handler in index.ts.
+	async drain(reason = "Server draining for deploy"): Promise<void> {
+		console.log(`[relay] draining ${this.tunnels.size} tunnels`);
+		for (const tunnel of this.tunnels.values()) {
+			try {
+				tunnel.ws.close(1001, reason);
+			} catch {
+				// already closed
+			}
+		}
+		// Give the OS a moment to flush WS close frames before the process
+		// dies and the underlying TCP connections get RST'd.
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+
 	private disposeTunnel(tunnel: TunnelState, reason: string): void {
 		if (tunnel.pingTimer) clearInterval(tunnel.pingTimer);
 
