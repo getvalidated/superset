@@ -59,6 +59,10 @@ export function getDefaultTerminalBg(): string {
 // Once WebGL fails, skip it for all subsequent terminals (VS Code pattern).
 let suggestedRendererType: "webgl" | "dom" | undefined;
 
+function refreshTerminal(xterm: XTerm): void {
+	xterm.refresh(0, Math.max(0, xterm.rows - 1));
+}
+
 export interface CreateTerminalOptions {
 	/**
 	 * Workspace id used for worktree lookup during path stat/resolution.
@@ -131,9 +135,13 @@ export function createTerminalInWrapper(options: CreateTerminalOptions = {}): {
 		try {
 			webglAddon = new WebglAddon();
 			webglAddon.onContextLoss(() => {
+				suggestedRendererType = "dom";
 				webglAddon?.dispose();
 				webglAddon = null;
-				xterm.refresh(0, xterm.rows - 1);
+				refreshTerminal(xterm);
+				requestAnimationFrame(() => {
+					if (!disposed) refreshTerminal(xterm);
+				});
 			});
 			xterm.loadAddon(webglAddon);
 		} catch {

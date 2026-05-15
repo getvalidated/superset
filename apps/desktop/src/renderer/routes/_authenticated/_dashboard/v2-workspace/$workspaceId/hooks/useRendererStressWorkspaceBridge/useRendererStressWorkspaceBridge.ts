@@ -49,6 +49,12 @@ interface RendererStressTerminalWriteResult {
 	byteLength: number;
 }
 
+type RendererStressTerminalOutputMode =
+	| "atlas-rewrite"
+	| "cjk-sgr"
+	| "scrollback"
+	| "tui-churn";
+
 interface RendererStressWorkspaceBridge {
 	workspaceId: string;
 	projectId: string;
@@ -79,6 +85,7 @@ interface RendererStressWorkspaceBridge {
 		index: number,
 		lines: number,
 		payloadBytes: number,
+		mode?: RendererStressTerminalOutputMode,
 	) => Promise<RendererStressTerminalWriteResult>;
 	getTerminalStressSummary: () => RendererStressTerminalSummary;
 	releaseStressTerminalRuntimes: () => void;
@@ -330,12 +337,110 @@ function makeTerminalStressOutput(
 	index: number,
 	lines: number,
 	payloadBytes: number,
+	mode: RendererStressTerminalOutputMode = "scrollback",
 ): string {
 	const boundedLines = Math.max(1, Math.min(500, Math.floor(lines)));
 	const boundedPayloadBytes = Math.max(
 		0,
 		Math.min(4096, Math.floor(payloadBytes)),
 	);
+
+	if (mode === "atlas-rewrite") {
+		const text =
+			"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ === !== <= >= -> => 红 node_modules";
+		const red = (Math.floor(index / (128 * 128)) * 2) % 256;
+		const green = (Math.floor(index / 128) * 2) % 256;
+		const blue = (index * 2) % 256;
+		return [
+			"\x1b[H\x1b[2J\x1b[mThis should be readable with white FG color.",
+			`r: ${red} g:${green} b:${blue}`,
+			`\x1b[38;2;${red};${green};${blue}m${text}\x1b[0m`,
+		].join("\r\n");
+	}
+
+	if (mode === "tui-churn") {
+		const chunks: string[] = [];
+		if (index === 0) {
+			chunks.push("\x1b[?1049h\x1b[?25l\x1b[?7l");
+		}
+		chunks.push("\x1b[H");
+		for (let line = 0; line < boundedLines; line += 1) {
+			const red = (index * 13 + line * 17) % 256;
+			const green = (index * 23 + line * 19) % 256;
+			const blue = (index * 31 + line * 29) % 256;
+			const bgRed = (index * 7 + line * 11) % 256;
+			const bgGreen = (index * 5 + line * 13) % 256;
+			const bgBlue = (index * 3 + line * 17) % 256;
+			const prefix = `${String(index).padStart(5, "0")}:${String(line).padStart(3, "0")}`;
+			const body =
+				"█▓▒░ ╭─╮ ╰─╯ === !== <= >= -> => 红 node_modules diff --stat";
+			chunks.push(
+				`\x1b[${line + 1};1H\x1b[38;2;${red};${green};${blue}m\x1b[48;2;${bgRed};${bgGreen};${bgBlue}m ${prefix} ${body} \x1b[0m\x1b[K`,
+			);
+		}
+		return chunks.join("");
+	}
+
+	if (mode === "cjk-sgr") {
+		const randomSgrAttributes = [
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"9",
+			"21",
+			"22",
+			"23",
+			"24",
+			"25",
+			"26",
+			"27",
+			"28",
+			"29",
+			"30",
+			"31",
+			"32",
+			"33",
+			"34",
+			"35",
+			"36",
+			"37",
+			"38",
+			"39",
+			"40",
+			"41",
+			"42",
+			"43",
+			"44",
+			"45",
+			"46",
+			"47",
+			"48",
+			"49",
+		];
+		const cjkStart = 0x4e00;
+		const cjkEnd = 0x9fcc;
+		const cjkCount = cjkEnd - cjkStart;
+		const charsPerWrite = Math.max(80, Math.min(2000, boundedLines * 80));
+		const chunks = ["\r\n"];
+		for (let offset = 0; offset < charsPerWrite; offset += 1) {
+			const codePoint =
+				cjkStart + ((index * charsPerWrite + offset) % cjkCount);
+			const sgr =
+				randomSgrAttributes[
+					(index * 131 + offset * 17) % randomSgrAttributes.length
+				];
+			chunks.push(`\x1b[${sgr}m${String.fromCharCode(codePoint)}\x1b[0m`);
+			if (offset % 80 === 79) {
+				chunks.push("\r\n");
+			}
+		}
+		return chunks.join("");
+	}
+
 	const seed = `terminal-stress-${index}-`;
 	const payload =
 		boundedPayloadBytes > 0
@@ -603,9 +708,14 @@ export function useRendererStressWorkspaceBridge({
 					),
 				);
 			},
-			writeTerminalStressOutput: async (index, lines, payloadBytes) => {
+			writeTerminalStressOutput: async (index, lines, payloadBytes, mode) => {
 				const refs = getStressTerminalRefs();
-				const output = makeTerminalStressOutput(index, lines, payloadBytes);
+				const output = makeTerminalStressOutput(
+					index,
+					lines,
+					payloadBytes,
+					mode,
+				);
 				const results = await Promise.all(
 					refs.map((ref) =>
 						terminalRuntimeRegistry.writeForStress(

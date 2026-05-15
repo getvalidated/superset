@@ -16,6 +16,10 @@ export interface LoadAddonsResult {
 // Once WebGL fails, skip it for all subsequent runtimes (VS Code pattern).
 let suggestedRendererType: "webgl" | "dom" | undefined;
 
+function refreshTerminal(terminal: XTerm): void {
+	terminal.refresh(0, Math.max(0, terminal.rows - 1));
+}
+
 /**
  * Load optional addons onto an already-opened terminal. Returns a cleanup
  * function and addon instances. WebGL is deferred to rAF to avoid
@@ -49,9 +53,13 @@ export function loadAddons(terminal: XTerm): LoadAddonsResult {
 		try {
 			webglAddon = new WebglAddon();
 			webglAddon.onContextLoss(() => {
+				suggestedRendererType = "dom";
 				webglAddon?.dispose();
 				webglAddon = null;
-				terminal.refresh(0, terminal.rows - 1);
+				refreshTerminal(terminal);
+				requestAnimationFrame(() => {
+					if (!disposed) refreshTerminal(terminal);
+				});
 			});
 			terminal.loadAddon(webglAddon);
 		} catch {

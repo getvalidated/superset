@@ -46,7 +46,65 @@ export interface TerminalRuntimeStressDebugInfo {
 	cols: number | null;
 	rows: number | null;
 	canvasCount: number;
+	renderer: TerminalRendererStressDebugInfo | null;
 	connectionState: ConnectionState;
+}
+
+export interface TerminalRendererStressDebugInfo {
+	rendererType: string | null;
+	atlasPageCount: number | null;
+	atlasPageSizes: number[];
+	atlasPageVersions: Array<number | null>;
+	pendingAtlasClear: boolean | null;
+}
+
+function getObjectProperty(source: unknown, key: string): unknown {
+	if (!source || (typeof source !== "object" && typeof source !== "function")) {
+		return undefined;
+	}
+	return (source as Record<string, unknown>)[key];
+}
+
+function getNumberProperty(source: unknown, key: string): number | null {
+	const value = getObjectProperty(source, key);
+	return typeof value === "number" ? value : null;
+}
+
+function getTerminalRenderer(terminal: TerminalRuntime["terminal"]): unknown {
+	const core = getObjectProperty(terminal, "_core");
+	const renderService = getObjectProperty(core, "_renderService");
+	const rendererHolder = getObjectProperty(renderService, "_renderer");
+	return getObjectProperty(rendererHolder, "value") ?? rendererHolder;
+}
+
+function getRendererStressDebugInfo(
+	terminal: TerminalRuntime["terminal"],
+): TerminalRendererStressDebugInfo | null {
+	const renderer = getTerminalRenderer(terminal);
+	if (!renderer || typeof renderer !== "object") return null;
+
+	const rendererConstructor = getObjectProperty(renderer, "constructor");
+	const rendererType =
+		typeof getObjectProperty(rendererConstructor, "name") === "string"
+			? (getObjectProperty(rendererConstructor, "name") as string)
+			: null;
+	const charAtlas = getObjectProperty(renderer, "_charAtlas");
+	const rawPages = getObjectProperty(charAtlas, "pages");
+	const pages = Array.isArray(rawPages) ? rawPages : [];
+	return {
+		rendererType,
+		atlasPageCount: Array.isArray(rawPages) ? rawPages.length : null,
+		atlasPageSizes: pages
+			.map((page) =>
+				getNumberProperty(getObjectProperty(page, "canvas"), "width"),
+			)
+			.filter((size): size is number => size !== null),
+		atlasPageVersions: pages.map((page) => getNumberProperty(page, "version")),
+		pendingAtlasClear:
+			typeof getObjectProperty(charAtlas, "_requestClearModel") === "boolean"
+				? (getObjectProperty(charAtlas, "_requestClearModel") as boolean)
+				: null,
+	};
 }
 
 class TerminalRuntimeRegistryImpl {
@@ -373,6 +431,7 @@ class TerminalRuntimeRegistryImpl {
 				canvasCount: runtime
 					? runtime.wrapper.querySelectorAll("canvas").length
 					: 0,
+				renderer: runtime ? getRendererStressDebugInfo(runtime.terminal) : null,
 				connectionState: entry.transport.connectionState,
 			};
 		});

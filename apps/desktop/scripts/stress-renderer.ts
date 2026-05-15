@@ -12,6 +12,7 @@ interface Args {
 	terminalPanesPerTab: number;
 	terminalLines: number;
 	terminalPayloadBytes: number;
+	terminalOutputMode: TerminalOutputMode;
 	includeTerminalAction: boolean;
 	profileCpu: boolean;
 	reactProbe: boolean;
@@ -34,6 +35,12 @@ type StressScenario =
 	| "workspace-heavy"
 	| "workspace-switch"
 	| "workspace-switch-heavy";
+
+type TerminalOutputMode =
+	| "atlas-rewrite"
+	| "cjk-sgr"
+	| "scrollback"
+	| "tui-churn";
 
 interface CdpTarget {
 	type?: string;
@@ -168,6 +175,7 @@ function parseArgs(argv: string[]): Args {
 		terminalPanesPerTab: 4,
 		terminalLines: 40,
 		terminalPayloadBytes: 1024,
+		terminalOutputMode: "scrollback",
 		includeTerminalAction: false,
 		profileCpu: false,
 		reactProbe: false,
@@ -247,6 +255,19 @@ function parseArgs(argv: string[]): Args {
 			case "--terminal-payload-bytes":
 				args.terminalPayloadBytes = readNumber();
 				break;
+			case "--terminal-output-mode": {
+				const mode = readValue();
+				if (
+					mode !== "atlas-rewrite" &&
+					mode !== "cjk-sgr" &&
+					mode !== "scrollback" &&
+					mode !== "tui-churn"
+				) {
+					throw new Error(`Invalid mode for ${arg}: ${mode}`);
+				}
+				args.terminalOutputMode = mode;
+				break;
+			}
 			case "--include-terminal-action":
 				args.includeTerminalAction = true;
 				break;
@@ -319,6 +340,7 @@ Options:
                                    Also controls generated tabs/panes for workspace-switch-heavy.
   --terminal-lines <n>             ANSI output lines per terminal write. Default: 40
   --terminal-payload-bytes <n>     Repeated payload bytes per line. Default: 1024
+  --terminal-output-mode <mode>    scrollback, atlas-rewrite, tui-churn, or cjk-sgr. Default: scrollback
   --include-terminal-action        Include one real backend terminal launch in heavy stress. Default: false
   --profile-cpu                    Capture a CDP CPU profile and print hottest JS frames
   --react-probe                    Capture React commit/component counts via React DevTools hook when available
@@ -538,6 +560,7 @@ function rendererStress(options: {
 	terminalPanesPerTab: number;
 	terminalLines: number;
 	terminalPayloadBytes: number;
+	terminalOutputMode: TerminalOutputMode;
 	includeTerminalAction: boolean;
 	reactProbe: boolean;
 	progressEvery: number;
@@ -843,6 +866,7 @@ function rendererStress(options: {
 			index: number,
 			lines: number,
 			payloadBytes: number,
+			mode?: TerminalOutputMode,
 		) => Promise<{
 			terminalCount: number;
 			writtenCount: number;
@@ -1415,6 +1439,7 @@ function rendererStress(options: {
 								index,
 								options.terminalLines,
 								options.terminalPayloadBytes,
+								options.terminalOutputMode,
 							),
 							15_000,
 							"write-terminal-stress-output",
@@ -1575,6 +1600,7 @@ async function main() {
 					terminalPanesPerTab: args.terminalPanesPerTab,
 					terminalLines: args.terminalLines,
 					terminalPayloadBytes: args.terminalPayloadBytes,
+					terminalOutputMode: args.terminalOutputMode,
 					includeTerminalAction: args.includeTerminalAction,
 					reactProbe: args.reactProbe,
 					progressEvery: args.progressEvery,

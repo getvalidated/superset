@@ -25,8 +25,11 @@ terminal buffer may still be correct.
   `suggestedRendererType = "dom"` and skips WebGL for later terminals in the
   same renderer process.
 - If WebGL reports context loss, the current code disposes that terminal's
-  `WebglAddon`, clears the addon reference, and refreshes the visible rows.
-  That gives xterm a chance to keep rendering without the lost WebGL context.
+  `WebglAddon`, clears the addon reference, promotes the renderer process to
+  DOM fallback for later terminals, and refreshes the visible rows immediately
+  and again on the next animation frame. That gives xterm a chance to keep
+  rendering without the lost WebGL context and avoids re-entering the same GPU
+  path for newly created terminals.
 - The v2 terminal runtime parks xterm wrappers on detach instead of tearing
   them down. Switching workspaces should reattach the same runtime instead of
   replaying a large terminal history into a fresh renderer.
@@ -56,34 +59,38 @@ Likely causes to check first:
 - Font or ligature cache mismatch after appearance changes.
 - xterm refresh work racing with a hidden, detached, or zero-sized terminal.
 
+Upstream xterm repros point at the same class of problem:
+
+- `xtermjs/xterm.js#5847` reports WebGL row ghosting and glyph substitution
+  under heavy true-color output.
+- `xtermjs/xterm.js#4534` and `xtermjs/xterm.js#4484` cover texture-atlas
+  corruption under high color/atlas pressure.
+- `xtermjs/xterm.js#4351` covers blurry glyphs during atlas page merging, and
+  `xtermjs/xterm.js#4480` covers TUI-driven WebGL render glitches.
+
 ## Current Gap
 
-Context loss does not currently promote the process-wide fallback to DOM. The
-load-failure path sets `suggestedRendererType = "dom"`, but the context-loss
-callback only disposes the current `WebglAddon` and refreshes the terminal.
+The confirmed local reproduction is a transient white/blank frame during
+forced WebGL context loss. Pure xterm atlas pressure did not produce stable
+glyph corruption locally, but it did reach xterm's pending atlas-clear state.
 
-If a GPU/driver state is bad enough to lose or corrupt one terminal WebGL
-context, later terminals may still try WebGL. That can keep reproducing blank
-or font-corrupted terminals even though the fallback path exists.
+The remaining risk is that the browser can still show a one-frame blank while
+the WebGL context loss event is being delivered. Once xterm calls our
+context-loss handler, the terminal should fall back to DOM and repaint.
 
 ## Recommended Next Fixes
 
-1. Promote WebGL context loss to global DOM fallback in both terminal creation
-   paths. Set `suggestedRendererType = "dom"` inside `onContextLoss` before
-   disposing the addon and refreshing the terminal. This keeps the existing
-   behavior for the current terminal and prevents newly created terminals from
-   re-entering the same broken GPU path.
-2. Add a developer kill switch for diagnosis, for example
+1. Add a developer kill switch for diagnosis, for example
    `SUPERSET_TERMINAL_RENDERER=dom`. This should bypass WebGL loading without
    changing terminal session behavior, replay, persistence, or pane ownership.
-3. If corruption survives after WebGL disposal, rebuild only the xterm renderer
+2. If corruption survives after WebGL disposal, rebuild only the xterm renderer
    runtime from the serialized terminal buffer. Do not kill the backend PTY and
    do not force a daemon replay on ordinary workspace switches.
-4. Consider a terminal WebGL budget instead of raising the context cap further:
+3. Consider a terminal WebGL budget instead of raising the context cap further:
    keep WebGL on visible terminals and use DOM for newly created terminals once
    the live WebGL count is above a conservative limit. This preserves parked
    terminal sessions without letting hidden panes own unlimited GPU contexts.
-5. If the issue reproduces with DOM rendering, isolate font and ligature state:
+4. If the issue reproduces with DOM rendering, isolate font and ligature state:
    disable `LigaturesAddon` behind the same diagnostic switch and verify whether
    the copied terminal text still matches the corrupt pixels.
 
@@ -136,6 +143,34 @@ bun --cwd apps/desktop stress:renderer -- \
   --max-long-task-ms 10000 \
   --progress-every 10
 ```
+
+For the atlas/glyph corruption family, use `--terminal-output-mode cjk-sgr`.
+This mode recreates the xterm demo issue pattern by writing many CJK glyphs
+with varying SGR attributes, which forces WebGL texture-atlas churn:
+
+```bash
+bun --cwd apps/desktop stress:renderer -- \
+  --port 9333 \
+  --scenario terminal-heavy \
+  --terminal-iterations 1000 \
+  --terminal-tab-count 8 \
+  --terminal-panes-per-tab 1 \
+  --terminal-lines 25 \
+  --terminal-payload-bytes 0 \
+  --terminal-output-mode cjk-sgr \
+  --interval-ms 0 \
+  --settle-ms 2000 \
+  --timeout-ms 600000 \
+  --max-heartbeat-delay-ms 10000 \
+  --max-long-task-ms 10000 \
+  --progress-every 100 \
+  --json
+```
+
+In the result, inspect `terminalStressSummary.terminalRuntimes[].renderer`.
+Multiple large atlas pages such as `8192` or `4096`, especially with
+`pendingAtlasClear: true`, mean the run reached the upstream texture-atlas
+pressure path even if screenshot corruption is subtle.
 
 For a narrow A/B test, run that command once normally and once with WebGL
 loading locally disabled. A clean DOM run points at WebGL context/atlas
