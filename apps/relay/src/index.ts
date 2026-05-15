@@ -47,22 +47,26 @@ const app = new Hono<AppContext>();
 const tunnelManager = new TunnelManager();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
-// Graceful drain on Fly's pre-stop SIGTERM. Without this, deploys kill the
-// process while tunnels are still open and host-services see TCP-RST'd
-// sockets, triggering their long exponential backoff. Drain first sends a
-// clean WS 1001 ("Going Away") to every tunnel so hosts reconnect promptly.
+// Graceful drain on Fly's pre-stop signal. Fly's init sends SIGINT (not
+// SIGTERM) to the main process during rolling deploys; listen on both to
+// also cover hand-rolled `fly machine stop` and local Ctrl-C. Without this,
+// deploys kill the process while tunnels are open and host-services see
+// TCP-RST'd sockets, triggering their long exponential backoff. Drain
+// closes each WS with code 1001 ("Going Away") so hosts reconnect promptly.
 let draining = false;
-process.on("SIGTERM", async () => {
+const handleDrain = async (signal: string) => {
 	if (draining) return;
 	draining = true;
-	console.log("[relay] SIGTERM received, draining tunnels");
+	console.log(`[relay] ${signal} received, draining tunnels`);
 	try {
 		await tunnelManager.drain();
 	} catch (err) {
 		console.error("[relay] drain failed", err);
 	}
 	process.exit(0);
-});
+};
+process.on("SIGINT", () => void handleDrain("SIGINT"));
+process.on("SIGTERM", () => void handleDrain("SIGTERM"));
 
 app.use("*", redactingLogger);
 app.use("*", cors());
