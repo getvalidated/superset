@@ -8,7 +8,10 @@ import type {
 } from "./types";
 
 const RECONNECT_BASE_MS = 1_000;
-const RECONNECT_MAX_MS = 30_000;
+// 5s ceiling rather than 30s. Under a sustained outage this means slightly
+// more retry traffic, but under transient relay restarts (the common case)
+// it ensures we don't sit idle for 30s while the relay is back online.
+const RECONNECT_MAX_MS = 5_000;
 const INBOUND_SILENCE_TIMEOUT_MS = 75_000;
 const WATCHDOG_INTERVAL_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 20_000;
