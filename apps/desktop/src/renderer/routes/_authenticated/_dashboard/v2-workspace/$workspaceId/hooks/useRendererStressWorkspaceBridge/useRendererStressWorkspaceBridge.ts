@@ -52,6 +52,7 @@ interface RendererStressTerminalWriteResult {
 type RendererStressTerminalOutputMode =
 	| "atlas-rewrite"
 	| "cjk-sgr"
+	| "glyph-sentinel"
 	| "scrollback"
 	| "tui-churn";
 
@@ -87,6 +88,7 @@ interface RendererStressWorkspaceBridge {
 		payloadBytes: number,
 		mode?: RendererStressTerminalOutputMode,
 	) => Promise<RendererStressTerminalWriteResult>;
+	clearTerminalTextureAtlasesForStress: () => number;
 	getTerminalStressSummary: () => RendererStressTerminalSummary;
 	releaseStressTerminalRuntimes: () => void;
 	addRealTerminalTab: () => Promise<void>;
@@ -441,6 +443,26 @@ function makeTerminalStressOutput(
 		return chunks.join("");
 	}
 
+	if (mode === "glyph-sentinel") {
+		const rows = Math.max(8, Math.min(80, boundedLines));
+		const chunks = ["\x1b[?25l\x1b[H\x1b[2J"];
+		const text =
+			"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ === !== <= >= -> => 红 node_modules";
+		for (let row = 0; row < rows; row += 1) {
+			const red = (row * 37 + 19) % 256;
+			const green = (row * 53 + 29) % 256;
+			const blue = (row * 71 + 43) % 256;
+			const bgRed = (row * 11 + 7) % 96;
+			const bgGreen = (row * 17 + 13) % 96;
+			const bgBlue = (row * 23 + 17) % 96;
+			chunks.push(
+				`\x1b[${row + 1};1H\x1b[38;2;${red};${green};${blue}m\x1b[48;2;${bgRed};${bgGreen};${bgBlue}m` +
+					` sentinel-${String(row).padStart(2, "0")} ${text} \x1b[0m\x1b[K`,
+			);
+		}
+		return chunks.join("");
+	}
+
 	const seed = `terminal-stress-${index}-`;
 	const payload =
 		boundedPayloadBytes > 0
@@ -732,6 +754,21 @@ export function useRendererStressWorkspaceBridge({
 					failedCount: refs.length - writtenCount,
 					byteLength: output.length,
 				};
+			},
+			clearTerminalTextureAtlasesForStress: () => {
+				const refs = getStressTerminalRefs();
+				let clearedCount = 0;
+				for (const ref of refs) {
+					if (
+						terminalRuntimeRegistry.clearTextureAtlasForStress(
+							ref.terminalId,
+							ref.instanceId,
+						)
+					) {
+						clearedCount += 1;
+					}
+				}
+				return clearedCount;
 			},
 			getTerminalStressSummary: () => {
 				const stressTerminalIds = stressTerminalIdsRef.current;

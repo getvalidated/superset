@@ -107,6 +107,22 @@ function getRendererStressDebugInfo(
 	};
 }
 
+function clearRendererTextureAtlasForStress(
+	terminal: TerminalRuntime["terminal"],
+): boolean {
+	const renderer = getTerminalRenderer(terminal);
+	const clearTextureAtlas = getObjectProperty(renderer, "clearTextureAtlas");
+	if (typeof clearTextureAtlas !== "function") return false;
+
+	try {
+		clearTextureAtlas.call(renderer);
+		terminal.refresh(0, Math.max(0, terminal.rows - 1));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 class TerminalRuntimeRegistryImpl {
 	private entries = new Map<string, RegistryEntry>();
 	private entryKeysByTerminalId = new Map<string, Set<string>>();
@@ -410,6 +426,12 @@ class TerminalRuntimeRegistryImpl {
 				resolve(false);
 			}
 		});
+	}
+
+	clearTextureAtlasForStress(terminalId: string, instanceId?: string): boolean {
+		const entry = this.getEntry(terminalId, instanceId);
+		if (!entry?.runtime) return false;
+		return clearRendererTextureAtlasForStress(entry.runtime.terminal);
 	}
 
 	getStressDebugInfo(

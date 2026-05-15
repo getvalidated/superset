@@ -3,21 +3,14 @@ import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { ProgressAddon } from "@xterm/addon-progress";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { createTerminalImageAddon } from "./terminal-image-addon";
+import { scheduleWebglAddon } from "./terminal-webgl-addon";
 
 export interface LoadAddonsResult {
 	searchAddon: SearchAddon;
 	progressAddon: ProgressAddon;
 	dispose: () => void;
-}
-
-// Once WebGL fails, skip it for all subsequent runtimes (VS Code pattern).
-let suggestedRendererType: "webgl" | "dom" | undefined;
-
-function refreshTerminal(terminal: XTerm): void {
-	terminal.refresh(0, Math.max(0, terminal.rows - 1));
 }
 
 /**
@@ -27,7 +20,6 @@ function refreshTerminal(terminal: XTerm): void {
  */
 export function loadAddons(terminal: XTerm): LoadAddonsResult {
 	let disposed = false;
-	let webglAddon: WebglAddon | null = null;
 
 	terminal.loadAddon(new ClipboardAddon());
 
@@ -47,25 +39,8 @@ export function loadAddons(terminal: XTerm): LoadAddonsResult {
 		terminal.loadAddon(new LigaturesAddon());
 	} catch {}
 
-	const rafId = requestAnimationFrame(() => {
-		if (disposed || suggestedRendererType === "dom") return;
-
-		try {
-			webglAddon = new WebglAddon();
-			webglAddon.onContextLoss(() => {
-				suggestedRendererType = "dom";
-				webglAddon?.dispose();
-				webglAddon = null;
-				refreshTerminal(terminal);
-				requestAnimationFrame(() => {
-					if (!disposed) refreshTerminal(terminal);
-				});
-			});
-			terminal.loadAddon(webglAddon);
-		} catch {
-			suggestedRendererType = "dom";
-			webglAddon = null;
-		}
+	const disposeWebglAddon = scheduleWebglAddon(terminal, {
+		isDisposed: () => disposed,
 	});
 
 	return {
@@ -73,11 +48,7 @@ export function loadAddons(terminal: XTerm): LoadAddonsResult {
 		progressAddon,
 		dispose: () => {
 			disposed = true;
-			cancelAnimationFrame(rafId);
-			try {
-				webglAddon?.dispose();
-			} catch {}
-			webglAddon = null;
+			disposeWebglAddon();
 		},
 	};
 }

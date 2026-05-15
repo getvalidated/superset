@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+
 interface Args {
 	host: string;
 	port: number;
@@ -13,6 +16,8 @@ interface Args {
 	terminalLines: number;
 	terminalPayloadBytes: number;
 	terminalOutputMode: TerminalOutputMode;
+	terminalCorruptionCheck: boolean;
+	terminalCorruptionArtifactDir: string;
 	includeTerminalAction: boolean;
 	profileCpu: boolean;
 	reactProbe: boolean;
@@ -39,6 +44,7 @@ type StressScenario =
 type TerminalOutputMode =
 	| "atlas-rewrite"
 	| "cjk-sgr"
+	| "glyph-sentinel"
 	| "scrollback"
 	| "tui-churn";
 
@@ -82,6 +88,10 @@ interface RuntimeEvaluateResult {
 			value?: unknown;
 		};
 	};
+}
+
+interface PageCaptureScreenshotResult {
+	data?: string;
 }
 
 interface CpuProfile {
@@ -135,6 +145,7 @@ interface RendererStressResult {
 	terminalActionCounts: Record<string, number>;
 	terminalActionErrors: string[];
 	terminalStressSummary: unknown;
+	terminalVisualCorruptionCheck?: TerminalVisualCorruptionCheckResult | null;
 	workspaceSummary: unknown;
 	reactProbeSummary: unknown;
 	durationMs: number;
@@ -160,6 +171,48 @@ interface RendererStressResult {
 	finalLocation: string;
 }
 
+interface TerminalVisualCorruptionCheckResult {
+	available: boolean;
+	reason?: string;
+	clip?: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		scale: number;
+	};
+	beforeClear?: TerminalVisualFrameInfo;
+	afterClear?: TerminalVisualFrameInfo;
+	diff?: TerminalVisualDiffSummary;
+	artifactPaths?: {
+		beforeClear: string;
+		afterClear: string;
+	};
+	failed: boolean;
+}
+
+interface TerminalVisualFrameInfo {
+	canvasCount: number;
+	rendererTypes: string[];
+	atlasPageCounts: Array<number | null>;
+	pendingAtlasClearCount: number;
+	stressTerminalRuntimeCount: number;
+	clearedAtlasCount?: number;
+}
+
+interface TerminalVisualDiffSummary {
+	width: number;
+	height: number;
+	pixelCount: number;
+	changedPixels: number;
+	changedRatio: number;
+	maxChannelDelta: number;
+	meanChannelDelta: number;
+	changedRows: number;
+	changedColumns: number;
+	thresholdChangedPixels: number;
+}
+
 const DEFAULT_SELECTOR = "[data-renderer-stress-workspace-id]";
 
 function parseArgs(argv: string[]): Args {
@@ -176,6 +229,8 @@ function parseArgs(argv: string[]): Args {
 		terminalLines: 40,
 		terminalPayloadBytes: 1024,
 		terminalOutputMode: "scrollback",
+		terminalCorruptionCheck: false,
+		terminalCorruptionArtifactDir: ".tmp/renderer-terminal-corruption",
 		includeTerminalAction: false,
 		profileCpu: false,
 		reactProbe: false,
@@ -260,6 +315,7 @@ function parseArgs(argv: string[]): Args {
 				if (
 					mode !== "atlas-rewrite" &&
 					mode !== "cjk-sgr" &&
+					mode !== "glyph-sentinel" &&
 					mode !== "scrollback" &&
 					mode !== "tui-churn"
 				) {
@@ -268,6 +324,12 @@ function parseArgs(argv: string[]): Args {
 				args.terminalOutputMode = mode;
 				break;
 			}
+			case "--terminal-corruption-check":
+				args.terminalCorruptionCheck = true;
+				break;
+			case "--terminal-corruption-artifact-dir":
+				args.terminalCorruptionArtifactDir = readValue();
+				break;
 			case "--include-terminal-action":
 				args.includeTerminalAction = true;
 				break;
@@ -340,7 +402,11 @@ Options:
                                    Also controls generated tabs/panes for workspace-switch-heavy.
   --terminal-lines <n>             ANSI output lines per terminal write. Default: 40
   --terminal-payload-bytes <n>     Repeated payload bytes per line. Default: 1024
-  --terminal-output-mode <mode>    scrollback, atlas-rewrite, tui-churn, or cjk-sgr. Default: scrollback
+  --terminal-output-mode <mode>    scrollback, atlas-rewrite, tui-churn, cjk-sgr, or glyph-sentinel. Default: scrollback
+  --terminal-corruption-check      After terminal-heavy stress, compare a fixed frame before/after clearTextureAtlas().
+  --terminal-corruption-artifact-dir <path>
+                                   Directory for before/after PNGs when --terminal-corruption-check is set.
+                                   Default: .tmp/renderer-terminal-corruption
   --include-terminal-action        Include one real backend terminal launch in heavy stress. Default: false
   --profile-cpu                    Capture a CDP CPU profile and print hottest JS frames
   --react-probe                    Capture React commit/component counts via React DevTools hook when available
@@ -550,6 +616,304 @@ async function getRendererTarget(args: Args): Promise<CdpTarget> {
 	return target;
 }
 
+async function evaluateInRenderer<T>(
+	cdp: CdpClient,
+	expression: string,
+	timeoutMs: number,
+): Promise<T> {
+	const evaluation = await cdp.send<RuntimeEvaluateResult>(
+		"Runtime.evaluate",
+		{
+			expression,
+			awaitPromise: true,
+			returnByValue: true,
+		},
+		timeoutMs,
+	);
+
+	if (evaluation.exceptionDetails) {
+		throw new Error(
+			evaluation.exceptionDetails.exception?.description ??
+				evaluation.exceptionDetails.text ??
+				"Renderer evaluation threw",
+		);
+	}
+
+	return evaluation.result?.value as T;
+}
+
+function dataUrlToPngBuffer(dataUrl: string): Buffer {
+	const base64 = dataUrl.startsWith("data:")
+		? dataUrl.slice(dataUrl.indexOf(",") + 1)
+		: dataUrl;
+	return Buffer.from(base64, "base64");
+}
+
+async function capturePngDataUrl(
+	cdp: CdpClient,
+	clip: TerminalVisualCorruptionCheckResult["clip"],
+	timeoutMs: number,
+): Promise<string> {
+	const result = await cdp.send<PageCaptureScreenshotResult>(
+		"Page.captureScreenshot",
+		{
+			format: "png",
+			clip,
+			fromSurface: true,
+			captureBeyondViewport: false,
+		},
+		timeoutMs,
+	);
+	if (!result.data) throw new Error("Page.captureScreenshot returned no data");
+	return `data:image/png;base64,${result.data}`;
+}
+
+async function prepareTerminalVisualProbeFrame(
+	cdp: CdpClient,
+	timeoutMs: number,
+): Promise<
+	| {
+			available: true;
+			clip: NonNullable<TerminalVisualCorruptionCheckResult["clip"]>;
+			frame: TerminalVisualFrameInfo;
+	  }
+	| { available: false; reason: string }
+> {
+	return evaluateInRenderer(
+		cdp,
+		`(async () => {
+			const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+			const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+			const bridge = window.__SUPERSET_RENDERER_STRESS__;
+			if (!bridge) return { available: false, reason: "Renderer stress bridge is not mounted" };
+
+			bridge.switchTab(0);
+			await nextFrame();
+			await nextFrame();
+			await bridge.writeTerminalStressOutput(1_000_003, 36, 0, "glyph-sentinel");
+			await nextFrame();
+			await nextFrame();
+			await sleep(250);
+
+			const terminals = Array.from(document.querySelectorAll(".xterm"))
+				.map((element) => {
+					const rect = element.getBoundingClientRect();
+					return { element, rect };
+				})
+				.filter(({ rect }) => rect.width > 20 && rect.height > 20);
+			if (terminals.length === 0) {
+				return { available: false, reason: "No visible xterm element found after sentinel write" };
+			}
+			terminals.sort((left, right) => (right.rect.width * right.rect.height) - (left.rect.width * left.rect.height));
+			const rect = terminals[0].rect;
+			const summary = bridge.getTerminalStressSummary();
+			const runtimes = Array.isArray(summary?.terminalRuntimes) ? summary.terminalRuntimes : [];
+			const renderers = runtimes.map((runtime) => runtime.renderer).filter(Boolean);
+			return {
+				available: true,
+				clip: {
+					x: Math.max(0, Math.floor(rect.x)),
+					y: Math.max(0, Math.floor(rect.y)),
+					width: Math.max(1, Math.ceil(rect.width)),
+					height: Math.max(1, Math.ceil(rect.height)),
+					scale: 1
+				},
+				frame: {
+					canvasCount: terminals[0].element.querySelectorAll("canvas").length,
+					rendererTypes: Array.from(new Set(renderers.map((renderer) => renderer.rendererType).filter(Boolean))),
+					atlasPageCounts: renderers.map((renderer) => renderer.atlasPageCount ?? null),
+					pendingAtlasClearCount: renderers.filter((renderer) => renderer.pendingAtlasClear === true).length,
+					stressTerminalRuntimeCount: runtimes.length
+				}
+			};
+		})()`,
+		timeoutMs,
+	);
+}
+
+async function clearTerminalVisualProbeAtlas(
+	cdp: CdpClient,
+	timeoutMs: number,
+): Promise<TerminalVisualFrameInfo> {
+	return evaluateInRenderer(
+		cdp,
+		`(async () => {
+			const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+			const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+			const bridge = window.__SUPERSET_RENDERER_STRESS__;
+			if (!bridge) throw new Error("Renderer stress bridge is not mounted");
+			const clearedAtlasCount = bridge.clearTerminalTextureAtlasesForStress();
+			await nextFrame();
+			await nextFrame();
+			await sleep(250);
+			const summary = bridge.getTerminalStressSummary();
+			const runtimes = Array.isArray(summary?.terminalRuntimes) ? summary.terminalRuntimes : [];
+			const renderers = runtimes.map((runtime) => runtime.renderer).filter(Boolean);
+			const terminal = document.querySelector(".xterm");
+			return {
+				canvasCount: terminal ? terminal.querySelectorAll("canvas").length : 0,
+				rendererTypes: Array.from(new Set(renderers.map((renderer) => renderer.rendererType).filter(Boolean))),
+				atlasPageCounts: renderers.map((renderer) => renderer.atlasPageCount ?? null),
+				pendingAtlasClearCount: renderers.filter((renderer) => renderer.pendingAtlasClear === true).length,
+				stressTerminalRuntimeCount: runtimes.length,
+				clearedAtlasCount
+			};
+		})()`,
+		timeoutMs,
+	);
+}
+
+async function compareScreenshotsInRenderer(
+	cdp: CdpClient,
+	beforeDataUrl: string,
+	afterDataUrl: string,
+	timeoutMs: number,
+): Promise<TerminalVisualDiffSummary> {
+	return evaluateInRenderer(
+		cdp,
+		`(async () => {
+			const beforeDataUrl = ${JSON.stringify(beforeDataUrl)};
+			const afterDataUrl = ${JSON.stringify(afterDataUrl)};
+			const loadImage = (src) => new Promise((resolve, reject) => {
+				const image = new Image();
+				image.onload = () => resolve(image);
+				image.onerror = () => reject(new Error("Failed to load screenshot"));
+				image.src = src;
+			});
+			const [beforeImage, afterImage] = await Promise.all([
+				loadImage(beforeDataUrl),
+				loadImage(afterDataUrl)
+			]);
+			const width = Math.min(beforeImage.naturalWidth, afterImage.naturalWidth);
+			const height = Math.min(beforeImage.naturalHeight, afterImage.naturalHeight);
+			const canvas = document.createElement("canvas");
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext("2d", { willReadFrequently: true });
+			if (!ctx) throw new Error("Could not create 2d canvas context");
+			ctx.drawImage(beforeImage, 0, 0, width, height);
+			const before = ctx.getImageData(0, 0, width, height).data;
+			ctx.clearRect(0, 0, width, height);
+			ctx.drawImage(afterImage, 0, 0, width, height);
+			const after = ctx.getImageData(0, 0, width, height).data;
+
+			let changedPixels = 0;
+			let maxChannelDelta = 0;
+			let channelDeltaTotal = 0;
+			const changedRows = new Set();
+			const changedColumns = new Set();
+			for (let index = 0; index < before.length; index += 4) {
+				const dr = Math.abs(before[index] - after[index]);
+				const dg = Math.abs(before[index + 1] - after[index + 1]);
+				const db = Math.abs(before[index + 2] - after[index + 2]);
+				const da = Math.abs(before[index + 3] - after[index + 3]);
+				const delta = Math.max(dr, dg, db, da);
+				maxChannelDelta = Math.max(maxChannelDelta, delta);
+				channelDeltaTotal += dr + dg + db + da;
+				if (delta <= 8) continue;
+				const pixel = index / 4;
+				const x = pixel % width;
+				const y = Math.floor(pixel / width);
+				changedPixels += 1;
+				changedRows.add(y);
+				changedColumns.add(x);
+			}
+			const pixelCount = width * height;
+			const thresholdChangedPixels = Math.max(200, Math.floor(pixelCount * 0.001));
+			return {
+				width,
+				height,
+				pixelCount,
+				changedPixels,
+				changedRatio: pixelCount > 0 ? changedPixels / pixelCount : 0,
+				maxChannelDelta,
+				meanChannelDelta: pixelCount > 0 ? channelDeltaTotal / (pixelCount * 4) : 0,
+				changedRows: changedRows.size,
+				changedColumns: changedColumns.size,
+				thresholdChangedPixels
+			};
+		})()`,
+		timeoutMs,
+	);
+}
+
+async function restoreRendererStressBaseline(
+	cdp: CdpClient,
+	timeoutMs: number,
+): Promise<void> {
+	await evaluateInRenderer(
+		cdp,
+		`(() => {
+			window.__SUPERSET_RENDERER_STRESS__?.restoreBaseline();
+			return true;
+		})()`,
+		timeoutMs,
+	).catch(() => undefined);
+}
+
+async function runTerminalVisualCorruptionCheck(
+	cdp: CdpClient,
+	args: Args,
+): Promise<TerminalVisualCorruptionCheckResult> {
+	const prepared = await prepareTerminalVisualProbeFrame(cdp, args.timeoutMs);
+	if (!prepared.available) {
+		await restoreRendererStressBaseline(cdp, args.timeoutMs);
+		return { available: false, reason: prepared.reason, failed: false };
+	}
+
+	let beforeDataUrl = "";
+	let afterDataUrl = "";
+	try {
+		beforeDataUrl = await capturePngDataUrl(cdp, prepared.clip, args.timeoutMs);
+		const afterClear = await clearTerminalVisualProbeAtlas(cdp, args.timeoutMs);
+		afterDataUrl = await capturePngDataUrl(cdp, prepared.clip, args.timeoutMs);
+		const diff = await compareScreenshotsInRenderer(
+			cdp,
+			beforeDataUrl,
+			afterDataUrl,
+			args.timeoutMs,
+		);
+		const artifactPaths = await writeTerminalCorruptionArtifacts(
+			args.terminalCorruptionArtifactDir,
+			beforeDataUrl,
+			afterDataUrl,
+		);
+		return {
+			available: true,
+			clip: prepared.clip,
+			beforeClear: prepared.frame,
+			afterClear,
+			diff,
+			artifactPaths,
+			failed: diff.changedPixels > diff.thresholdChangedPixels,
+		};
+	} finally {
+		await restoreRendererStressBaseline(cdp, args.timeoutMs);
+	}
+}
+
+async function writeTerminalCorruptionArtifacts(
+	artifactDir: string,
+	beforeDataUrl: string,
+	afterDataUrl: string,
+): Promise<TerminalVisualCorruptionCheckResult["artifactPaths"]> {
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	await mkdir(artifactDir, { recursive: true });
+	const beforeClear = join(
+		artifactDir,
+		`terminal-webgl-before-clear-${stamp}.png`,
+	);
+	const afterClear = join(
+		artifactDir,
+		`terminal-webgl-after-clear-${stamp}.png`,
+	);
+	await Promise.all([
+		Bun.write(beforeClear, dataUrlToPngBuffer(beforeDataUrl)),
+		Bun.write(afterClear, dataUrlToPngBuffer(afterDataUrl)),
+	]);
+	return { beforeClear, afterClear };
+}
+
 function rendererStress(options: {
 	scenario: StressScenario;
 	iterations: number;
@@ -561,6 +925,7 @@ function rendererStress(options: {
 	terminalLines: number;
 	terminalPayloadBytes: number;
 	terminalOutputMode: TerminalOutputMode;
+	terminalCorruptionCheck: boolean;
 	includeTerminalAction: boolean;
 	reactProbe: boolean;
 	progressEvery: number;
@@ -873,6 +1238,7 @@ function rendererStress(options: {
 			failedCount: number;
 			byteLength: number;
 		}>;
+		clearTerminalTextureAtlasesForStress: () => number;
 		getTerminalStressSummary: () => unknown;
 		releaseStressTerminalRuntimes: () => void;
 		addRealTerminalTab: () => Promise<void>;
@@ -1474,9 +1840,11 @@ function rendererStress(options: {
 
 				terminalStressSummary = activeBridge.getTerminalStressSummary();
 			} finally {
-				activeBridge.restoreBaseline();
-				terminalActionCounts["restore-baseline"] = 1;
-				operationCount += 1;
+				if (!options.terminalCorruptionCheck) {
+					activeBridge.restoreBaseline();
+					terminalActionCounts["restore-baseline"] = 1;
+					operationCount += 1;
+				}
 			}
 		}
 		await sleep(options.settleMs);
@@ -1601,6 +1969,7 @@ async function main() {
 					terminalLines: args.terminalLines,
 					terminalPayloadBytes: args.terminalPayloadBytes,
 					terminalOutputMode: args.terminalOutputMode,
+					terminalCorruptionCheck: args.terminalCorruptionCheck,
 					includeTerminalAction: args.includeTerminalAction,
 					reactProbe: args.reactProbe,
 					progressEvery: args.progressEvery,
@@ -1633,6 +2002,9 @@ async function main() {
 		}
 
 		const summary = evaluation.result?.value as RendererStressResult;
+		const terminalVisualCorruptionCheck = args.terminalCorruptionCheck
+			? await runTerminalVisualCorruptionCheck(cdp, args)
+			: null;
 		const cdpMetrics = await cdp
 			.send("Performance.getMetrics", {}, args.timeoutMs)
 			.catch((error) => ({ error: String(error) }));
@@ -1641,6 +2013,7 @@ async function main() {
 			.catch((error) => ({ error: String(error) }));
 		const output = {
 			...summary,
+			terminalVisualCorruptionCheck,
 			cdpMetrics,
 			cdpDomCounters: {
 				start: startDomCounters,
@@ -1674,6 +2047,15 @@ async function main() {
 				`long task ${summary.maxLongTaskDurationMs.toFixed(
 					1,
 				)}ms exceeded ${args.maxLongTaskMs}ms`,
+			);
+		}
+		if (terminalVisualCorruptionCheck?.failed) {
+			const changedPixels =
+				terminalVisualCorruptionCheck.diff?.changedPixels ?? 0;
+			const threshold =
+				terminalVisualCorruptionCheck.diff?.thresholdChangedPixels ?? 0;
+			failures.push(
+				`terminal visual corruption check changed ${changedPixels} pixel(s) after clearTextureAtlas(), threshold ${threshold}`,
 			);
 		}
 

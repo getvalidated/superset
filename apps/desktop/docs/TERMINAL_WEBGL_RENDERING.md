@@ -17,10 +17,9 @@ terminal buffer may still be correct.
 - On macOS, Electron starts with
   `disable-backgrounding-occluded-windows` to avoid compositor throttling for
   windows that are covered or backgrounded.
-- Terminal WebGL loading is optional and deferred by one animation frame in
-  both terminal creation paths:
-  - `apps/desktop/src/renderer/lib/terminal/terminal-addons.ts`
-  - `apps/desktop/src/renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/helpers.ts`
+- Terminal WebGL loading is optional, centralized in
+  `apps/desktop/src/renderer/lib/terminal/terminal-webgl-addon.ts`, and
+  deferred by one animation frame in both terminal creation paths.
 - If `WebglAddon` fails to load, the renderer records
   `suggestedRendererType = "dom"` and skips WebGL for later terminals in the
   same renderer process.
@@ -30,6 +29,12 @@ terminal buffer may still be correct.
   and again on the next animation frame. That gives xterm a chance to keep
   rendering without the lost WebGL context and avoids re-entering the same GPU
   path for newly created terminals.
+- If xterm's private WebGL atlas state reaches high pressure, the code clears
+  the atlas through `WebglAddon.clearTextureAtlas()` and refreshes the visible
+  rows. The guard currently trips when xterm has requested an atlas-model clear
+  or when any atlas page reaches at least 2048px wide/high. This is deliberately
+  renderer-local: it does not touch the PTY, replay, serialized buffer, pane
+  ownership, or terminal parking.
 - The v2 terminal runtime parks xterm wrappers on detach instead of tearing
   them down. Switching workspaces should reattach the same runtime instead of
   replaying a large terminal history into a fresh renderer.
@@ -61,21 +66,27 @@ Likely causes to check first:
 
 Upstream xterm repros point at the same class of problem:
 
-- `xtermjs/xterm.js#5847` reports WebGL row ghosting and glyph substitution
-  under heavy true-color output.
+- `xtermjs/xterm.js#5847`
+  (https://github.com/xtermjs/xterm.js/issues/5847) is open and reports WebGL
+  row ghosting and glyph substitution under heavy true-color output.
 - `xtermjs/xterm.js#4534` and `xtermjs/xterm.js#4484` cover texture-atlas
   corruption under high color/atlas pressure.
 - `xtermjs/xterm.js#4351` covers blurry glyphs during atlas page merging, and
   `xtermjs/xterm.js#4480` covers TUI-driven WebGL render glitches.
 
-## Current Gap
+## Confirmed Reproduction
 
-The confirmed local reproduction is a transient white/blank frame during
-forced WebGL context loss. Pure xterm atlas pressure did not produce stable
-glyph corruption locally, but it did reach xterm's pending atlas-clear state.
+Stable WebGL glyph corruption reproduces locally with the renderer stress
+harness by writing xterm's true-color atlas rewrite pattern, then comparing a
+fixed sentinel frame before and after `clearTextureAtlas()`.
 
-The remaining risk is that the browser can still show a one-frame blank while
-the WebGL context loss event is being delivered. Once xterm calls our
+Before the atlas guard, a 1-terminal run changed 241,147 pixels after clearing
+the atlas. The saved before-clear screenshot had visible row ghosting and glyph
+substitution, while the after-clear screenshot was clean. After the guard, the
+same run completed with 0 changed pixels and WebGL still active.
+
+The remaining separate risk is that the browser can still show a one-frame
+blank while a WebGL context-loss event is being delivered. Once xterm calls our
 context-loss handler, the terminal should fall back to DOM and repaint.
 
 ## Recommended Next Fixes
@@ -144,33 +155,43 @@ bun --cwd apps/desktop stress:renderer -- \
   --progress-every 10
 ```
 
-For the atlas/glyph corruption family, use `--terminal-output-mode cjk-sgr`.
-This mode recreates the xterm demo issue pattern by writing many CJK glyphs
-with varying SGR attributes, which forces WebGL texture-atlas churn:
+For the atlas/glyph corruption family, use `--terminal-output-mode
+atlas-rewrite` plus `--terminal-corruption-check`. This recreates the upstream
+xterm issue pattern by repeatedly rewriting the same rows with true-color SGR
+attributes, then captures a deterministic sentinel frame before and after
+`clearTextureAtlas()`:
 
 ```bash
 bun --cwd apps/desktop stress:renderer -- \
   --port 9333 \
   --scenario terminal-heavy \
-  --terminal-iterations 1000 \
-  --terminal-tab-count 8 \
+  --terminal-iterations 1500 \
+  --terminal-tab-count 1 \
   --terminal-panes-per-tab 1 \
-  --terminal-lines 25 \
+  --terminal-lines 3 \
   --terminal-payload-bytes 0 \
-  --terminal-output-mode cjk-sgr \
+  --terminal-output-mode atlas-rewrite \
+  --terminal-corruption-check \
   --interval-ms 0 \
-  --settle-ms 2000 \
+  --settle-ms 500 \
   --timeout-ms 600000 \
   --max-heartbeat-delay-ms 10000 \
   --max-long-task-ms 10000 \
-  --progress-every 100 \
+  --progress-every 250 \
   --json
 ```
 
-In the result, inspect `terminalStressSummary.terminalRuntimes[].renderer`.
-Multiple large atlas pages such as `8192` or `4096`, especially with
-`pendingAtlasClear: true`, mean the run reached the upstream texture-atlas
-pressure path even if screenshot corruption is subtle.
+The command writes before/after PNGs under
+`apps/desktop/.tmp/renderer-terminal-corruption/` by default. In the JSON
+result, inspect `terminalVisualCorruptionCheck.diff`. A non-zero diff above the
+reported threshold means the visible pixels depended on stale atlas contents.
+Also inspect `terminalStressSummary.terminalRuntimes[].renderer`: multiple atlas
+pages, large `4096` pages, or `pendingAtlasClear: true` means the run reached
+the upstream texture-atlas pressure path.
+
+`--terminal-output-mode cjk-sgr` is still useful as a broader atlas churn mode,
+but it is harder to turn into a deterministic pixel detector than the
+atlas-rewrite plus sentinel check.
 
 For a narrow A/B test, run that command once normally and once with WebGL
 loading locally disabled. A clean DOM run points at WebGL context/atlas
