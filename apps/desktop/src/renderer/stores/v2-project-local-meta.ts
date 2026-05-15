@@ -70,7 +70,7 @@ export const useV2ProjectLocalMetaStore = create<V2ProjectLocalMetaState>()(
 			}),
 			{
 				name: "v2-project-local-meta",
-				version: 2,
+				version: 1,
 			},
 		),
 		{ name: "V2ProjectLocalMetaStore" },
