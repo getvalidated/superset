@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
@@ -67,15 +67,9 @@ async function createCloudProjectWithSlugRetry(
 ) {
 	const baseSlug = slugifyProjectName(args.name);
 	let lastError: unknown;
-	// 1 attempt at the bare baseSlug + 9 random-hex retries. With 6 hex
-	// chars (16M options), a per-attempt collision needs ~thousands of
-	// existing slugs sharing the base before risk shows up.
-	const maxAttempts = 10;
+	const maxAttempts = 100;
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
-		const slug =
-			attempt === 0
-				? baseSlug
-				: `${baseSlug}-${randomBytes(3).toString("hex")}`;
+		const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
 		try {
 			return await ctx.api.v2Project.create.mutate({
 				organizationId: ctx.organizationId,
