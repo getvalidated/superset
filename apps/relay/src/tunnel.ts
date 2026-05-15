@@ -171,18 +171,52 @@ export class TunnelManager {
 	// as a deploy drain (not a hard disconnect or ping timeout) and
 	// reconnect immediately. Called from the SIGINT/SIGTERM handler in
 	// index.ts.
+	//
+	// Waits for each WS's actual close event before resolving (with a
+	// per-WS ceiling). A naive `ws.close(...) + setTimeout(250)` was not
+	// enough — under real network conditions the close frame hadn't
+	// finished its handshake by the time the process called exit(0), so
+	// the client's TCP socket stayed in ESTABLISHED with no `onclose`
+	// event. The client then took 110s (its watchdog) to notice the
+	// dead-but-not-closed connection — which translated into a ~110s
+	// user-visible outage on every deploy.
 	async drain(reason = "Server draining for deploy"): Promise<void> {
-		console.log(`[relay] draining ${this.tunnels.size} tunnels`);
-		for (const tunnel of this.tunnels.values()) {
+		const tunnels = Array.from(this.tunnels.values());
+		console.log(`[relay] draining ${tunnels.length} tunnels`);
+		// In-band drain signal first: send a JSON {type:"drain"} message on
+		// the WS message channel before closing. Game-day testing showed
+		// the WS close frame doesn't reliably reach the host within Fly's
+		// kill_timeout window (host's TCP socket sees ESTABLISHED with no
+		// onclose for 75+ seconds, until its watchdog fires). The message
+		// channel is already exercised by ping/pong every 30s, so we know
+		// it flushes cleanly. Host's onmessage handler triggers a clean
+		// reconnect on receipt; the WS close after is just belt-and-
+		// suspenders.
+		for (const tunnel of tunnels) {
+			try {
+				this.send(tunnel.ws, { type: "drain", reason });
+			} catch {
+				// best-effort
+			}
+		}
+		// Give the message frames a moment to reach the host before we
+		// start closing the underlying sockets.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		for (const tunnel of tunnels) {
 			try {
 				tunnel.ws.close(TunnelManager.WS_CLOSE_DRAIN, reason);
 			} catch {
 				// already closed
 			}
 		}
-		// Give the OS a moment to flush WS close frames before the process
-		// dies and the underlying TCP connections get RST'd.
-		await new Promise((resolve) => setTimeout(resolve, 250));
+		// Brief tail wait so the close-handshake gets a chance to complete
+		// before the process exits and RSTs the underlying TCP.
+		const WS_CLOSED = 3;
+		const deadline = Date.now() + 1_500;
+		while (Date.now() < deadline) {
+			if (tunnels.every((t) => t.ws.readyState === WS_CLOSED)) return;
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		}
 	}
 
 	private disposeTunnel(tunnel: TunnelState, reason: string): void {

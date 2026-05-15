@@ -204,6 +204,24 @@ export class TunnelClient {
 			case "ping":
 				this.send({ type: "pong" });
 				break;
+			case "drain":
+				// In-band drain signal from the relay before it
+				// SIGINT-shuts-down. Reset backoff and tear the socket
+				// down ourselves so the next reconnect attempt fires at
+				// the base delay — far more reliable than waiting for
+				// the WS close frame to arrive (which game-day testing
+				// showed sometimes doesn't, leaving the host idle until
+				// its 75s inactivity watchdog).
+				console.log(
+					`[host-service:tunnel] relay drain notice received${message.reason ? ` (${message.reason})` : ""}; reconnecting immediately`,
+				);
+				this.reconnectAttempts = 0;
+				try {
+					this.socket?.close();
+				} catch {
+					// onclose handler will schedule the reconnect
+				}
+				break;
 			case "http":
 				await this.handleHttpRequest(message);
 				break;
