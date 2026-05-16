@@ -6,8 +6,19 @@
  *
  * For renderer process env vars, use src/renderer/env.renderer.ts instead.
  */
+import {
+	getDeploymentProfile,
+	isStrictProfile,
+} from "@superset/shared/deployment-profile";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod/v4";
+
+// OSS-dev profile skips strict env validation so a fresh clone boots
+// without every integration key. Strict profiles (cloud, internal-dev,
+// self-hosted) still fail fast on missing keys.
+const profile = getDeploymentProfile();
+const skipValidation =
+	!isStrictProfile(profile) || !!process.env.SKIP_ENV_VALIDATION;
 
 export const env = createEnv({
 	server: {
@@ -45,9 +56,7 @@ export const env = createEnv({
 		RELAY_URL: process.env.RELAY_URL,
 	},
 	emptyStringAsUndefined: true,
-	// Only allow skipping validation in development (never in production)
-	skipValidation:
-		process.env.NODE_ENV === "development" && !!process.env.SKIP_ENV_VALIDATION,
+	skipValidation,
 
 	// Main process runs in trusted Node.js environment
 	isServer: true,

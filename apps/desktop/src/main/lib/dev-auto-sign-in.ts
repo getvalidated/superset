@@ -1,3 +1,4 @@
+import { getDeploymentProfile } from "@superset/shared/deployment-profile";
 import { env as mainEnv } from "main/env.main";
 import {
 	loadToken,
@@ -42,11 +43,8 @@ async function postAuth<T>(
  * Best-effort: failure is logged but doesn't crash boot.
  */
 export async function ensureDevAuthToken(): Promise<void> {
-	if (
-		process.env.NODE_ENV !== "development" ||
-		!process.env.SKIP_ENV_VALIDATION
-	)
-		return;
+	// OSS-dev only — internal devs, self-hosters, and prod all use real auth.
+	if (getDeploymentProfile() !== "oss-dev") return;
 
 	const stored = await loadToken();
 	if (stored.token && stored.expiresAt) {

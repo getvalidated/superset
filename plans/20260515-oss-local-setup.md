@@ -63,6 +63,55 @@ A fresh-clone contributor can:
 - The DevAuthForm only renders when `NODE_ENV !== "production"`.
 - The Chrome DevTools Protocol port (9333) only opens when both `IS_DEV` and `SKIP_ENV_VALIDATION` are set.
 
+## Deployment profiles (the key abstraction)
+
+`packages/shared/src/deployment-profile.ts` exposes a four-profile model:
+
+| Profile | Trigger | Validation |
+|---|---|---|
+| `cloud` | `VERCEL=1` (set automatically by Vercel) | Strict — every integration key required |
+| `internal-dev` | `SUPERSET_INTERNAL_DEV=1` (written by `.superset/setup.sh`) | Strict |
+| `self-hosted` | `NODE_ENV=production` outside Vercel | Strict |
+| `oss-dev` | default | Lenient |
+
+All env schemas (`apps/api/src/env.ts`, `packages/trpc/src/env.ts`, `apps/web/src/env.ts`, etc.) compute their `skipValidation` from this:
+
+```ts
+const skipValidation = !isStrictProfile(getDeploymentProfile()) || !!process.env.SKIP_ENV_VALIDATION;
+```
+
+OSS contributors: validation skipped → boot with whatever's in `.env`, lazy guards catch the crashes.
+Internal devs: validation runs → fail-fast on missing keys, same as today's experience.
+Cloud / self-hosted: validation runs → bad deploys never serve traffic.
+
+The discriminator (`SUPERSET_INTERNAL_DEV=1`) is **positive-presence**: a contributor cloning fresh has no way to type it accidentally — it's never in `.env.example`, never documented as a setting. Written only by `.superset/lib/setup/steps.sh` `step_write_env`.
+
+`SKIP_ENV_VALIDATION=1` remains the build-time escape hatch (e.g. Docker preview builds), routed through `turbo.jsonc`'s `globalPassThroughEnv`. Not the primary discriminator.
+
+### Boot-time visibility
+
+`apps/api/src/lib/boot-summary.ts` prints a one-time summary at API startup listing every disabled integration:
+
+```
+[superset] profile=oss-dev (lenient)
+[superset] disabled features (set the listed env var to enable):
+           - stripe                       STRIPE_SECRET_KEY
+           - resend (email)               RESEND_API_KEY
+           - ...
+```
+
+In strict profiles it just prints `profile=cloud (strict)` (env validation already failed boot if anything's missing).
+
+### `/api/health` endpoint
+
+`apps/api/src/app/api/health/route.ts` returns:
+
+```json
+{ "ok": true, "profile": "oss-dev", "integrations": { "stripe": "missing", ... } }
+```
+
+Used for: contributor sanity checks, prod monitoring alerts on unexpected gaps.
+
 ## What's NOT built (originally in plan, deferred)
 
 These were in the original plan but aren't necessary for "fresh clone boots" and were left for follow-up:
@@ -70,13 +119,12 @@ These were in the original plan but aren't necessary for "fresh clone boots" and
 - **`docker-compose.dev.yml`** — currently contributors run a one-liner `docker run`. A compose file with Postgres + Mailpit would be nicer; for now, the README's short instructions are enough.
 - **`.env.example` rewrite with working defaults** — `.env.example` is still mostly blank. The docs tell contributors to set just `DATABASE_URL` and `BETTER_AUTH_SECRET`.
 - **`bun setup` orchestrator** — the discrete steps (`docker run`, `bun install`, `bun run db:migrate`, `bun dev`) are still manual. Wrapping them in `bun setup` would be a small ergonomics win.
-- **Making integration env vars `.optional()` in `apps/api/src/env.ts`** — the reason `SKIP_ENV_VALIDATION=1` is still required. Mechanical change: ~25 `.string()` → `.string().optional()`. Once done, the flag goes away.
-- **Production startup hardening** — the plan called for `apps/api/src/env-check.ts` that hard-fails in prod on any missing required key. Not built. Today, prod relies on the existing `@t3-oss/env-nextjs` strictness (which works fine when those keys aren't `.optional()`).
-- **Sentinel-string detection for `BETTER_AUTH_SECRET`** — not built. Today, contributors generate their own secret via `openssl rand -hex 24`.
+- **Per-integration group `.refine()`** — e.g. if `STRIPE_SECRET_KEY` is set then `STRIPE_WEBHOOK_SECRET` must also be set. Catches half-configured prod deploys. Not built; deferred until someone hits the failure mode.
 - **CI fresh-clone smoke test** — not built. Without it, the OSS path can rot silently if someone adds a new crash-on-import integration.
 - **Email provider abstraction (Mailpit fallback)** — Better Auth's `sendEmail` hook currently just `console.log`s emails when no `RESEND_API_KEY` is present. Mailpit container would be nicer UX (clickable links in a web UI) but isn't blocking.
 - **Local-disk Blob storage fallback** — not built. Upload features that need `BLOB_READ_WRITE_TOKEN` will throw.
 - **In-memory rate-limit fallback** — not built. Upstash KV is already handled gracefully by the SDK (logs warnings on missing keys).
+- **Full integration crash audit** — Stripe, Resend, PostHog, and `packages/trpc/src/router/support` were wrapped with lazy-init. GitHub App, Freestyle, Linear, Slack, QStash signing keys, Anthropic, Blob may still crash-on-import in oss-dev. Need a survey: `grep -rn "new \w\+(.*env\." packages apps`.
 
 ## What was learned vs. the original plan
 

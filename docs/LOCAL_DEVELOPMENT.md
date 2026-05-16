@@ -66,7 +66,7 @@ Without `caddy trust`, Chromium will reject `https://localhost:*` with `ERR_CERT
 ## Run it
 
 ```bash
-SKIP_ENV_VALIDATION=1 bun dev
+bun dev
 ```
 
 That brings up:
@@ -85,18 +85,48 @@ The Electron window opens automatically.
 
 ### How sign-in works
 
-On first launch in dev mode (`SKIP_ENV_VALIDATION=1`), the desktop main process auto-signs you in as a seed admin user:
+On first launch in the `oss-dev` profile (no `SUPERSET_INTERNAL_DEV` or `VERCEL` flag set), the desktop main process auto-signs you in as a seed admin user:
 
 - **Email:** `admin@local.test`
 - **Password:** `supersetdev`
 
 If the user doesn't exist, it's created and a personal organization is provisioned automatically (`Local Admin's Team`). The encrypted auth token lands in `superset-dev-data/auth-token.enc`. The renderer hydrates this token like a real OAuth user — there's no special dev-only code path in the renderer.
 
+### Deployment profiles
+
+Profile is resolved at boot from env flags, in order of trust:
+
+| Profile        | Trigger                                         | Behavior |
+|----------------|-------------------------------------------------|----------|
+| `cloud`        | `VERCEL=1` (set automatically by Vercel)        | Strict — every integration key required |
+| `internal-dev` | `SUPERSET_INTERNAL_DEV=1` (written by `.superset/setup.sh`) | Strict — same fail-fast as cloud |
+| `self-hosted`  | `NODE_ENV=production` outside Vercel            | Strict |
+| `oss-dev`      | default                                         | Lenient — integration keys optional, features degrade |
+
+A contributor cloning from GitHub gets `oss-dev` by default — there's nothing to type and the strict-mode flags are positive-presence (you'd have to actively set them, never accidentally trip).
+
+The escape hatch `SKIP_ENV_VALIDATION=1` still works for build-time / CI cases (e.g. Docker preview builds).
+
+### Boot summary + `/api/health`
+
+When the API boots in `oss-dev`, it prints a one-time summary of what's disabled:
+
+```
+[superset] profile=oss-dev (lenient)
+[superset] disabled features (set the listed env var to enable):
+           - stripe                       STRIPE_SECRET_KEY
+           - resend (email)               RESEND_API_KEY
+           - posthog (telemetry)          NEXT_PUBLIC_POSTHOG_KEY
+           ...
+```
+
+For programmatic monitoring (or to confirm a key took effect), hit `GET /api/health`:
+
+```json
+{ "ok": true, "profile": "oss-dev", "integrations": { "stripe": "missing", ... } }
+```
+
 For the web app (`http://localhost:4640`), the sign-in and sign-up pages render a dev-only email/password form when `NODE_ENV !== "production"`. Use the same credentials.
-
-## Why `SKIP_ENV_VALIDATION=1`?
-
-`apps/api/src/env.ts` currently declares many integration keys (`STRIPE_*`, `RESEND_API_KEY`, `GH_APP_*`, etc.) as required strings via `@t3-oss/env-nextjs`. Until those are marked optional, the env validator rejects empty values at boot. `SKIP_ENV_VALIDATION=1` is the upstream escape hatch — propagated via `turbo.jsonc`'s `globalPassThroughEnv` so it reaches every subtask.
 
 ## What works in OSS mode
 
@@ -124,7 +154,7 @@ Each is "guard, don't crash" — if you click into a feature that needs a key, y
 
 **`EADDRINUSE: address already in use :::4641`** — a previous `bun dev` is still alive. `pkill -f "turbo run dev"` and retry.
 
-**`Host service not available` toast in desktop** — the auto-sign-in didn't run or didn't persist the token. Check `superset-dev-data/auth-token.enc` exists. Delete it and rerun if needed: `rm superset-dev-data/auth-token.enc && SKIP_ENV_VALIDATION=1 bun dev`.
+**`Host service not available` toast in desktop** — the auto-sign-in didn't run or didn't persist the token. Check `superset-dev-data/auth-token.enc` exists. Delete it and rerun if needed: `rm superset-dev-data/auth-token.enc && bun dev`. Also confirm the profile via `curl http://localhost:4641/api/health` returns `"profile": "oss-dev"` — if it says `internal-dev`, your shell has `SUPERSET_INTERNAL_DEV=1` exported and auto-sign-in is intentionally skipped.
 
 **`Missing API key` for some integration** — that integration's key isn't in `.env`. Either supply it or avoid the feature.
 
@@ -148,7 +178,8 @@ docker rm -f superset-pg
 
 ## Architecture notes for contributors
 
+- **Deployment profiles** — `packages/shared/src/deployment-profile.ts` resolves `cloud | internal-dev | self-hosted | oss-dev` from env flags. Strict profiles fail boot on missing keys; lenient (`oss-dev`) lets the app boot. Use `isStrictProfile()` from this module when you need to gate dev-only behavior.
 - **DB driver swap** — `packages/db/src/client.ts` detects whether `DATABASE_URL` is a Neon host (`*.neon.tech`, `*.neon.build`) and uses Drizzle's `neon-http` adapter for cloud, or `node-postgres` for any other Postgres (including the local Docker one).
-- **Dev auto-sign-in** — `apps/desktop/src/main/lib/dev-auto-sign-in.ts` runs once during `app.whenReady()`. POSTs to `/api/auth/sign-in/email` (auto-signs-up if user doesn't exist), persists the token via the same `saveToken()` that OAuth uses. The renderer doesn't know dev mode exists.
+- **Dev auto-sign-in** — `apps/desktop/src/main/lib/dev-auto-sign-in.ts` runs once during `app.whenReady()` only in the `oss-dev` profile. POSTs to `/api/auth/sign-in/email` (auto-signs-up if user doesn't exist), persists the token via the same `saveToken()` that OAuth uses. The renderer doesn't know dev mode exists.
 - **Renderer organization selection** — pages prefer `session.activeOrganizationId` from Better Auth, falling back to `MOCK_ORG_ID` only if there's no session at all. Make sure new code that needs `activeOrganizationId` follows this same priority (real session first).
-- **CDP for headless tests** — when `SKIP_ENV_VALIDATION=1`, the desktop main process exposes Chrome DevTools Protocol on `localhost:9333`. Useful for scripted UI checks (`curl http://localhost:9333/json/list`).
+- **CDP for headless tests** — in the `oss-dev` profile, the desktop main process exposes Chrome DevTools Protocol on `localhost:9333`. Useful for scripted UI checks (`curl http://localhost:9333/json/list`).

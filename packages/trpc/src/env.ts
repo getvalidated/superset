@@ -1,5 +1,16 @@
+import {
+	getDeploymentProfile,
+	isStrictProfile,
+} from "@superset/shared/deployment-profile";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
+
+// OSS-dev profile skips strict env validation so a fresh clone boots
+// without every integration key. Strict profiles (cloud, internal-dev,
+// self-hosted) still fail fast on missing keys.
+const profile = getDeploymentProfile();
+const skipValidation =
+	!isStrictProfile(profile) || !!process.env.SKIP_ENV_VALIDATION;
 
 export const env = createEnv({
 	server: {
@@ -37,5 +48,5 @@ export const env = createEnv({
 	client: {},
 	runtimeEnv: process.env,
 	emptyStringAsUndefined: true,
-	skipValidation: !!process.env.SKIP_ENV_VALIDATION,
+	skipValidation,
 });
