@@ -13,6 +13,7 @@ import { mainExternalizedDependencies } from "./runtime-dependencies";
 import {
 	copyResourcesPlugin,
 	defineEnv,
+	devOrProdUrl,
 	devPath,
 	htmlEnvTransformPlugin,
 } from "./vite/helpers";
@@ -53,17 +54,26 @@ export default defineConfig({
 				process.env.SKIP_ENV_VALIDATION,
 				"",
 			),
-			"process.env.NEXT_PUBLIC_API_URL": defineEnv(
-				process.env.NEXT_PUBLIC_API_URL,
-				"https://api.superset.sh",
+			"process.env.NEXT_PUBLIC_API_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_API_URL",
+					"http://localhost:4641",
+					"https://api.superset.sh",
+				),
 			),
-			"process.env.NEXT_PUBLIC_STREAMS_URL": defineEnv(
-				process.env.NEXT_PUBLIC_STREAMS_URL,
-				"https://streams.superset.sh",
+			"process.env.NEXT_PUBLIC_STREAMS_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_STREAMS_URL",
+					"http://localhost:4647",
+					"https://streams.superset.sh",
+				),
 			),
-			"process.env.NEXT_PUBLIC_WEB_URL": defineEnv(
-				process.env.NEXT_PUBLIC_WEB_URL,
-				"https://app.superset.sh",
+			"process.env.NEXT_PUBLIC_WEB_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_WEB_URL",
+					"http://localhost:4640",
+					"https://app.superset.sh",
+				),
 			),
 			"process.env.NEXT_PUBLIC_MARKETING_URL": defineEnv(
 				process.env.NEXT_PUBLIC_MARKETING_URL,
@@ -76,7 +86,13 @@ export default defineConfig({
 			"process.env.SENTRY_DSN_DESKTOP": defineEnv(
 				process.env.SENTRY_DSN_DESKTOP,
 			),
-			"process.env.RELAY_URL": defineEnv(process.env.RELAY_URL),
+			"process.env.RELAY_URL": JSON.stringify(
+				devOrProdUrl(
+					"RELAY_URL",
+					"http://localhost:4653",
+					"https://relay.superset.sh",
+				),
+			),
 			// Must match renderer for analytics in main process
 			"process.env.NEXT_PUBLIC_POSTHOG_KEY": defineEnv(
 				process.env.NEXT_PUBLIC_POSTHOG_KEY,
@@ -170,21 +186,30 @@ export default defineConfig({
 				"",
 			),
 			"process.platform": defineEnv(process.platform),
-			"process.env.NEXT_PUBLIC_API_URL": defineEnv(
-				process.env.NEXT_PUBLIC_API_URL,
-				"https://api.superset.sh",
+			"process.env.NEXT_PUBLIC_API_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_API_URL",
+					"http://localhost:4641",
+					"https://api.superset.sh",
+				),
 			),
-			"process.env.NEXT_PUBLIC_WEB_URL": defineEnv(
-				process.env.NEXT_PUBLIC_WEB_URL,
-				"https://app.superset.sh",
+			"process.env.NEXT_PUBLIC_WEB_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_WEB_URL",
+					"http://localhost:4640",
+					"https://app.superset.sh",
+				),
 			),
 			"process.env.NEXT_PUBLIC_MARKETING_URL": defineEnv(
 				process.env.NEXT_PUBLIC_MARKETING_URL,
 				"https://superset.sh",
 			),
-			"process.env.NEXT_PUBLIC_ELECTRIC_URL": defineEnv(
-				process.env.NEXT_PUBLIC_ELECTRIC_URL,
-				"https://electric-proxy.avi-6ac.workers.dev",
+			"process.env.NEXT_PUBLIC_ELECTRIC_URL": JSON.stringify(
+				devOrProdUrl(
+					"NEXT_PUBLIC_ELECTRIC_URL",
+					"https://localhost:4650",
+					"https://electric-proxy.avi-6ac.workers.dev",
+				),
 			),
 			"process.env.NEXT_PUBLIC_DOCS_URL": defineEnv(
 				process.env.NEXT_PUBLIC_DOCS_URL,
@@ -200,7 +225,13 @@ export default defineConfig({
 			"import.meta.env.SENTRY_DSN_DESKTOP": defineEnv(
 				process.env.SENTRY_DSN_DESKTOP,
 			),
-			"process.env.RELAY_URL": defineEnv(process.env.RELAY_URL),
+			"process.env.RELAY_URL": JSON.stringify(
+				devOrProdUrl(
+					"RELAY_URL",
+					"http://localhost:4653",
+					"https://relay.superset.sh",
+				),
+			),
 			"process.env.STREAMS_URL": defineEnv(
 				process.env.STREAMS_URL,
 				"https://superset-stream.fly.dev",

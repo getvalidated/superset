@@ -6,38 +6,81 @@
  *
  * For renderer process env vars, use src/renderer/env.renderer.ts instead.
  */
-import {
-	getDeploymentProfile,
-	isStrictProfile,
-} from "@superset/shared/deployment-profile";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod/v4";
 
+// NOTE: the deployment-profile check is inlined here rather than imported
+// from @superset/shared/deployment-profile because electron.vite.config.ts
+// does `await import("./src/main/env.main")` at config-load time, which
+// Node's ESM loader handles directly (no Vite transform) — and Node can't
+// load `.ts` files from sibling workspace packages. Keep the helper in
+// shared/, but duplicate the four lines here.
+//
 // Default profile is `internal` (strict). OSS contributors set
 // SUPERSET_OSS=1 to opt into the lenient `oss-dev` profile, which
 // skips env validation so a fresh clone boots without every key.
+// CI=true (auto-set by GitHub Actions) also opts into lenient so
+// build/lint/test jobs work without prod secrets.
 // SKIP_ENV_VALIDATION=1 remains a build-time escape hatch.
-const profile = getDeploymentProfile();
-const skipValidation =
-	!isStrictProfile(profile) || !!process.env.SKIP_ENV_VALIDATION;
+const isStrict =
+	process.env.VERCEL === "1" ||
+	(process.env.SUPERSET_OSS !== "1" && process.env.CI !== "true");
+const skipValidation = !isStrict || !!process.env.SKIP_ENV_VALIDATION;
 
 export const env = createEnv({
 	server: {
 		NODE_ENV: z
 			.enum(["development", "production", "test"])
 			.default("development"),
-		NEXT_PUBLIC_API_URL: z.url().default("https://api.superset.sh"),
-		NEXT_PUBLIC_STREAMS_URL: z.url().default("https://streams.superset.sh"),
+		// In dev builds (NODE_ENV=development) the URL defaults switch to
+		// localhost so fresh-clone OSS contributors never silently sync
+		// against hosted production endpoints.
+		NEXT_PUBLIC_API_URL: z
+			.url()
+			.default(
+				process.env.NODE_ENV === "development"
+					? "http://localhost:4641"
+					: "https://api.superset.sh",
+			),
+		NEXT_PUBLIC_STREAMS_URL: z
+			.url()
+			.default(
+				process.env.NODE_ENV === "development"
+					? "http://localhost:4647"
+					: "https://streams.superset.sh",
+			),
 		NEXT_PUBLIC_ELECTRIC_URL: z
 			.url()
-			.default("https://electric-proxy.avi-6ac.workers.dev"),
-		NEXT_PUBLIC_WEB_URL: z.url().default("https://app.superset.sh"),
+			.default(
+				process.env.NODE_ENV === "development"
+					? "https://localhost:4650"
+					: "https://electric-proxy.avi-6ac.workers.dev",
+			),
+		NEXT_PUBLIC_WEB_URL: z
+			.url()
+			.default(
+				process.env.NODE_ENV === "development"
+					? "http://localhost:4640"
+					: "https://app.superset.sh",
+			),
 		NEXT_PUBLIC_MARKETING_URL: z.url().default("https://superset.sh"),
 		NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
 		NEXT_PUBLIC_POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
 		SENTRY_DSN_DESKTOP: z.string().optional(),
-		STREAMS_URL: z.url().default("https://superset-stream.fly.dev"),
-		RELAY_URL: z.url().default("https://relay.superset.sh"),
+		STREAMS_URL: z
+			.url()
+			.default(
+				process.env.NODE_ENV === "development"
+					? "http://localhost:4647"
+					: "https://superset-stream.fly.dev",
+			),
+		RELAY_URL: z
+			.url()
+			.default(
+				process.env.NODE_ENV === "development"
+					? "http://localhost:4653"
+					: "https://relay.superset.sh",
+			),
 	},
 
 	runtimeEnv: {
