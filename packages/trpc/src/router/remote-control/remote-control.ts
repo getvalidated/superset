@@ -28,13 +28,23 @@ import {
 	protectedProcedure,
 	publicProcedure,
 } from "../../trpc";
-import { relayMutation } from "../automation/relay-client";
+import { relayMutation, relayQuery } from "../automation/relay-client";
 import { requireActiveOrgMembership } from "../utils/active-org";
 
 interface MintTokenResult {
 	token: string;
 	tokenHash: string;
 	expiresAt: number;
+}
+
+interface HostTerminalSummary {
+	terminalId: string;
+	workspaceId: string;
+	createdAt: Date;
+	exited: boolean;
+	exitCode: number | null;
+	attached: boolean;
+	title: string | null;
 }
 
 const createInput = z.object({
@@ -549,6 +559,73 @@ export const remoteControlRouter = createTRPCRouter({
 			.returning({ id: v2RemoteControlSessions.id });
 		return { count: updated.length };
 	}),
+
+	listTerminals: protectedProcedure
+		.input(listInput)
+		.query(async ({ ctx, input }) => {
+			const organizationId = await requireActiveOrgMembership(ctx);
+			const userId = ctx.session.user.id;
+			const { host } = await getWorkspaceWithHost(
+				input.workspaceId,
+				organizationId,
+			);
+			await ensureUserOnHost(userId, organizationId, host.machineId);
+			const [owner] = await dbWs
+				.select({ email: users.email })
+				.from(users)
+				.where(eq(users.id, userId))
+				.limit(1);
+			const jwt = await mintUserJwt({
+				userId,
+				email: owner?.email,
+				organizationIds: [organizationId],
+				scope: "remote-control",
+				ttlSeconds: 300,
+			});
+			const routingKey = buildHostRoutingKey(organizationId, host.machineId);
+			const result = await relayQuery<
+				{ workspaceId: string },
+				{ sessions: HostTerminalSummary[] }
+			>(
+				{ relayUrl: env.RELAY_URL, hostId: routingKey, jwt, timeoutMs: 5000 },
+				"terminal.listSessions",
+				{ workspaceId: input.workspaceId },
+			);
+			return result.sessions;
+		}),
+
+	createTerminal: protectedProcedure
+		.input(listInput)
+		.mutation(async ({ ctx, input }) => {
+			const organizationId = await requireActiveOrgMembership(ctx);
+			const userId = ctx.session.user.id;
+			const { host } = await getWorkspaceWithHost(
+				input.workspaceId,
+				organizationId,
+			);
+			await ensureUserOnHost(userId, organizationId, host.machineId);
+			const [owner] = await dbWs
+				.select({ email: users.email })
+				.from(users)
+				.where(eq(users.id, userId))
+				.limit(1);
+			const jwt = await mintUserJwt({
+				userId,
+				email: owner?.email,
+				organizationIds: [organizationId],
+				scope: "remote-control",
+				ttlSeconds: 300,
+			});
+			const routingKey = buildHostRoutingKey(organizationId, host.machineId);
+			return relayMutation<
+				{ workspaceId: string },
+				{ terminalId: string; status: "active" }
+			>(
+				{ relayUrl: env.RELAY_URL, hostId: routingKey, jwt, timeoutMs: 5000 },
+				"terminal.createSession",
+				{ workspaceId: input.workspaceId },
+			);
+		}),
 
 	statuses: protectedProcedure.query(() => remoteControlSessionStatusValues),
 });
