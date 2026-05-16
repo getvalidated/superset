@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { trpcClient } from "../../trpc/client";
 
 interface WorkspaceRow {
 	id: string;
 	name: string;
 	branch: string;
+	projectId: string;
 	projectName: string;
 	hostId: string;
 }
@@ -17,11 +18,21 @@ interface ProjectRow {
 	name: string;
 }
 
+interface HostRow {
+	machineId: string;
+	name: string | null;
+}
+
+function hostLabel(host: HostRow): string {
+	return host.name?.trim() || `Device ${host.machineId.slice(0, 8)}`;
+}
+
 export default function WorkspacesPage() {
 	const [organizationId, setOrganizationId] = useState<string | null>(null);
 	const [organizationName, setOrganizationName] = useState<string | null>(null);
 	const [workspaces, setWorkspaces] = useState<WorkspaceRow[] | null>(null);
 	const [projects, setProjects] = useState<ProjectRow[]>([]);
+	const [hosts, setHosts] = useState<HostRow[]>([]);
 	const [error, setError] = useState<string | null>(null);
 
 	const [name, setName] = useState("");
@@ -29,6 +40,10 @@ export default function WorkspacesPage() {
 	const [projectId, setProjectId] = useState("");
 	const [hostId, setHostId] = useState("");
 	const [creating, setCreating] = useState(false);
+
+	const [search, setSearch] = useState("");
+	const [projectFilter, setProjectFilter] = useState("");
+	const [hostFilter, setHostFilter] = useState("");
 
 	const loadWorkspaces = useCallback(async (organization: string) => {
 		const rows = await trpcClient.v2Workspace.list.query({
@@ -39,6 +54,7 @@ export default function WorkspacesPage() {
 				id: row.id,
 				name: row.name,
 				branch: row.branch,
+				projectId: row.projectId,
 				projectName: row.projectName,
 				hostId: row.hostId,
 			})),
@@ -56,16 +72,23 @@ export default function WorkspacesPage() {
 				}
 				setOrganizationId(organization.id);
 				setOrganizationName(organization.name);
-				const [, projectRows] = await Promise.all([
+				const [, projectRows, hostRows] = await Promise.all([
 					loadWorkspaces(organization.id),
 					trpcClient.v2Project.list.query({
 						organizationId: organization.id,
 					}),
+					trpcClient.v2Host.list.query(),
 				]);
 				setProjects(
 					projectRows.map((project) => ({
 						id: project.id,
 						name: project.name,
+					})),
+				);
+				setHosts(
+					hostRows.map((host) => ({
+						machineId: host.machineId,
+						name: host.name,
 					})),
 				);
 			} catch (caught) {
@@ -75,9 +98,27 @@ export default function WorkspacesPage() {
 		})();
 	}, [loadWorkspaces]);
 
-	const hostOptions = Array.from(
-		new Set((workspaces ?? []).map((workspace) => workspace.hostId)),
-	);
+	const visibleWorkspaces = useMemo(() => {
+		const query = search.trim().toLowerCase();
+		return (workspaces ?? [])
+			.filter((workspace) => {
+				if (projectFilter && workspace.projectId !== projectFilter) {
+					return false;
+				}
+				if (hostFilter && workspace.hostId !== hostFilter) {
+					return false;
+				}
+				if (!query) return true;
+				return (
+					workspace.name.toLowerCase().includes(query) ||
+					workspace.branch.toLowerCase().includes(query) ||
+					workspace.projectName.toLowerCase().includes(query)
+				);
+			})
+			.sort((a, b) =>
+				a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+			);
+	}, [workspaces, search, projectFilter, hostFilter]);
 
 	const canCreate =
 		!!organizationId &&
@@ -154,17 +195,17 @@ export default function WorkspacesPage() {
 						onChange={(event) => setHostId(event.target.value)}
 						className="rounded-md border bg-transparent px-3 py-2 text-sm"
 					>
-						<option value="">Select host…</option>
-						{hostOptions.map((host) => (
-							<option key={host} value={host}>
-								{host}
+						<option value="">Select device…</option>
+						{hosts.map((host) => (
+							<option key={host.machineId} value={host.machineId}>
+								{hostLabel(host)}
 							</option>
 						))}
 					</select>
 				</div>
-				{hostOptions.length === 0 && (
+				{hosts.length === 0 && (
 					<p className="text-muted-foreground mt-2 text-xs">
-						No hosts available — register a machine in the desktop app first.
+						No devices available — register a machine in the desktop app first.
 					</p>
 				)}
 				<button
@@ -179,15 +220,49 @@ export default function WorkspacesPage() {
 
 			<section className="mt-6">
 				<h2 className="text-sm font-medium">Your workspaces</h2>
+				<div className="mt-3 flex flex-wrap items-center gap-2">
+					<input
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						placeholder="Search workspaces…"
+						className="min-w-48 flex-1 rounded-md border bg-transparent px-3 py-2 text-sm"
+					/>
+					<select
+						value={projectFilter}
+						onChange={(event) => setProjectFilter(event.target.value)}
+						className="rounded-md border bg-transparent px-3 py-2 text-sm"
+					>
+						<option value="">All projects</option>
+						{projects.map((project) => (
+							<option key={project.id} value={project.id}>
+								{project.name}
+							</option>
+						))}
+					</select>
+					<select
+						value={hostFilter}
+						onChange={(event) => setHostFilter(event.target.value)}
+						className="rounded-md border bg-transparent px-3 py-2 text-sm"
+					>
+						<option value="">All devices</option>
+						{hosts.map((host) => (
+							<option key={host.machineId} value={host.machineId}>
+								{hostLabel(host)}
+							</option>
+						))}
+					</select>
+				</div>
 				{workspaces === null ? (
-					<p className="text-muted-foreground mt-2 text-sm">Loading…</p>
-				) : workspaces.length === 0 ? (
-					<p className="text-muted-foreground mt-2 text-sm">
-						No workspaces yet.
+					<p className="text-muted-foreground mt-3 text-sm">Loading…</p>
+				) : visibleWorkspaces.length === 0 ? (
+					<p className="text-muted-foreground mt-3 text-sm">
+						{workspaces.length === 0
+							? "No workspaces yet."
+							: "No workspaces match your filters."}
 					</p>
 				) : (
-					<ul className="mt-2 grid gap-2">
-						{workspaces.map((workspace) => (
+					<ul className="mt-3 grid gap-2">
+						{visibleWorkspaces.map((workspace) => (
 							<li key={workspace.id}>
 								<Link
 									href={`/workspaces/${workspace.id}`}

@@ -1,15 +1,11 @@
 "use client";
 
-import {
-	REMOTE_CONTROL_TOKEN_PARAM,
-	type RemoteControlClientMessage,
-	type RemoteControlServerMessage,
-} from "@superset/shared/remote-control-protocol";
 import { FitAddon } from "@xterm/addon-fit";
 import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { env } from "../../../../../env";
 import { trpcClient } from "../../../../../trpc/client";
 
 const TERMINAL_THEME: ITheme = {
@@ -57,45 +53,38 @@ interface WebTerminalProps {
 
 type ConnectionState = "connecting" | "open" | "error" | "exited";
 
-function bytesToBase64(bytes: Uint8Array): string {
-	let binary = "";
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
-}
+// Wire protocol mirrors the desktop's terminal transport
+// (apps/desktop/src/renderer/lib/terminal/terminal-ws-transport.ts): binary
+// frames are raw PTY bytes, control messages are JSON.
+type TerminalServerMessage =
+	| { type: "attached"; terminalId: string }
+	| { type: "title"; title: string | null }
+	| { type: "error"; message: string }
+	| { type: "exit"; exitCode: number; signal: number };
 
-function base64ToBytes(value: string): Uint8Array {
-	const binary = atob(value);
-	const bytes = new Uint8Array(binary.length);
-	for (let index = 0; index < binary.length; index += 1) {
-		bytes[index] = binary.charCodeAt(index);
+async function fetchAuthToken(): Promise<string> {
+	const response = await fetch(`${env.NEXT_PUBLIC_API_URL}/api/auth/token`, {
+		credentials: "include",
+	});
+	if (!response.ok) {
+		throw new Error(`Auth token request failed (${response.status})`);
 	}
-	return bytes;
+	const body = (await response.json()) as { token?: string };
+	if (!body.token) throw new Error("Auth token response missing token");
+	return body.token;
 }
 
 export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
-	const wsRef = useRef<WebSocket | null>(null);
+	const socketRef = useRef<WebSocket | null>(null);
 	const [state, setState] = useState<ConnectionState>("connecting");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-	const sendClientMessage = useCallback(
-		(message: RemoteControlClientMessage) => {
-			const socket = wsRef.current;
-			if (!socket || socket.readyState !== WebSocket.OPEN) return;
-			socket.send(JSON.stringify(message));
-		},
-		[],
-	);
-
-	const sendSequence = useCallback(
-		(sequence: string) => {
-			sendClientMessage({
-				type: "input",
-				data: bytesToBase64(new TextEncoder().encode(sequence)),
-			});
-		},
-		[sendClientMessage],
-	);
+	const sendSequence = useCallback((sequence: string) => {
+		const socket = socketRef.current;
+		if (!socket || socket.readyState !== WebSocket.OPEN) return;
+		socket.send(JSON.stringify({ type: "input", data: sequence }));
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -103,42 +92,48 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 		let fitAddon: FitAddon | null = null;
 		let socket: WebSocket | null = null;
 		let resizeObserver: ResizeObserver | null = null;
-		let pingTimer: ReturnType<typeof setInterval> | null = null;
 		let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 		const visualViewport = window.visualViewport;
 
-		// Refit on every layout change but trailing-debounce the host
-		// broadcast — the soft keyboard resizes the visual viewport rather
-		// than the layout viewport, so the visualViewport listeners are what
-		// keep the prompt above the keyboard on mobile.
+		const sendResize = () => {
+			const activeSocket = socketRef.current;
+			if (
+				!terminal ||
+				!activeSocket ||
+				activeSocket.readyState !== WebSocket.OPEN
+			) {
+				return;
+			}
+			activeSocket.send(
+				JSON.stringify({
+					type: "resize",
+					cols: terminal.cols,
+					rows: terminal.rows,
+				}),
+			);
+		};
+
+		// Refit on every layout change; the visualViewport listeners are what
+		// keep the prompt above the soft keyboard on mobile, since the keyboard
+		// resizes the visual viewport rather than the layout viewport.
 		const refit = () => {
-			if (!fitAddon || !terminal) return;
+			if (!fitAddon) return;
 			try {
 				fitAddon.fit();
 			} catch {
 				return;
 			}
-			const { cols, rows } = terminal;
 			if (resizeTimer !== null) clearTimeout(resizeTimer);
-			resizeTimer = setTimeout(() => {
-				resizeTimer = null;
-				sendClientMessage({ type: "resize", cols, rows });
-			}, 200);
+			resizeTimer = setTimeout(sendResize, 150);
 		};
 
 		(async () => {
 			try {
-				const session = await trpcClient.remoteControl.create.mutate({
-					workspaceId,
-					terminalId,
-					mode: "full",
-				});
+				const [token, connection] = await Promise.all([
+					fetchAuthToken(),
+					trpcClient.workspaceTerminal.connection.query({ workspaceId }),
+				]);
 				if (cancelled) return;
-				if (!session.wsUrl) {
-					setErrorMessage("Host did not return a terminal endpoint.");
-					setState("error");
-					return;
-				}
 				const container = containerRef.current;
 				if (!container) return;
 
@@ -160,38 +155,26 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 					// container may not be sized yet
 				}
 
-				socket = new WebSocket(
-					`${session.wsUrl}?${REMOTE_CONTROL_TOKEN_PARAM}=${encodeURIComponent(session.token)}`,
-				);
-				wsRef.current = socket;
-
-				socket.onopen = () => {
-					setState("open");
-					pingTimer = setInterval(() => {
-						sendClientMessage({ type: "ping" });
-					}, 25_000);
-				};
+				const url = `${connection.wsUrl}/${encodeURIComponent(terminalId)}?workspaceId=${encodeURIComponent(workspaceId)}&themeType=dark&token=${encodeURIComponent(token)}`;
+				socket = new WebSocket(url);
+				socket.binaryType = "arraybuffer";
+				socketRef.current = socket;
 
 				socket.onmessage = (event) => {
-					let message: RemoteControlServerMessage;
+					if (event.data instanceof ArrayBuffer) {
+						terminal?.write(new Uint8Array(event.data));
+						return;
+					}
+					let message: TerminalServerMessage;
 					try {
-						message = JSON.parse(
-							String(event.data),
-						) as RemoteControlServerMessage;
+						message = JSON.parse(String(event.data)) as TerminalServerMessage;
 					} catch {
 						return;
 					}
 					switch (message.type) {
-						case "hello":
-							try {
-								terminal?.resize(message.cols, message.rows);
-							} catch {
-								// best-effort
-							}
-							return;
-						case "snapshot":
-						case "data":
-							terminal?.write(base64ToBytes(message.data));
+						case "attached":
+							setState("open");
+							sendResize();
 							return;
 						case "exit":
 							terminal?.write(
@@ -199,11 +182,9 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 							);
 							setState("exited");
 							return;
-						case "revoked":
-							setState("exited");
-							return;
 						case "error":
-							setErrorMessage(`${message.code}: ${message.message}`);
+							setErrorMessage(message.message);
+							setState("error");
 							return;
 						default:
 							return;
@@ -211,10 +192,6 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 				};
 
 				socket.onclose = () => {
-					if (pingTimer) {
-						clearInterval(pingTimer);
-						pingTimer = null;
-					}
 					setState((previous) =>
 						previous === "open" || previous === "connecting"
 							? "error"
@@ -227,10 +204,10 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 				};
 
 				terminal.onData((data) => {
-					sendClientMessage({
-						type: "input",
-						data: bytesToBase64(new TextEncoder().encode(data)),
-					});
+					const activeSocket = socketRef.current;
+					if (activeSocket?.readyState === WebSocket.OPEN) {
+						activeSocket.send(JSON.stringify({ type: "input", data }));
+					}
 				});
 
 				resizeObserver = new ResizeObserver(refit);
@@ -249,7 +226,6 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 		return () => {
 			cancelled = true;
 			if (resizeTimer !== null) clearTimeout(resizeTimer);
-			if (pingTimer) clearInterval(pingTimer);
 			resizeObserver?.disconnect();
 			visualViewport?.removeEventListener("resize", refit);
 			visualViewport?.removeEventListener("scroll", refit);
@@ -259,9 +235,9 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 				// best-effort
 			}
 			terminal?.dispose();
-			wsRef.current = null;
+			socketRef.current = null;
 		};
-	}, [workspaceId, terminalId, sendClientMessage]);
+	}, [workspaceId, terminalId]);
 
 	return (
 		<div className="flex h-full flex-col">

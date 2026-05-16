@@ -27,7 +27,7 @@ export default function WorkspaceTerminalPage({
 
 	const loadTerminals = useCallback(async () => {
 		try {
-			const result = await trpcClient.remoteControl.listTerminals.query({
+			const result = await trpcClient.workspaceTerminal.list.query({
 				workspaceId,
 			});
 			setLoadError(null);
@@ -71,7 +71,7 @@ export default function WorkspaceTerminalPage({
 	const createTerminal = useCallback(async () => {
 		setCreating(true);
 		try {
-			const created = await trpcClient.remoteControl.createTerminal.mutate({
+			const created = await trpcClient.workspaceTerminal.create.mutate({
 				workspaceId,
 			});
 			await loadTerminals();
