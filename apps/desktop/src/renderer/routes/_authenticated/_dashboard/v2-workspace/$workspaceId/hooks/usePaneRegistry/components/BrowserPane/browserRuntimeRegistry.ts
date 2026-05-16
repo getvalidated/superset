@@ -27,7 +27,6 @@ interface RegistryEntry {
 	placeholder: HTMLElement | null;
 	resizeObserver: ResizeObserver | null;
 	visible: boolean;
-	lastUsedAt: number;
 }
 
 const EMPTY_STATE: BrowserRuntimeState = Object.freeze({
@@ -41,7 +40,6 @@ const EMPTY_STATE: BrowserRuntimeState = Object.freeze({
 });
 
 const ROOT_CONTAINER_ID = "browser-runtime-root";
-const MAX_DETACHED_BROWSER_RUNTIMES = 8;
 
 class BrowserRuntimeRegistryImpl {
 	private entries = new Map<string, RegistryEntry>();
@@ -164,7 +162,6 @@ class BrowserRuntimeRegistryImpl {
 	private setState(paneId: string, patch: Partial<BrowserRuntimeState>) {
 		const entry = this.entries.get(paneId);
 		if (!entry) return;
-		entry.lastUsedAt = Date.now();
 		let changed = false;
 		for (const key in patch) {
 			const k = key as keyof BrowserRuntimeState;
@@ -215,7 +212,6 @@ class BrowserRuntimeRegistryImpl {
 			placeholder: null,
 			resizeObserver: null,
 			visible: false,
-			lastUsedAt: Date.now(),
 		};
 
 		const firePersist = () => {
@@ -385,7 +381,6 @@ class BrowserRuntimeRegistryImpl {
 		entry.onPersist = onPersist;
 		entry.placeholder = placeholder;
 		entry.visible = true;
-		entry.lastUsedAt = Date.now();
 
 		entry.resizeObserver?.disconnect();
 		const observer = new ResizeObserver(() => {
@@ -397,20 +392,17 @@ class BrowserRuntimeRegistryImpl {
 		this.updateLayout(entry);
 		entry.webview.style.visibility = "visible";
 		this.applyPointerPassthrough();
-		this.pruneDetachedRuntimes();
 	}
 
 	detach(paneId: string): void {
 		const entry = this.entries.get(paneId);
 		if (!entry) return;
-		entry.lastUsedAt = Date.now();
 		entry.onPersist = null;
 		entry.placeholder = null;
 		entry.resizeObserver?.disconnect();
 		entry.resizeObserver = null;
 		entry.visible = false;
 		entry.webview.style.visibility = "hidden";
-		this.pruneDetachedRuntimes();
 	}
 
 	destroy(paneId: string): void {
@@ -424,21 +416,9 @@ class BrowserRuntimeRegistryImpl {
 		electronTrpcClient.browser.unregister.mutate({ paneId }).catch(() => {});
 	}
 
-	private pruneDetachedRuntimes(): void {
-		const detachedEntries = Array.from(this.entries.entries())
-			.filter(([, entry]) => !entry.visible)
-			.sort(([, a], [, b]) => a.lastUsedAt - b.lastUsedAt);
-		while (detachedEntries.length > MAX_DETACHED_BROWSER_RUNTIMES) {
-			const [paneId] = detachedEntries.shift() ?? [];
-			if (!paneId) return;
-			this.destroy(paneId);
-		}
-	}
-
 	navigate(paneId: string, url: string): void {
 		const entry = this.entries.get(paneId);
 		if (!entry) return;
-		entry.lastUsedAt = Date.now();
 		entry.webview.loadURL(sanitizeUrl(url)).catch((err) => {
 			console.error("[browserRuntimeRegistry] loadURL failed:", err);
 		});
@@ -446,19 +426,16 @@ class BrowserRuntimeRegistryImpl {
 
 	goBack(paneId: string): void {
 		const entry = this.entries.get(paneId);
-		if (entry) entry.lastUsedAt = Date.now();
 		if (entry?.webview.canGoBack()) entry.webview.goBack();
 	}
 
 	goForward(paneId: string): void {
 		const entry = this.entries.get(paneId);
-		if (entry) entry.lastUsedAt = Date.now();
 		if (entry?.webview.canGoForward()) entry.webview.goForward();
 	}
 
 	reload(paneId: string): void {
 		const entry = this.entries.get(paneId);
-		if (entry) entry.lastUsedAt = Date.now();
 		entry?.webview.reload();
 	}
 

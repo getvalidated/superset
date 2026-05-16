@@ -37,92 +37,6 @@ interface RegistryEntry {
 	pendingLinkHandlers: TerminalLinkHandlers | null;
 }
 
-export interface TerminalRuntimeStressDebugInfo {
-	terminalId: string;
-	instanceId: string;
-	hasRuntime: boolean;
-	isAttached: boolean;
-	isParked: boolean;
-	cols: number | null;
-	rows: number | null;
-	canvasCount: number;
-	renderer: TerminalRendererStressDebugInfo | null;
-	connectionState: ConnectionState;
-}
-
-export interface TerminalRendererStressDebugInfo {
-	rendererType: string | null;
-	atlasPageCount: number | null;
-	atlasPageSizes: number[];
-	atlasPageVersions: Array<number | null>;
-	pendingAtlasClear: boolean | null;
-}
-
-function getObjectProperty(source: unknown, key: string): unknown {
-	if (!source || (typeof source !== "object" && typeof source !== "function")) {
-		return undefined;
-	}
-	return (source as Record<string, unknown>)[key];
-}
-
-function getNumberProperty(source: unknown, key: string): number | null {
-	const value = getObjectProperty(source, key);
-	return typeof value === "number" ? value : null;
-}
-
-function getTerminalRenderer(terminal: TerminalRuntime["terminal"]): unknown {
-	const core = getObjectProperty(terminal, "_core");
-	const renderService = getObjectProperty(core, "_renderService");
-	const rendererHolder = getObjectProperty(renderService, "_renderer");
-	return getObjectProperty(rendererHolder, "value") ?? rendererHolder;
-}
-
-function getRendererStressDebugInfo(
-	terminal: TerminalRuntime["terminal"],
-): TerminalRendererStressDebugInfo | null {
-	const renderer = getTerminalRenderer(terminal);
-	if (!renderer || typeof renderer !== "object") return null;
-
-	const rendererConstructor = getObjectProperty(renderer, "constructor");
-	const rendererType =
-		typeof getObjectProperty(rendererConstructor, "name") === "string"
-			? (getObjectProperty(rendererConstructor, "name") as string)
-			: null;
-	const charAtlas = getObjectProperty(renderer, "_charAtlas");
-	const rawPages = getObjectProperty(charAtlas, "pages");
-	const pages = Array.isArray(rawPages) ? rawPages : [];
-	return {
-		rendererType,
-		atlasPageCount: Array.isArray(rawPages) ? rawPages.length : null,
-		atlasPageSizes: pages
-			.map((page) =>
-				getNumberProperty(getObjectProperty(page, "canvas"), "width"),
-			)
-			.filter((size): size is number => size !== null),
-		atlasPageVersions: pages.map((page) => getNumberProperty(page, "version")),
-		pendingAtlasClear:
-			typeof getObjectProperty(charAtlas, "_requestClearModel") === "boolean"
-				? (getObjectProperty(charAtlas, "_requestClearModel") as boolean)
-				: null,
-	};
-}
-
-function clearRendererTextureAtlasForStress(
-	terminal: TerminalRuntime["terminal"],
-): boolean {
-	const renderer = getTerminalRenderer(terminal);
-	const clearTextureAtlas = getObjectProperty(renderer, "clearTextureAtlas");
-	if (typeof clearTextureAtlas !== "function") return false;
-
-	try {
-		clearTextureAtlas.call(renderer);
-		terminal.refresh(0, Math.max(0, terminal.rows - 1));
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 class TerminalRuntimeRegistryImpl {
 	private entries = new Map<string, RegistryEntry>();
 	private entryKeysByTerminalId = new Map<string, Set<string>>();
@@ -183,19 +97,6 @@ class TerminalRuntimeRegistryImpl {
 		return Array.from(keys)
 			.map((key) => this.entries.get(key))
 			.filter((entry): entry is RegistryEntry => Boolean(entry));
-	}
-
-	private listEntries(
-		terminalId?: string,
-		instanceId?: string,
-	): RegistryEntry[] {
-		if (terminalId && instanceId) {
-			const entry = this.getEntry(terminalId, instanceId);
-			return entry ? [entry] : [];
-		}
-		if (terminalId) return this.getEntries(terminalId);
-		if (instanceId) return [];
-		return Array.from(this.entries.values());
 	}
 
 	private deleteEntry(entry: RegistryEntry) {
@@ -408,55 +309,6 @@ class TerminalRuntimeRegistryImpl {
 		const entry = this.getEntry(terminalId, instanceId);
 		if (!entry) return;
 		sendInput(entry.transport, data);
-	}
-
-	writeForStress(
-		terminalId: string,
-		data: string,
-		instanceId?: string,
-	): Promise<boolean> {
-		const entry = this.getEntry(terminalId, instanceId);
-		if (!entry?.runtime) return Promise.resolve(false);
-		const { terminal } = entry.runtime;
-
-		return new Promise((resolve) => {
-			try {
-				terminal.write(data, () => resolve(true));
-			} catch {
-				resolve(false);
-			}
-		});
-	}
-
-	clearTextureAtlasForStress(terminalId: string, instanceId?: string): boolean {
-		const entry = this.getEntry(terminalId, instanceId);
-		if (!entry?.runtime) return false;
-		return clearRendererTextureAtlasForStress(entry.runtime.terminal);
-	}
-
-	getStressDebugInfo(
-		terminalId?: string,
-		instanceId?: string,
-	): TerminalRuntimeStressDebugInfo[] {
-		return this.listEntries(terminalId, instanceId).map((entry) => {
-			const runtime = entry.runtime;
-			return {
-				terminalId: entry.terminalId,
-				instanceId: entry.instanceId,
-				hasRuntime: Boolean(runtime),
-				isAttached: Boolean(runtime?.container),
-				isParked: Boolean(
-					runtime && !runtime.container && runtime.wrapper.isConnected,
-				),
-				cols: runtime?.terminal.cols ?? null,
-				rows: runtime?.terminal.rows ?? null,
-				canvasCount: runtime
-					? runtime.wrapper.querySelectorAll("canvas").length
-					: 0,
-				renderer: runtime ? getRendererStressDebugInfo(runtime.terminal) : null,
-				connectionState: entry.transport.connectionState,
-			};
-		});
 	}
 
 	findNext(terminalId: string, query: string, instanceId?: string): boolean {

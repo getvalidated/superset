@@ -8,10 +8,9 @@ import {
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Radio } from "lucide-react";
 import { useFeatureFlagEnabled } from "posthog-js/react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 
 interface TerminalRemoteControlButtonProps {
@@ -21,7 +20,6 @@ interface TerminalRemoteControlButtonProps {
 
 interface ActiveSession {
 	sessionId: string;
-	terminalId: string;
 	// `webUrl` is only available right after `create` — the cloud only
 	// stores `token_hash`, so we cannot reconstruct the share URL when
 	// hydrating from `listForWorkspace`. `null` means "session is live but
@@ -32,8 +30,6 @@ interface ActiveSession {
 
 type Phase = "inactive" | "loading" | "creating" | "active" | "revoking";
 const HYDRATE_REFRESH_MS = 30_000;
-const remoteControlSessionsQueryKey = (workspaceId: string) =>
-	["remote-control-sessions", workspaceId] as const;
 
 export function TerminalRemoteControlButton({
 	workspaceId,
@@ -44,55 +40,69 @@ export function TerminalRemoteControlButton({
 	const hasAccess = useFeatureFlagEnabled(
 		FEATURE_FLAGS.WEB_REMOTE_CONTROL_ACCESS,
 	);
-	const queryClient = useQueryClient();
-	const queryKey = remoteControlSessionsQueryKey(workspaceId);
-	const [actionPhase, setActionPhase] = useState<Phase>("inactive");
-	const [localActive, setLocalActive] = useState<ActiveSession | null>(null);
-	const sessionsQuery = useQuery({
-		queryKey,
-		enabled: Boolean(hasAccess),
-		queryFn: () =>
-			apiTrpcClient.remoteControl.listForWorkspace.query({ workspaceId }),
-		refetchInterval: HYDRATE_REFRESH_MS,
-		refetchOnWindowFocus: false,
-		staleTime: 5_000,
-	});
+	const [phase, setPhase] = useState<Phase>("loading");
+	const [active, setActive] = useState<ActiveSession | null>(null);
 
-	const active = useMemo<ActiveSession | null>(() => {
-		const now = Date.now();
-		const live = sessionsQuery.data?.find(
-			(row) =>
-				row.terminalId === terminalId &&
-				row.status === "active" &&
-				new Date(row.expiresAt).getTime() > now,
+	const hydrate = useCallback(
+		async (signal?: AbortSignal): Promise<void> => {
+			try {
+				const rows = await apiTrpcClient.remoteControl.listForWorkspace.query({
+					workspaceId,
+				});
+				if (signal?.aborted) return;
+				const now = Date.now();
+				const live = rows.find(
+					(r) =>
+						r.terminalId === terminalId &&
+						r.status === "active" &&
+						new Date(r.expiresAt).getTime() > now,
+				);
+				if (live) {
+					setActive((prev) => ({
+						sessionId: live.sessionId,
+						// Preserve a previously-captured webUrl if we still have
+						// it for the same session (e.g., we minted it ourselves
+						// in this component lifetime).
+						webUrl:
+							prev && prev.sessionId === live.sessionId ? prev.webUrl : null,
+						expiresAt: live.expiresAt,
+					}));
+					setPhase((prev) =>
+						prev === "creating" || prev === "revoking" ? prev : "active",
+					);
+				} else {
+					setActive(null);
+					setPhase((prev) =>
+						prev === "creating" || prev === "revoking" ? prev : "inactive",
+					);
+				}
+			} catch {
+				// Silent — background refresh; the user still has the optimistic
+				// state from the last successful action.
+				if (!signal?.aborted) {
+					setPhase((prev) => (prev === "loading" ? "inactive" : prev));
+				}
+			}
+		},
+		[workspaceId, terminalId],
+	);
+
+	useEffect(() => {
+		// Don't run the cloud hydrate poll when the user isn't in the cohort
+		// — that just wastes a tRPC call every 30s for a button that won't
+		// render anyway.
+		if (!hasAccess) return;
+		const ac = new AbortController();
+		void hydrate(ac.signal);
+		const timer = setInterval(
+			() => void hydrate(ac.signal),
+			HYDRATE_REFRESH_MS,
 		);
-		if (live) {
-			return {
-				sessionId: live.sessionId,
-				terminalId: live.terminalId,
-				webUrl:
-					localActive?.sessionId === live.sessionId ? localActive.webUrl : null,
-				expiresAt: live.expiresAt,
-			};
-		}
-		if (
-			localActive &&
-			localActive.terminalId === terminalId &&
-			new Date(localActive.expiresAt).getTime() > now
-		) {
-			return localActive;
-		}
-		return null;
-	}, [localActive, sessionsQuery.data, terminalId]);
-
-	const phase: Phase =
-		actionPhase === "creating" || actionPhase === "revoking"
-			? actionPhase
-			: sessionsQuery.isPending && !sessionsQuery.data
-				? "loading"
-				: active
-					? "active"
-					: "inactive";
+		return () => {
+			ac.abort();
+			clearInterval(timer);
+		};
+	}, [hydrate, hasAccess]);
 
 	if (!hasAccess) return null;
 
@@ -108,24 +118,22 @@ export function TerminalRemoteControlButton({
 	}
 
 	async function startShare() {
-		setActionPhase("creating");
+		setPhase("creating");
 		try {
 			const result = await apiTrpcClient.remoteControl.create.mutate({
 				workspaceId,
 				terminalId,
 				mode: "full",
 			});
-			setLocalActive({
+			setActive({
 				sessionId: result.sessionId,
-				terminalId,
 				webUrl: result.webUrl,
 				expiresAt: result.expiresAt,
 			});
-			setActionPhase("inactive");
-			void queryClient.invalidateQueries({ queryKey });
+			setPhase("active");
 			void copyLink(result.webUrl);
 		} catch (err) {
-			setActionPhase("inactive");
+			setPhase("inactive");
 			toast.error(
 				`Failed to start remote control: ${err instanceof Error ? err.message : String(err)}`,
 			);
@@ -134,17 +142,16 @@ export function TerminalRemoteControlButton({
 
 	async function stopShare() {
 		if (!active) return;
-		setActionPhase("revoking");
+		setPhase("revoking");
 		try {
 			await apiTrpcClient.remoteControl.revoke.mutate({
 				sessionId: active.sessionId,
 			});
-			setLocalActive(null);
-			setActionPhase("inactive");
-			void queryClient.invalidateQueries({ queryKey });
+			setActive(null);
+			setPhase("inactive");
 			toast.success("Remote control stopped");
 		} catch (err) {
-			setActionPhase("inactive");
+			setPhase("active");
 			toast.error(
 				`Failed to stop remote control: ${err instanceof Error ? err.message : String(err)}`,
 			);

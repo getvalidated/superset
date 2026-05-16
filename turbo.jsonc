@@ -25,8 +25,7 @@
 		"VERCEL",
 		"VERCEL_ENV",
 		"VERCEL_URL",
-		"npm_lifecycle_event",
-		"SUPERSET_RENDERER_STRESS_CDP_PORT"
+		"npm_lifecycle_event"
 	],
 	"tasks": {
 		"build": {
