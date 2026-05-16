@@ -67,6 +67,19 @@ describe("changes sidebar file policy", () => {
 		).toBe("external");
 	});
 
+	it("returns null for unbound tiers", () => {
+		expect(
+			resolveChangesSidebarFileIntent(
+				{ ...map, meta: null },
+				{
+					metaKey: true,
+					ctrlKey: false,
+					shiftKey: false,
+				},
+			),
+		).toBeNull();
+	});
+
 	it("finds shortcuts for menu items from the same map", () => {
 		expect(tierForChangesSidebarFileIntent(map, "diffNewTab")).toBe("shift");
 		expect(tierForChangesSidebarFileIntent(map, "file")).toBe("meta");

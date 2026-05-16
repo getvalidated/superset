@@ -55,10 +55,12 @@ export function usePierreChangesSidebarRowClickPolicy({
 				return;
 			}
 
+			const intent = getFileIntent(e);
+			if (intent === null) return;
+
 			e.preventDefault();
 			e.stopPropagation();
 
-			const intent = getFileIntent(e);
 			if (intent === "external") openInExternalEditor(trimmed);
 			else if (intent === "file") onOpenFile(trimmed, false);
 			else if (intent === "diffNewTab") onSelectDiff(trimmed, true);
