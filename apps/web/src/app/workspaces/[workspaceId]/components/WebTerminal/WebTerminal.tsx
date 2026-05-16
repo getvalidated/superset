@@ -6,7 +6,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { env } from "../../../../../env";
-import { trpcClient } from "../../../../../trpc/client";
+import { getAuthToken } from "../../../../../trpc/auth-token";
 
 const TERMINAL_THEME: ITheme = {
 	background: "#151110",
@@ -49,6 +49,7 @@ const KEY_BUTTONS: Array<{ label: string; sequence: string }> = [
 interface WebTerminalProps {
 	workspaceId: string;
 	terminalId: string;
+	routingKey: string;
 }
 
 type ConnectionState = "connecting" | "open" | "error" | "exited";
@@ -62,19 +63,11 @@ type TerminalServerMessage =
 	| { type: "error"; message: string }
 	| { type: "exit"; exitCode: number; signal: number };
 
-async function fetchAuthToken(): Promise<string> {
-	const response = await fetch(`${env.NEXT_PUBLIC_API_URL}/api/auth/token`, {
-		credentials: "include",
-	});
-	if (!response.ok) {
-		throw new Error(`Auth token request failed (${response.status})`);
-	}
-	const body = (await response.json()) as { token?: string };
-	if (!body.token) throw new Error("Auth token response missing token");
-	return body.token;
-}
-
-export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
+export function WebTerminal({
+	workspaceId,
+	terminalId,
+	routingKey,
+}: WebTerminalProps) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const socketRef = useRef<WebSocket | null>(null);
 	const [state, setState] = useState<ConnectionState>("connecting");
@@ -129,10 +122,7 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 
 		(async () => {
 			try {
-				const [token, connection] = await Promise.all([
-					fetchAuthToken(),
-					trpcClient.workspaceTerminal.connection.query({ workspaceId }),
-				]);
+				const token = await getAuthToken();
 				if (cancelled) return;
 				const container = containerRef.current;
 				if (!container) return;
@@ -155,7 +145,11 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 					// container may not be sized yet
 				}
 
-				const url = `${connection.wsUrl}/${encodeURIComponent(terminalId)}?workspaceId=${encodeURIComponent(workspaceId)}&themeType=dark&token=${encodeURIComponent(token)}`;
+				const wsBase = env.NEXT_PUBLIC_RELAY_URL.replace(/^http/, "ws").replace(
+					/\/$/,
+					"",
+				);
+				const url = `${wsBase}/hosts/${routingKey}/terminal/${encodeURIComponent(terminalId)}?workspaceId=${encodeURIComponent(workspaceId)}&themeType=dark&token=${encodeURIComponent(token)}`;
 				socket = new WebSocket(url);
 				socket.binaryType = "arraybuffer";
 				socketRef.current = socket;
@@ -237,7 +231,7 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			terminal?.dispose();
 			socketRef.current = null;
 		};
-	}, [workspaceId, terminalId]);
+	}, [workspaceId, terminalId, routingKey]);
 
 	return (
 		<div className="flex h-full flex-col">

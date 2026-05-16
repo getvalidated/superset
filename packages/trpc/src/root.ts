@@ -21,7 +21,6 @@ import { v2HostRouter } from "./router/v2-host";
 import { v2ProjectRouter } from "./router/v2-project";
 import { v2WorkspaceRouter } from "./router/v2-workspace";
 import { workspaceRouter } from "./router/workspace";
-import { workspaceTerminalRouter } from "./router/workspace-terminal";
 import { createCallerFactory, createTRPCRouter } from "./trpc";
 
 export const appRouter = createTRPCRouter({
@@ -46,7 +45,6 @@ export const appRouter = createTRPCRouter({
 	v2Project: v2ProjectRouter,
 	v2Workspace: v2WorkspaceRouter,
 	workspace: workspaceRouter,
-	workspaceTerminal: workspaceTerminalRouter,
 });
 
 export type AppRouter = typeof appRouter;

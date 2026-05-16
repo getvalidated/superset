@@ -1,8 +1,13 @@
 "use client";
 
+import { buildHostRoutingKey } from "@superset/shared/host-routing";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { trpcClient } from "../../../trpc/client";
+import {
+	createHostTerminal,
+	listHostTerminals,
+} from "../../../trpc/host-client";
 import { WebTerminal } from "./components/WebTerminal";
 
 interface HostTerminal {
@@ -17,6 +22,7 @@ export default function WorkspaceTerminalPage({
 	params: Promise<{ workspaceId: string }>;
 }) {
 	const { workspaceId } = use(params);
+	const [routingKey, setRoutingKey] = useState<string | null>(null);
 	const [terminals, setTerminals] = useState<HostTerminal[] | null>(null);
 	const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(
 		null,
@@ -25,28 +31,53 @@ export default function WorkspaceTerminalPage({
 	const [creating, setCreating] = useState(false);
 	const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
-	const loadTerminals = useCallback(async () => {
-		try {
-			const result = await trpcClient.workspaceTerminal.list.query({
-				workspaceId,
-			});
-			setLoadError(null);
-			setTerminals(
-				result.map((terminal) => ({
-					terminalId: terminal.terminalId,
-					title: terminal.title,
-					exited: terminal.exited,
-				})),
-			);
-		} catch (caught) {
-			setLoadError(caught instanceof Error ? caught.message : String(caught));
-			setTerminals([]);
-		}
-	}, [workspaceId]);
+	const loadTerminals = useCallback(
+		async (key: string) => {
+			try {
+				const result = await listHostTerminals(key, workspaceId);
+				setLoadError(null);
+				setTerminals(
+					result.sessions.map((session) => ({
+						terminalId: session.terminalId,
+						title: session.title,
+						exited: session.exited,
+					})),
+				);
+			} catch (caught) {
+				setLoadError(caught instanceof Error ? caught.message : String(caught));
+				setTerminals([]);
+			}
+		},
+		[workspaceId],
+	);
 
 	useEffect(() => {
-		void loadTerminals();
-	}, [loadTerminals]);
+		(async () => {
+			try {
+				const organization = await trpcClient.organization.getActive.query();
+				if (!organization) {
+					setLoadError("No active organization.");
+					setTerminals([]);
+					return;
+				}
+				const workspace = await trpcClient.v2Workspace.getFromHost.query({
+					organizationId: organization.id,
+					id: workspaceId,
+				});
+				if (!workspace) {
+					setLoadError("Workspace not found.");
+					setTerminals([]);
+					return;
+				}
+				const key = buildHostRoutingKey(organization.id, workspace.hostId);
+				setRoutingKey(key);
+				await loadTerminals(key);
+			} catch (caught) {
+				setLoadError(caught instanceof Error ? caught.message : String(caught));
+				setTerminals([]);
+			}
+		})();
+	}, [workspaceId, loadTerminals]);
 
 	useEffect(() => {
 		if (selectedTerminalId || !terminals) return;
@@ -69,19 +100,18 @@ export default function WorkspaceTerminalPage({
 	}, []);
 
 	const createTerminal = useCallback(async () => {
+		if (!routingKey) return;
 		setCreating(true);
 		try {
-			const created = await trpcClient.workspaceTerminal.create.mutate({
-				workspaceId,
-			});
-			await loadTerminals();
+			const created = await createHostTerminal(routingKey, workspaceId);
+			await loadTerminals(routingKey);
 			setSelectedTerminalId(created.terminalId);
 		} catch (caught) {
 			setLoadError(caught instanceof Error ? caught.message : String(caught));
 		} finally {
 			setCreating(false);
 		}
-	}, [workspaceId, loadTerminals]);
+	}, [routingKey, workspaceId, loadTerminals]);
 
 	return (
 		<div
@@ -120,7 +150,7 @@ export default function WorkspaceTerminalPage({
 				<button
 					type="button"
 					onClick={() => void createTerminal()}
-					disabled={creating}
+					disabled={creating || !routingKey}
 					className="rounded border px-2 py-1 text-xs disabled:opacity-50"
 					style={{ borderColor: "#2a2827" }}
 				>
@@ -140,11 +170,12 @@ export default function WorkspaceTerminalPage({
 				</div>
 			)}
 			<div className="relative flex-1 overflow-hidden">
-				{selectedTerminalId ? (
+				{selectedTerminalId && routingKey ? (
 					<WebTerminal
 						key={selectedTerminalId}
 						workspaceId={workspaceId}
 						terminalId={selectedTerminalId}
+						routingKey={routingKey}
 					/>
 				) : (
 					<div className="flex h-full items-center justify-center text-sm text-[#a8a5a3]">
