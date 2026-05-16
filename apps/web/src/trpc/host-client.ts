@@ -1,6 +1,6 @@
 import SuperJSON from "superjson";
-import { env } from "../env";
 import { getAuthToken } from "./auth-token";
+import { getRelayUrl } from "./relay-url";
 
 // Direct browser → relay → host-service tRPC calls, the same path the
 // desktop uses. Inputs/outputs are typed at the boundary rather than via
@@ -23,7 +23,7 @@ async function hostCall<TOutput>(
 ): Promise<TOutput> {
 	const token = await getAuthToken();
 	const encoded = SuperJSON.serialize(input);
-	const base = `${env.NEXT_PUBLIC_RELAY_URL}/hosts/${routingKey}/trpc/${procedure}`;
+	const base = `${getRelayUrl()}/hosts/${routingKey}/trpc/${procedure}`;
 	const url =
 		method === "GET"
 			? `${base}?input=${encodeURIComponent(JSON.stringify(encoded))}`

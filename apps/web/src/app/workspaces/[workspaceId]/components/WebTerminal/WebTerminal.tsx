@@ -5,8 +5,8 @@ import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { env } from "../../../../../env";
 import { getAuthToken } from "../../../../../trpc/auth-token";
+import { getRelayUrl } from "../../../../../trpc/relay-url";
 
 const TERMINAL_THEME: ITheme = {
 	background: "#151110",
@@ -145,10 +145,7 @@ export function WebTerminal({
 					// container may not be sized yet
 				}
 
-				const wsBase = env.NEXT_PUBLIC_RELAY_URL.replace(/^http/, "ws").replace(
-					/\/$/,
-					"",
-				);
+				const wsBase = getRelayUrl().replace(/^http/, "ws").replace(/\/$/, "");
 				const url = `${wsBase}/hosts/${routingKey}/terminal/${encodeURIComponent(terminalId)}?workspaceId=${encodeURIComponent(workspaceId)}&themeType=dark&token=${encodeURIComponent(token)}`;
 				socket = new WebSocket(url);
 				socket.binaryType = "arraybuffer";
