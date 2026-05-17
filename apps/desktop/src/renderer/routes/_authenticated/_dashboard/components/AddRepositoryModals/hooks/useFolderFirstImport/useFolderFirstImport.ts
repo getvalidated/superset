@@ -51,11 +51,7 @@ export function useFolderFirstImport(options?: {
 			candidates = response.candidates;
 			if (candidates.length === 0 && response.cloudErrors.length > 0) {
 				const first = response.cloudErrors[0];
-				onError?.(
-					first
-						? `Couldn't reach cloud for ${first.url}: ${first.message}`
-						: "Couldn't reach cloud",
-				);
+				onError?.(`Couldn't reach cloud for ${first.url}: ${first.message}`);
 				return null;
 			}
 		} catch (err) {
