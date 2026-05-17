@@ -12,7 +12,7 @@ Three audiences with different expectations:
 
 1. **OSS contributor (fresh GitHub clone)**
    - Has Docker + Bun, nothing else
-   - Wants `git clone && SUPERSET_OSS=1 bun dev` to land them in a working app, signed in
+   - Wants `git clone && SUPERSET_PROFILE=local bun dev` to land them in a working app, signed in
    - Features that need cloud keys should degrade visibly, never crash boot
    - Must not silently sync against hosted production endpoints
 
@@ -31,16 +31,16 @@ Three audiences with different expectations:
 
 | Profile     | Trigger                                  | Validation | Notes |
 |-------------|------------------------------------------|------------|-------|
-| `cloud`     | `VERCEL=1` (auto, set by Vercel runtime) | Strict     | Untypable by contributor |
-| `oss-dev`   | `SUPERSET_OSS=1`                         | Lenient    | Explicit OSS opt-in |
+| `cloud`     | `VERCEL=1` or `VERCEL_ENV` (set by Vercel) | Strict     | Vercel deploy/build context |
+| `local`     | `SUPERSET_PROFILE=local`                 | Lenient    | Explicit local contributor opt-in |
 | `ci`        | `CI=true` (auto by GH Actions et al.)    | Lenient    | Build/lint/test don't need prod secrets |
 | `internal`  | default                                  | Strict     | Covers internal team dev + self-hosted prod |
 
 Resolution order in `getDeploymentProfile()` (most-trusted wins):
 
 ```ts
-if (env.VERCEL === "1")        return "cloud";
-if (env.SUPERSET_OSS === "1")  return "oss-dev";
+if (env.VERCEL === "1" || env.VERCEL_ENV) return "cloud";
+if (env.SUPERSET_PROFILE === "local") return "local";
 if (env.CI === "true")         return "ci";
 return "internal";
 ```
@@ -48,9 +48,7 @@ return "internal";
 Each env schema (`apps/api`, `apps/web`, `apps/admin`, `apps/marketing`, `apps/docs`, `apps/relay`, `apps/desktop/src/main/env.main`, `packages/trpc`) computes:
 
 ```ts
-const skipValidation =
-  !isStrictProfile(getDeploymentProfile()) ||
-  !!process.env.SKIP_ENV_VALIDATION;
+const skipValidation = shouldSkipEnvValidation();
 ```
 
 `SKIP_ENV_VALIDATION=1` remains a build-time escape hatch (Docker preview builds, etc.) — not the primary discriminator.
@@ -72,8 +70,8 @@ const skipValidation =
 
 ### Desktop main process
 
-- **`apps/desktop/src/main/lib/dev-auto-sign-in.ts`** — fired once during `app.whenReady()` when `getDeploymentProfile() === "oss-dev"`. Polls `/api/auth/ok` with 1s interval × 60s timeout (auto-sign-in survives the race against API startup), then POSTs to `/api/auth/sign-in/email` (auto-signs-up the seed user if missing). Persists the token via the same `saveToken()` that OAuth uses. Renderer stays prod-pure.
-- **`apps/desktop/src/main/index.ts`** — calls `void ensureDevAuthToken()` (fire-and-forget) so the window opens immediately. `AuthProvider`'s `onTokenChanged` subscription re-hydrates when the token lands. Also exposes Chrome DevTools Protocol on `localhost:9333` in `oss-dev` for headless verification.
+- **`apps/desktop/src/main/lib/dev-auto-sign-in.ts`** — fired once during `app.whenReady()` when `isLocalProfile()` is true. Polls `/api/auth/ok` with 1s interval × 60s timeout (auto-sign-in survives the race against API startup), then POSTs to `/api/auth/sign-in/email` (auto-signs-up the seed user if missing). Persists the token via the same `saveToken()` that OAuth uses. Renderer stays prod-pure.
+- **`apps/desktop/src/main/index.ts`** — calls `void ensureDevAuthToken()` (fire-and-forget) so the window opens immediately. `AuthProvider`'s `onTokenChanged` subscription re-hydrates when the token lands. Also exposes Chrome DevTools Protocol on `localhost:9333` in the local profile for headless verification.
 - **`apps/desktop/src/main/env.main.ts`** — env defaults switch to localhost in dev builds (`NODE_ENV=development`) so a fresh-clone session never silently points main-process clients at hosted production. Profile check inlined here (rather than imported from `@superset/shared`) because `electron.vite.config.ts` does `await import("./src/main/env.main")` at config-load time using Node's ESM loader, which can't transform `.ts` files from sibling workspace packages.
 
 ### Desktop renderer
@@ -98,7 +96,7 @@ const skipValidation =
 
 ### Plumbing
 
-- **`turbo.jsonc`** — `SUPERSET_OSS`, `CI`, `VERCEL`, `SKIP_ENV_VALIDATION` moved to `globalEnv` (was `globalPassThroughEnv`). Profile-affecting flags now hash into the cache key so strict/lenient cached builds can't cross-contaminate.
+- **`turbo.jsonc`** — `SUPERSET_PROFILE`, `CI`, `VERCEL`, `VERCEL_ENV`, and `SKIP_ENV_VALIDATION` live in `globalEnv`. Profile-affecting flags now hash into the cache key so strict/lenient cached builds can't cross-contaminate.
 - **`package.json`** — `bun db:seed:dev` root script.
 
 ### Docs
@@ -116,21 +114,21 @@ const skipValidation =
 
 **Why:** The Formbricks refactor would touch ~70 schema entries and ~100+ consumer sites that assume non-null. The skipValidation approach is one line per env file, no consumer changes, and the runtime behavior is identical: in OSS, the env object has whatever's in `process.env` (possibly empty strings); call sites that crash get wrapped in lazy guards as discovered.
 
-### Why strict-by-default with `SUPERSET_OSS=1` opt-in, not lenient-by-default with `SUPERSET_INTERNAL_DEV=1` opt-in?
+### Why strict-by-default with `SUPERSET_PROFILE=local` opt-in, not lenient-by-default with `SUPERSET_INTERNAL_DEV=1` opt-in?
 
 **Rejected:** Default to lenient + write `SUPERSET_INTERNAL_DEV=1` from `.superset/setup.sh` so internal devs land in strict.
 
-**Chosen:** Default to strict + OSS contributors set `SUPERSET_OSS=1`.
+**Chosen:** Default to strict + local contributors set `SUPERSET_PROFILE=local`.
 
 **Why:** Strict-by-default is the conservative direction. An internal dev or self-hoster who forgets to source their `.env` gets a clear failure, not a silently-degraded app. OSS contributors trade a one-time flag for that safety guarantee. Also: no setup-script edit means internal devs' workflow is byte-identical to today.
 
-### Why not gate on `NODE_ENV === "production"` instead of `VERCEL=1`?
+### Why not gate on `NODE_ENV === "production"` instead of Vercel env markers?
 
 **Rejected:** Use `NODE_ENV === "production"` as the cloud discriminator.
 
-**Chosen:** `VERCEL=1` (auto at Vercel runtime) for cloud, `NODE_ENV` only as a fallback indicator inside the `internal` default.
+**Chosen:** `VERCEL=1` or `VERCEL_ENV` for cloud, `NODE_ENV` only as a fallback indicator inside the `internal` default.
 
-**Why:** `NODE_ENV=production` is true in self-hosted dev too — it conflates "deployed to Vercel" with "operator running the production build locally." Self-hosters are legitimate prod operators and we want them strict, but they have different keys than Vercel (no `VERCEL_*` vars, no Vercel-specific URLs). Discriminating on `VERCEL=1` keeps cloud and self-hosted as two distinct strict-validated buckets.
+**Why:** `NODE_ENV=production` is true in self-hosted dev too — it conflates "deployed to Vercel" with "operator running the production build locally." Self-hosters are legitimate prod operators and we want them strict, but they have different keys than Vercel (no `VERCEL_*` vars, no Vercel-specific URLs). Discriminating on Vercel env markers keeps cloud and self-hosted as two distinct strict-validated buckets.
 
 ### Why a `ci` profile when `SKIP_ENV_VALIDATION=1` already exists?
 
@@ -146,7 +144,7 @@ const skipValidation =
 
 **Chosen:** Hash into the cache key.
 
-**Why:** A `bun run build` cached with `SUPERSET_OSS=1` (validation skipped) could be served back when the next caller doesn't have the flag (validation expected). Same for `CI=true` vs not. Caches that disagree about validation produce bugs that are very hard to attribute. Cache invalidation cost is acceptable — these flags don't flip often.
+**Why:** A `bun run build` cached with `SUPERSET_PROFILE=local` (validation skipped) could be served back when the next caller doesn't have the flag (validation expected). Same for `CI=true` vs not. Caches that disagree about validation produce bugs that are very hard to attribute. Cache invalidation cost is acceptable — these flags don't flip often.
 
 ### Why dev auto-sign-in in the main process, not the renderer?
 
@@ -216,7 +214,7 @@ I shipped the deployment-profile changes without checking `gh pr checks 4616`. T
 |---|---|
 | [`04130c0`](https://github.com/superset-sh/superset/pull/4616/commits/04130c0) | Core OSS path: DB driver swap, lazy-init guards (Stripe/Resend/PostHog), Better Auth email/password, desktop dev auto-sign-in, 17-file MOCK_ORG_ID priority fix, web app DevAuthForm, `db:seed:dev`, CDP for verification, docs |
 | [`2b609b5`](https://github.com/superset-sh/superset/pull/4616/commits/2b609b5) | Deployment profiles + boot summary + `/api/health` endpoint |
-| [`f3c76b9`](https://github.com/superset-sh/superset/pull/4616/commits/f3c76b9) | Flipped discriminator (strict by default, `SUPERSET_OSS=1` opts into lenient) |
+| [`f3c76b9`](https://github.com/superset-sh/superset/pull/4616/commits/f3c76b9) | Flipped discriminator (strict by default, local profile opts into lenient) |
 | [`101cd30`](https://github.com/superset-sh/superset/pull/4616/commits/101cd30) | Added `ci` profile (GitHub Actions auto-detect) |
 | [`513d198`](https://github.com/superset-sh/superset/pull/4616/commits/513d198) | Five review-finding fixes: Stripe gate in `afterCreateOrganization`, email/password disabled in prod, docker-compose.dev.yml + Electric URL defaults, auto-sign-in API readiness poll, profile flags hash into Turbo cache |
 | [`f3254ef`](https://github.com/superset-sh/superset/pull/4616/commits/f3254ef) | Fixed CI build (inlined profile check in `env.main.ts`); remaining hardcoded prod URL defaults switched to `devOrProdUrl()` helper across `electron.vite.config.ts`, `vite/helpers.ts`, `env.main.ts` |
@@ -226,7 +224,7 @@ I shipped the deployment-profile changes without checking `gh pr checks 4616`. T
 End-to-end smoke test after final commit:
 
 ```
-[superset] profile=oss-dev (lenient)
+[superset] profile=local (lenient)
 [superset] disabled features (set the listed env var to enable):
            - stripe                       STRIPE_SECRET_KEY
            - resend (email)               RESEND_API_KEY
@@ -245,11 +243,11 @@ admin@local.test | Local Admin's Team | 14019d9c-team | <NULL>
 Profile resolution unit test (all 6 cases pass):
 ```
 ✓ fresh clone (no env)                  → internal  (strict)
-✓ OSS contributor                       → oss-dev   (lenient)
+✓ Local contributor                     → local     (lenient)
 ✓ GitHub Actions                        → ci        (lenient)
 ✓ Vercel runtime                        → cloud     (strict)
 ✓ Vercel runtime overrides CI           → cloud     (strict)
-✓ OSS overrides CI                      → oss-dev   (lenient)
+✓ Local profile overrides CI            → local     (lenient)
 ```
 
 CDP-probed React context:
@@ -268,7 +266,7 @@ These are real follow-ups, none of them blocking the OSS path from working today
 
 - **`.env.example` with working defaults** — README says "edit DATABASE_URL + BETTER_AUTH_SECRET" without telling contributors the values. Pre-fill `postgres://superset:superset@localhost:5433/superset` + a sentinel `BETTER_AUTH_SECRET=dev_secret_not_for_production_*` and move optional integration keys to a `# OPTIONAL` block.
 - **`bun setup` orchestrator** — current contributor flow is 6 commands. A `bun setup` wrapping `docker compose up`, `cp .env.example .env` if missing, `bun install`, `bun run db:migrate`, copy `.dev.vars`, with idempotency + friendly errors would collapse it to two: `bun setup && bun dev`.
-- **Full integration crash audit** — Stripe, Resend, PostHog, trpc-support-Resend are wrapped. GitHub App (`@octokit/app`), Freestyle, Linear, Slack, QStash signing keys, Anthropic (`@anthropic-ai/sdk`), Blob (`@vercel/blob`) may still crash at import in oss-dev. Mechanical `grep -rn "new \w\+(.*env\." packages apps` survey.
+- **Full integration crash audit** — Stripe, Resend, PostHog, trpc-support-Resend are wrapped. GitHub App (`@octokit/app`), Freestyle, Linear, Slack, QStash signing keys, Anthropic (`@anthropic-ai/sdk`), Blob (`@vercel/blob`) may still crash at import in the local profile. Mechanical `grep -rn "new \w\+(.*env\." packages apps` survey.
 - **Mailpit instead of console-log emails** — Better Auth's `sendEmail` falls back to stdout. Mailpit container would give contributors a clickable UI at `localhost:8025`.
 - **CI fresh-clone smoke test** — without one, the OSS path silently rots the next time someone adds a crash-on-import integration. A GitHub Actions job that does `git clone` in a fresh runner, follows the README, hits `/api/auth/ok`, fails if anything red.
 - **Per-integration group `.refine()` validation** — Formbricks pattern. E.g. if `STRIPE_SECRET_KEY` is set then `STRIPE_WEBHOOK_SECRET` must also be set. Catches half-configured prod deploys.
@@ -281,11 +279,11 @@ These are real follow-ups, none of them blocking the OSS path from working today
 ┌─────────────────────────────────────────────────────────────────────┐
 │                       getDeploymentProfile()                         │
 │                                                                      │
-│   VERCEL === "1"        ─────────────────►  cloud      (strict)     │
+│   VERCEL === "1" or VERCEL_ENV ─────────►  cloud      (strict)     │
 │       │                                                              │
 │       no                                                             │
 │       ▼                                                              │
-│   SUPERSET_OSS === "1"  ─────────────────►  oss-dev    (lenient)    │
+│   SUPERSET_PROFILE=local ────────────────►  local      (lenient)    │
 │       │                                                              │
 │       no                                                             │
 │       ▼                                                              │
@@ -297,7 +295,7 @@ These are real follow-ups, none of them blocking the OSS path from working today
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### OSS-dev session lifecycle
+### Local session lifecycle
 
 ```
 ┌──────────────────┐                  ┌──────────────────┐
@@ -310,7 +308,7 @@ These are real follow-ups, none of them blocking the OSS path from working today
         │                                       │
         ▼                                       ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  bun dev (with SUPERSET_OSS=1)                                │
+│  bun dev (with SUPERSET_PROFILE=local)                         │
 │                                                                │
 │  apps/web      :4640  ─ Next.js, DevAuthForm visible          │
 │  apps/api      :4641  ─ Better Auth + tRPC, /api/health       │
@@ -341,4 +339,4 @@ These are real follow-ups, none of them blocking the OSS path from working today
 | `cloud`      | false (strict)   | `profile=cloud (strict)`    | `profile: "cloud"`        | OAuth (email/password disabled in prod build)  |
 | `internal`   | false (strict)   | `profile=internal (strict)` | `profile: "internal"`     | OAuth + dev email/password form (NODE_ENV=dev) |
 | `ci`         | true (lenient)   | `profile=ci (lenient)`      | `profile: "ci"`           | n/a (build/test job, no runtime auth)          |
-| `oss-dev`    | true (lenient)   | lists disabled features     | `profile: "oss-dev"`      | dev auto-sign-in + dev email/password form     |
+| `local`      | true (lenient)   | lists disabled features     | `profile: "local"`        | dev auto-sign-in + dev email/password form     |

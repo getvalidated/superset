@@ -71,7 +71,7 @@ If it runs in a terminal, it runs on Superset
 
 | Requirement | Details |
 |:------------|:--------|
-| **OS** | macOS (Windows/Linux untested) |
+| **OS** | macOS |
 | **Runtime** | [Bun](https://bun.sh/) v1.0+ |
 | **Version Control** | Git 2.20+ |
 | **GitHub CLI** | [gh](https://cli.github.com/) |
@@ -94,14 +94,15 @@ git clone https://github.com/superset-sh/superset.git
 cd superset
 bun install
 docker compose -f docker-compose.dev.yml up -d   # Postgres + Electric
-cp .env.example .env   # then edit DATABASE_URL + BETTER_AUTH_SECRET
+cp .env.example .env
 cp apps/electric-proxy/.dev.vars.example apps/electric-proxy/.dev.vars
 bun run db:migrate
 cp Caddyfile.example Caddyfile && caddy trust
-SUPERSET_OSS=1 bun dev
+bun dev
 ```
 
 The desktop window opens auto-signed-in as a seed admin (`admin@local.test`). See [Local Development](docs/LOCAL_DEVELOPMENT.md) for details, troubleshooting, and what's stubbed without integration keys.
+The copied `.env` also isolates desktop state under `~/.superset-local-dev`, so source builds do not reuse production or canary desktop state.
 
 To build a distributable desktop app:
 

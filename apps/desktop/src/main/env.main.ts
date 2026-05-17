@@ -9,23 +9,51 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod/v4";
 
-// NOTE: the deployment-profile check is inlined here rather than imported
-// from @superset/shared/deployment-profile because electron.vite.config.ts
-// does `await import("./src/main/env.main")` at config-load time, which
-// Node's ESM loader handles directly (no Vite transform) — and Node can't
-// load `.ts` files from sibling workspace packages. Keep the helper in
-// shared/, but duplicate the four lines here.
-//
-// Default profile is `internal` (strict). OSS contributors set
-// SUPERSET_OSS=1 to opt into the lenient `oss-dev` profile, which
-// skips env validation so a fresh clone boots without every key.
-// CI=true (auto-set by GitHub Actions) also opts into lenient so
-// build/lint/test jobs work without prod secrets.
-// SKIP_ENV_VALIDATION=1 remains a build-time escape hatch.
+// NOTE: deployment-profile checks are inlined here rather than imported from
+// @superset/shared/deployment-profile because electron.vite.config.ts does
+// `await import("./src/main/env.main")` at config-load time, which Node's ESM
+// loader handles directly (no Vite transform) — and Node can't load `.ts`
+// files from sibling workspace packages. Keep this in sync with shared/.
+function isTruthyFlag(value: string | undefined): boolean {
+	return value === "1" || value === "true";
+}
+
+type MainDeploymentProfile = "cloud" | "local" | "ci" | "internal";
+const VALID_PROFILES: MainDeploymentProfile[] = [
+	"cloud",
+	"local",
+	"ci",
+	"internal",
+];
+
+function getExplicitProfile(): MainDeploymentProfile | undefined {
+	const explicitProfile = process.env.SUPERSET_PROFILE;
+	if (!explicitProfile) return undefined;
+	if (VALID_PROFILES.includes(explicitProfile as MainDeploymentProfile)) {
+		return explicitProfile as MainDeploymentProfile;
+	}
+	throw new Error(
+		`Invalid SUPERSET_PROFILE="${explicitProfile}". Expected one of: ${VALID_PROFILES.join(
+			", ",
+		)}.`,
+	);
+}
+
+function getDeploymentProfile(): MainDeploymentProfile {
+	if (isTruthyFlag(process.env.VERCEL) || process.env.VERCEL_ENV) {
+		return "cloud";
+	}
+	const explicitProfile = getExplicitProfile();
+	if (explicitProfile) return explicitProfile;
+	if (isTruthyFlag(process.env.CI)) return "ci";
+	return "internal";
+}
+
+export const deploymentProfile = getDeploymentProfile();
 const isStrict =
-	process.env.VERCEL === "1" ||
-	(process.env.SUPERSET_OSS !== "1" && process.env.CI !== "true");
-const skipValidation = !isStrict || !!process.env.SKIP_ENV_VALIDATION;
+	deploymentProfile === "cloud" || deploymentProfile === "internal";
+const skipValidation =
+	!isStrict || isTruthyFlag(process.env.SKIP_ENV_VALIDATION);
 
 export const env = createEnv({
 	server: {
@@ -33,7 +61,7 @@ export const env = createEnv({
 			.enum(["development", "production", "test"])
 			.default("development"),
 		// In dev builds (NODE_ENV=development) the URL defaults switch to
-		// localhost so fresh-clone OSS contributors never silently sync
+		// localhost so fresh-clone local contributors never silently sync
 		// against hosted production endpoints.
 		NEXT_PUBLIC_API_URL: z
 			.url()

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { settings } from "@superset/local-db";
-import { getDeploymentProfile } from "@superset/shared/deployment-profile";
+import { isLocalProfile } from "@superset/shared/deployment-profile";
 import {
 	app,
 	BrowserWindow,
@@ -57,9 +57,9 @@ import { MainWindow } from "./windows/main";
 console.log("[main] Local database ready:", !!localDb);
 const IS_DEV = process.env.NODE_ENV === "development";
 
-// OSS-dev only: expose Chrome DevTools Protocol for headless testing
+// Local profile only: expose Chrome DevTools Protocol for headless testing
 // (e.g. import/host-service checks). Skip in internal / cloud profiles.
-if (IS_DEV && getDeploymentProfile() === "oss-dev") {
+if (IS_DEV && isLocalProfile()) {
 	app.commandLine.appendSwitch("remote-debugging-port", "9333");
 	app.commandLine.appendSwitch("remote-allow-origins", "*");
 }
@@ -425,7 +425,7 @@ if (!gotTheLock) {
 			console.error("[main] Failed to install bundled CLI shim:", error);
 		}
 
-		// OSS-dev only: auto-sign-in as the seed admin if no token is on disk.
+		// Local profile only: auto-sign-in as the seed admin if no token is on disk.
 		// Fire-and-forget — the function polls the API for readiness internally
 		// (Turbo starts services concurrently, the API may still be compiling).
 		// AuthProvider in the renderer subscribes to auth.onTokenChanged and

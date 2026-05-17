@@ -1,4 +1,4 @@
-# Local dev services for OSS contributors.
+# Local dev services for external contributors.
 #
 # Brings up Postgres + Electric SQL on stable host ports so a fresh clone
 # can talk to both immediately. Internal devs use `.superset/setup.sh`
@@ -35,8 +35,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # host.docker.internal lets the container reach Postgres on the
-      # host's 5433 port (mapped from the postgres service above).
+      # Docker Desktop exposes host.docker.internal so Electric can reach
+      # Postgres through the host's stable 5433 port.
       DATABASE_URL: postgres://superset:superset@host.docker.internal:5433/superset
       ELECTRIC_SECRET: local_electric_dev_secret
     ports:

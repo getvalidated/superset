@@ -1,10 +1,8 @@
 import { db } from "@superset/db/client";
 import { integrationConnections, tasks } from "@superset/db/schema";
-import { Client } from "@upstash/qstash";
 import { eq } from "drizzle-orm";
 import { env } from "../../../env";
-
-const qstash = new Client({ token: env.QSTASH_TOKEN });
+import { qstash } from "../../qstash";
 
 const PROVIDER_ENDPOINTS: Record<string, string> = {
 	linear: "/api/integrations/linear/jobs/sync-task",
@@ -35,6 +33,10 @@ export async function syncTask(taskId: string) {
 			}
 
 			const syncUrl = `${qstashBaseUrl}${endpoint}`;
+
+			if (!qstash) {
+				throw new Error("QSTASH_TOKEN is required to sync integration tasks");
+			}
 
 			await qstash.publishJSON({
 				url: syncUrl,

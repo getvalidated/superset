@@ -1,17 +1,8 @@
-import {
-	getDeploymentProfile,
-	isStrictProfile,
-} from "@superset/shared/deployment-profile";
+import { shouldSkipEnvValidation } from "@superset/shared/deployment-profile";
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
-// Default profile is `internal` (strict). OSS contributors set
-// SUPERSET_OSS=1 to opt into the lenient `oss-dev` profile, which
-// skips env validation so a fresh clone boots without every key.
-// SKIP_ENV_VALIDATION=1 remains a build-time escape hatch.
-const profile = getDeploymentProfile();
-const skipValidation =
-	!isStrictProfile(profile) || !!process.env.SKIP_ENV_VALIDATION;
+const skipValidation = shouldSkipEnvValidation();
 
 export const env = createEnv({
 	shared: {

@@ -93,6 +93,9 @@ export default defineConfig({
 					"https://relay.superset.sh",
 				),
 			),
+			"process.env.SUPERSET_EXPLICIT_RELAY_URL": defineEnv(
+				process.env.RELAY_URL ? "1" : "",
+			),
 			// Must match renderer for analytics in main process
 			"process.env.NEXT_PUBLIC_POSTHOG_KEY": defineEnv(
 				process.env.NEXT_PUBLIC_POSTHOG_KEY,
@@ -231,6 +234,9 @@ export default defineConfig({
 					"http://localhost:4653",
 					"https://relay.superset.sh",
 				),
+			),
+			"process.env.SUPERSET_EXPLICIT_RELAY_URL": defineEnv(
+				process.env.RELAY_URL ? "1" : "",
 			),
 			"process.env.STREAMS_URL": defineEnv(
 				process.env.STREAMS_URL,

@@ -36,7 +36,9 @@ import {
 import { stripeClient } from "./stripe";
 import { formatPrice, getOrganizationOwners } from "./utils";
 
-const qstash = new Client({ token: env.QSTASH_TOKEN });
+const qstash = env.QSTASH_TOKEN
+	? new Client({ token: env.QSTASH_TOKEN })
+	: null;
 
 const NOTIFY_SLACK_URL = `${env.NEXT_PUBLIC_API_URL}/api/integrations/stripe/jobs/notify-slack`;
 const desktopDevPort = process.env.DESKTOP_VITE_PORT || "5173";
@@ -47,6 +49,24 @@ const desktopDevOrigins =
 				`http://127.0.0.1:${desktopDevPort}`,
 			]
 		: [];
+const socialProviders = {
+	...(env.GH_CLIENT_ID && env.GH_CLIENT_SECRET
+		? {
+				github: {
+					clientId: env.GH_CLIENT_ID,
+					clientSecret: env.GH_CLIENT_SECRET,
+				},
+			}
+		: {}),
+	...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+		? {
+				google: {
+					clientId: env.GOOGLE_CLIENT_ID,
+					clientSecret: env.GOOGLE_CLIENT_SECRET,
+				},
+			}
+		: {}),
+};
 
 export const auth = betterAuth({
 	baseURL: env.NEXT_PUBLIC_API_URL,
@@ -97,16 +117,7 @@ export const auth = betterAuth({
 		enabled: process.env.NODE_ENV !== "production",
 		autoSignIn: true,
 	},
-	socialProviders: {
-		github: {
-			clientId: env.GH_CLIENT_ID,
-			clientSecret: env.GH_CLIENT_SECRET,
-		},
-		google: {
-			clientId: env.GOOGLE_CLIENT_ID,
-			clientSecret: env.GOOGLE_CLIENT_SECRET,
-		},
-	},
+	socialProviders,
 	databaseHooks: {
 		user: {
 			create: {
@@ -320,8 +331,8 @@ export const auth = betterAuth({
 				beforeCreateInvitation: async (data) => {
 					const { inviterId, organizationId, role, teamId } = data.invitation;
 
-					const { success } = await invitationRateLimit.limit(inviterId);
-					if (!success) {
+					const limit = await invitationRateLimit?.limit(inviterId);
+					if (limit && !limit.success) {
 						throw new Error(
 							"Rate limit exceeded. Max 10 invitations per hour.",
 						);
@@ -638,7 +649,7 @@ export const auth = betterAuth({
 					);
 
 					try {
-						await qstash.publishJSON({
+						await qstash?.publishJSON({
 							url: NOTIFY_SLACK_URL,
 							body: {
 								eventType: "seat_added",
@@ -727,7 +738,7 @@ export const auth = betterAuth({
 					);
 
 					try {
-						await qstash.publishJSON({
+						await qstash?.publishJSON({
 							url: NOTIFY_SLACK_URL,
 							body: {
 								eventType: "seat_removed",
@@ -914,7 +925,7 @@ export const auth = betterAuth({
 					);
 
 					try {
-						await qstash.publishJSON({
+						await qstash?.publishJSON({
 							url: NOTIFY_SLACK_URL,
 							body: {
 								eventType: "subscription_started",
@@ -962,7 +973,7 @@ export const auth = betterAuth({
 					);
 
 					try {
-						await qstash.publishJSON({
+						await qstash?.publishJSON({
 							url: NOTIFY_SLACK_URL,
 							body: {
 								eventType: "subscription_cancelled",
@@ -1031,7 +1042,7 @@ export const auth = betterAuth({
 
 						if (stripeSubId) {
 							try {
-								await qstash.publishJSON({
+								await qstash?.publishJSON({
 									url: NOTIFY_SLACK_URL,
 									body: {
 										eventType: "payment_failed",
@@ -1058,7 +1069,7 @@ export const auth = betterAuth({
 
 						if (stripeSubId) {
 							try {
-								await qstash.publishJSON({
+								await qstash?.publishJSON({
 									url: NOTIFY_SLACK_URL,
 									body: {
 										eventType: "payment_succeeded",
@@ -1098,7 +1109,7 @@ export const auth = betterAuth({
 								: "monthly";
 
 						try {
-							await qstash.publishJSON({
+							await qstash?.publishJSON({
 								url: NOTIFY_SLACK_URL,
 								body: {
 									eventType: "plan_changed",

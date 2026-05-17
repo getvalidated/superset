@@ -1,4 +1,4 @@
-import { getDeploymentProfile } from "@superset/shared/deployment-profile";
+import { isLocalProfile } from "@superset/shared/deployment-profile";
 import { env as mainEnv } from "main/env.main";
 import {
 	loadToken,
@@ -59,7 +59,7 @@ async function waitForApiReady(): Promise<boolean> {
 }
 
 /**
- * Dev-only: in the oss-dev profile, sign in (or sign up) as the seed
+ * Dev-only: in the local profile, sign in (or sign up) as the seed
  * admin user and persist the token so the renderer's AuthProvider can
  * hydrate normally — no special renderer code.
  *
@@ -68,8 +68,8 @@ async function waitForApiReady(): Promise<boolean> {
  * launch). Best-effort: failure is logged but doesn't crash boot.
  */
 export async function ensureDevAuthToken(): Promise<void> {
-	// OSS-dev only — internal devs, self-hosters, and prod all use real auth.
-	if (getDeploymentProfile() !== "oss-dev") return;
+	// Local profile only — internal devs, self-hosters, and prod all use real auth.
+	if (!isLocalProfile()) return;
 
 	const stored = await loadToken();
 	if (stored.token && stored.expiresAt) {

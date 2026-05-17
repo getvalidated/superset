@@ -1,49 +1,69 @@
 /**
  * Deployment profile resolution.
  *
- * Four profiles, ranked by discriminator trust:
+ * Strict profiles (`cloud`, `internal`) validate all required integration
+ * env vars at boot. Lenient profiles (`local`, `ci`) let the app boot with
+ * missing integration keys; call sites lazy-throw or no-op when the missing
+ * feature is exercised.
  *
- *   1. `cloud`     — Vercel sets `VERCEL=1` automatically at RUNTIME on
- *                    its serverless functions. Contributors can't fake
- *                    it locally. Strict — every integration key required.
- *   2. `oss-dev`   — Contributor explicitly sets `SUPERSET_OSS=1` to
- *                    opt into the lenient profile so a fresh clone
- *                    boots without every integration key.
- *   3. `ci`        — GitHub Actions sets `CI=true` (and runners do too).
- *                    Lenient by design: lint/typecheck/test jobs don't
- *                    have integration keys, and any actual deploy step
- *                    runs `vercel build` which pulls env from the
- *                    Vercel project. Runtime strictness still kicks in
- *                    once the build is deployed and `VERCEL=1` is set.
- *   4. `internal`  — Default. Covers internal team dev workspaces and
- *                    self-hosted production. Strict — matches today's
- *                    fail-fast behavior so internal devs and
- *                    self-hosters get loud errors on missing keys.
- *
- * **Strict** (`cloud`, `internal`) hard-fail at boot when an integration
- * key is missing.
- *
- * **Lenient** (`oss-dev`, `ci`) allow the app to boot with missing keys;
- * call sites lazy-throw / no-op so features degrade visibly rather than
- * crashing module load.
- *
- * Default-strict at runtime is the conservative direction: an internal
- * dev or self-hoster who forgets to source their `.env` gets a clear
- * failure, not a silently-degraded app. OSS contributors trade a one-time
- * `SUPERSET_OSS=1` for that safety guarantee. CI build steps degrade so
- * lint/typecheck/test don't require every production secret.
+ * `SUPERSET_PROFILE=local` is the explicit contributor opt-in for a fresh
+ * clone backed by local Postgres/Electric and no third-party credentials.
  */
-export type DeploymentProfile = "cloud" | "oss-dev" | "ci" | "internal";
+export type DeploymentProfile = "cloud" | "local" | "ci" | "internal";
+
+const VALID_PROFILES: DeploymentProfile[] = [
+	"cloud",
+	"local",
+	"ci",
+	"internal",
+];
+
+function isTruthyFlag(value: string | undefined): boolean {
+	return value === "1" || value === "true";
+}
+
+function getExplicitProfile(
+	envSource: Record<string, string | undefined>,
+): DeploymentProfile | undefined {
+	const explicitProfile = envSource.SUPERSET_PROFILE;
+	if (!explicitProfile) return undefined;
+	if (VALID_PROFILES.includes(explicitProfile as DeploymentProfile)) {
+		return explicitProfile as DeploymentProfile;
+	}
+	throw new Error(
+		`Invalid SUPERSET_PROFILE="${explicitProfile}". Expected one of: ${VALID_PROFILES.join(
+			", ",
+		)}.`,
+	);
+}
 
 export function getDeploymentProfile(
 	envSource: Record<string, string | undefined> = process.env,
 ): DeploymentProfile {
-	if (envSource.VERCEL === "1") return "cloud";
-	if (envSource.SUPERSET_OSS === "1") return "oss-dev";
-	if (envSource.CI === "true") return "ci";
+	if (isTruthyFlag(envSource.VERCEL) || envSource.VERCEL_ENV) return "cloud";
+	const explicitProfile = getExplicitProfile(envSource);
+	if (explicitProfile) return explicitProfile;
+	if (isTruthyFlag(envSource.CI)) return "ci";
 	return "internal";
 }
 
-export function isStrictProfile(profile: DeploymentProfile): boolean {
-	return profile !== "oss-dev" && profile !== "ci";
+export function isStrictProfile(
+	profile: DeploymentProfile = getDeploymentProfile(),
+): boolean {
+	return profile === "cloud" || profile === "internal";
+}
+
+export function isLocalProfile(
+	profile: DeploymentProfile = getDeploymentProfile(),
+): boolean {
+	return profile === "local";
+}
+
+export function shouldSkipEnvValidation(
+	envSource: Record<string, string | undefined> = process.env,
+): boolean {
+	return (
+		!isStrictProfile(getDeploymentProfile(envSource)) ||
+		isTruthyFlag(envSource.SKIP_ENV_VALIDATION)
+	);
 }
