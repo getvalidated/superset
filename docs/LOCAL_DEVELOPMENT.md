@@ -75,9 +75,9 @@ The escape hatch `SKIP_ENV_VALIDATION=1` still works for one-off bypass cases (e
 
 When the API boots in the `local` profile, it prints a one-time summary of what's disabled:
 
-```
+```text
 [superset] profile=local (lenient)
-[superset] disabled features (set the listed env var to enable):
+[superset] disabled features (set the listed env var(s) to enable):
            - stripe                       STRIPE_SECRET_KEY
            - resend (email)               RESEND_API_KEY
            - posthog (telemetry)          NEXT_PUBLIC_POSTHOG_KEY

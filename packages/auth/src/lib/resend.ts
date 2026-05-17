@@ -1,3 +1,4 @@
+import { isStrictProfile } from "@superset/shared/deployment-profile";
 import { Resend } from "resend";
 
 import { env } from "../env";
@@ -38,14 +39,15 @@ function logConsoleSend(arg: unknown) {
 
 // Lazy proxy over the full Resend surface. Throws only when actually used
 // without a key — except `emails.send` and `batch.send`, which fall back to
-// logging to stdout so Better Auth's signup/verification flows work in dev.
+// logging to stdout in lenient profiles so Better Auth's local signup flows work.
 export const resend = new Proxy({} as Resend, {
 	get(_t, prop) {
 		if (!env.RESEND_API_KEY) {
-			if (prop === "emails") {
+			const allowConsoleFallback = !isStrictProfile();
+			if (allowConsoleFallback && prop === "emails") {
 				return { send: (arg: unknown) => logConsoleSend(arg) };
 			}
-			if (prop === "batch") {
+			if (allowConsoleFallback && prop === "batch") {
 				return { send: (arg: unknown) => logConsoleSend(arg) };
 			}
 			throw new Error(

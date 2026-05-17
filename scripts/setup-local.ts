@@ -5,6 +5,12 @@ import { basename, resolve } from "node:path";
 
 const args = new Set(process.argv.slice(2));
 const root = resolve(import.meta.dirname, "..");
+const LOCAL_DATABASE_HOSTS = new Set([
+	"localhost",
+	"127.0.0.1",
+	"::1",
+	"[::1]",
+]);
 
 const help = `Usage: bun setup:local [options]
 
@@ -82,7 +88,7 @@ function isLocalDatabaseUrl(value: string | undefined): boolean {
 	if (!value) return false;
 	try {
 		const url = new URL(value);
-		return ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+		return LOCAL_DATABASE_HOSTS.has(url.hostname);
 	} catch {
 		return false;
 	}

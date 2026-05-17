@@ -8,6 +8,18 @@ config({ path: path.resolve(__dirname, "../../../.env"), quiet: true });
 const DEV_ADMIN_EMAIL = "admin@local.test";
 const DEV_ADMIN_PASSWORD = "supersetdev";
 const DEV_ADMIN_NAME = "Local Admin";
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+function requireLocalUrl(value: string, label: string): URL {
+	const url = new URL(value);
+	if (!LOCAL_HOSTS.has(url.hostname)) {
+		console.error(
+			`FATAL: db:seed refuses to run against non-localhost ${label}: ${url.hostname}`,
+		);
+		process.exit(1);
+	}
+	return url;
+}
 
 async function main() {
 	if (process.env.NODE_ENV === "production") {
@@ -21,16 +33,10 @@ async function main() {
 		process.exit(1);
 	}
 
-	const url = new URL(dbUrl);
-	const allowedHosts = new Set(["localhost", "127.0.0.1", "::1"]);
-	if (!allowedHosts.has(url.hostname)) {
-		console.error(
-			`FATAL: db:seed refuses to run against non-localhost host: ${url.hostname}`,
-		);
-		process.exit(1);
-	}
+	requireLocalUrl(dbUrl, "database host");
 
 	const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4641";
+	requireLocalUrl(apiUrl, "API host");
 	const endpoint = `${apiUrl}/api/auth/sign-up/email`;
 
 	console.log(`Seeding dev admin via ${endpoint}`);

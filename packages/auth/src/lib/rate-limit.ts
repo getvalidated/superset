@@ -1,3 +1,4 @@
+import { isStrictProfile } from "@superset/shared/deployment-profile";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { env } from "../env";
@@ -14,3 +15,19 @@ export const invitationRateLimit =
 				prefix: "ratelimit:invitation",
 			})
 		: null;
+
+export async function checkInvitationRateLimit(
+	inviterId: string,
+): Promise<void> {
+	if (!invitationRateLimit) {
+		if (isStrictProfile()) {
+			throw new Error("Invitation rate limiting is not configured.");
+		}
+		return;
+	}
+
+	const limit = await invitationRateLimit.limit(inviterId);
+	if (!limit.success) {
+		throw new Error("Rate limit exceeded. Max 10 invitations per hour.");
+	}
+}

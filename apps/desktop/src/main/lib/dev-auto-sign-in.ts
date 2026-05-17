@@ -9,6 +9,7 @@ const DEV_EMAIL = "admin@local.test";
 const DEV_PASSWORD = "supersetdev";
 const DEV_NAME = "Local Admin";
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const DEV_AUTH_TIMEOUT_MS = 8000;
 
 // API may take a few seconds to compile on first dev launch (Turbo starts
 // services concurrently). Poll /api/auth/ok before giving up.
@@ -36,6 +37,7 @@ async function postAuth<T>(
 			Origin: mainEnv.NEXT_PUBLIC_API_URL,
 		},
 		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(DEV_AUTH_TIMEOUT_MS),
 	});
 	const data = (await res.json().catch(() => ({}))) as T | AuthErrorBody;
 	return { ok: res.ok, status: res.status, data };

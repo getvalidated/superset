@@ -24,9 +24,9 @@ export function logBootSummary(): void {
 		return;
 	}
 	console.log(
-		`[superset] disabled features (set the listed env var to enable):`,
+		`[superset] disabled features (set the listed env var(s) to enable):`,
 	);
-	for (const { label, envVar } of missing) {
-		console.log(`           - ${label.padEnd(28)} ${envVar}`);
+	for (const { label, envVars } of missing) {
+		console.log(`           - ${label.padEnd(28)} ${envVars.join(", ")}`);
 	}
 }

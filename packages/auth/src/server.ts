@@ -27,7 +27,7 @@ import type Stripe from "stripe";
 import { env } from "./env";
 import { acceptInvitationEndpoint } from "./lib/accept-invitation-endpoint";
 import { generateMagicTokenForInvite } from "./lib/generate-magic-token";
-import { invitationRateLimit } from "./lib/rate-limit";
+import { checkInvitationRateLimit } from "./lib/rate-limit";
 import { resend } from "./lib/resend";
 import {
 	resolveSessionOrganizationState,
@@ -331,12 +331,7 @@ export const auth = betterAuth({
 				beforeCreateInvitation: async (data) => {
 					const { inviterId, organizationId, role, teamId } = data.invitation;
 
-					const limit = await invitationRateLimit?.limit(inviterId);
-					if (limit && !limit.success) {
-						throw new Error(
-							"Rate limit exceeded. Max 10 invitations per hour.",
-						);
-					}
+					await checkInvitationRateLimit(inviterId);
 
 					const inviterMember = await db.query.members.findFirst({
 						where: and(

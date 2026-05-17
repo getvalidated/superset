@@ -10,7 +10,16 @@ import * as schema from "./schema";
 
 config({ path: ".env", quiet: true });
 
-const isNeon = /\.neon\.tech|neon\.build/.test(env.DATABASE_URL);
+function isNeonDatabaseUrl(value: string): boolean {
+	try {
+		const hostname = new URL(value).hostname;
+		return hostname.endsWith(".neon.tech") || hostname.endsWith(".neon.build");
+	} catch {
+		return false;
+	}
+}
+
+const isNeon = isNeonDatabaseUrl(env.DATABASE_URL);
 
 // Single canonical type — both adapters expose the same Drizzle PG surface at
 // runtime, so we narrow callers to the Neon-HTTP shape (the production path)
@@ -18,17 +27,21 @@ const isNeon = /\.neon\.tech|neon\.build/.test(env.DATABASE_URL);
 type Db = ReturnType<typeof drizzleNeonHttp<typeof schema>>;
 type DbWs = ReturnType<typeof drizzleNeonWs<typeof schema>>;
 
+const nodePgDb = isNeon
+	? null
+	: drizzleNodePg({
+			client: new pg.Pool({ connectionString: env.DATABASE_URL }),
+			schema,
+			casing: "snake_case",
+		});
+
 export const db: Db = isNeon
 	? drizzleNeonHttp({
 			client: neon(env.DATABASE_URL),
 			schema,
 			casing: "snake_case",
 		})
-	: (drizzleNodePg({
-			client: new pg.Pool({ connectionString: env.DATABASE_URL }),
-			schema,
-			casing: "snake_case",
-		}) as unknown as Db);
+	: (nodePgDb as unknown as Db);
 
 export const dbWs: DbWs = isNeon
 	? drizzleNeonWs({
@@ -36,8 +49,4 @@ export const dbWs: DbWs = isNeon
 			schema,
 			casing: "snake_case",
 		})
-	: (drizzleNodePg({
-			client: new pg.Pool({ connectionString: env.DATABASE_URL }),
-			schema,
-			casing: "snake_case",
-		}) as unknown as DbWs);
+	: (nodePgDb as unknown as DbWs);

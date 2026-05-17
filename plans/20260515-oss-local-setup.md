@@ -223,9 +223,9 @@ I shipped the deployment-profile changes without checking `gh pr checks 4616`. T
 
 End-to-end smoke test after final commit:
 
-```
+```text
 [superset] profile=local (lenient)
-[superset] disabled features (set the listed env var to enable):
+[superset] disabled features (set the listed env var(s) to enable):
            - stripe                       STRIPE_SECRET_KEY
            - resend (email)               RESEND_API_KEY
            - posthog (telemetry)          NEXT_PUBLIC_POSTHOG_KEY
@@ -235,7 +235,7 @@ End-to-end smoke test after final commit:
 ```
 
 DB sanity check confirmed the Stripe-gate fix:
-```
+```sql
 SELECT email, name, slug, stripe_customer_id FROM auth.users JOIN auth.organizations ...
 admin@local.test | Local Admin's Team | 14019d9c-team | <NULL>
 ```

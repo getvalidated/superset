@@ -30,6 +30,7 @@ export const posthog = new Proxy({} as PostHog, {
 				flushInterval: 0,
 			});
 		}
-		return Reflect.get(client, prop);
+		const value = Reflect.get(client, prop);
+		return typeof value === "function" ? value.bind(client) : value;
 	},
 });
