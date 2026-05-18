@@ -1,6 +1,6 @@
 # Local Development
 
-How to run Superset locally from a fresh clone with no Neon, OAuth, Stripe, Resend, or QStash keys. Local contributor state is isolated under `~/.superset-local-dev`, so this flow does not reuse production or canary desktop state from `~/.superset`.
+How to run Superset locally from a fresh clone with no Neon, OAuth, Stripe, Resend, or QStash keys. Local contributor state is isolated under `~/.superset-local-dev-*`, so this flow does not reuse production or canary desktop state from `~/.superset`.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ bun setup:local
 bun dev
 ```
 
-`bun setup:local` is non-destructive. It copies `.env.example`, `apps/electric-proxy/.dev.vars.example`, and `Caddyfile.example` only when the target file is missing; starts Docker Postgres/Electric; runs `caddy trust`; and applies DB migrations.
+`bun setup:local` is non-destructive for existing internal config. It copies `.env.example`, `apps/electric-proxy/.dev.vars.example`, and `Caddyfile.example` only when the target file is missing; writes worktree-specific local database settings into `.env`; starts Docker Postgres/Electric; runs `caddy trust`; and applies DB migrations.
 
 If you already have an internal `.env`, the script leaves it untouched and stops before running migrations. Do not overwrite an internal `.env` unless you intentionally want the local contributor profile.
 
@@ -31,7 +31,7 @@ bun setup:local --skip-migrate
 bun setup:local --skip-caddy-trust
 ```
 
-The generated `.env` sets `SUPERSET_PROFILE=local` and `SUPERSET_WORKSPACE_NAME=local-dev`. Missing integration keys are allowed at boot; features that need them fail cleanly when exercised.
+The generated `.env` sets `SUPERSET_PROFILE=local`. `bun setup:local` derives `SUPERSET_WORKSPACE_NAME`, `SUPERSET_LOCAL_DATABASE_NAME`, `DATABASE_URL`, and `DATABASE_URL_UNPOOLED` from the worktree path. All local worktrees share one Postgres container, but each worktree gets its own database and desktop state directory. Missing integration keys are allowed at boot; features that need them fail cleanly when exercised.
 
 That brings up:
 
@@ -54,7 +54,7 @@ On first launch in the `local` profile (when `SUPERSET_PROFILE=local` is set), t
 - **Email:** `admin@local.test`
 - **Password:** `supersetdev`
 
-If the user doesn't exist, it's created and a personal organization is provisioned automatically (`Local Admin's Team`). The encrypted auth token lands in `~/.superset-local-dev/auth-token.enc`. The renderer hydrates this token like a real OAuth user — there's no special dev-only code path in the renderer.
+If the user doesn't exist, it's created and a personal organization is provisioned automatically (`Local Admin's Team`). The encrypted auth token lands in that worktree's local desktop state directory, for example `~/.superset-local-dev-flax-soda-a1b2c3/auth-token.enc`. The renderer hydrates this token like a real OAuth user — there's no special dev-only code path in the renderer.
 
 ### Deployment profiles
 
@@ -119,7 +119,7 @@ Each is "guard, don't crash" — if you click into a feature that needs a key, y
 
 **`EADDRINUSE: address already in use :::4641`** — a previous `bun dev` is still alive. `pkill -f "turbo run dev"` and retry.
 
-**`Host service not available` toast in desktop** — the auto-sign-in didn't run or didn't persist the token. Check `~/.superset-local-dev/auth-token.enc` exists. Delete it and rerun if needed: `rm ~/.superset-local-dev/auth-token.enc && bun dev`. Also confirm the profile via `curl http://localhost:4641/api/health` returns `"profile": "local"` — if it says `internal`, you forgot to set `SUPERSET_PROFILE=local` and auto-sign-in is intentionally skipped.
+**`Host service not available` toast in desktop** — the auto-sign-in didn't run or didn't persist the token. Check the state directory printed by `bun setup:local` contains `auth-token.enc`. Delete that file and rerun if needed. Also confirm the profile via `curl http://localhost:4641/api/health` returns `"profile": "local"` — if it says `internal`, you forgot to set `SUPERSET_PROFILE=local` and auto-sign-in is intentionally skipped.
 
 **`Missing API key` for some integration** — that integration's key isn't in `.env`. Either supply it or avoid the feature.
 
@@ -133,18 +133,20 @@ Each is "guard, don't crash" — if you click into a feature that needs a key, y
 # Stop dev
 pkill -f "turbo run dev"
 
-# Wipe data (auth token, host DBs, local app state)
-rm -rf ~/.superset-local-dev
+# Wipe this worktree's local desktop state
+STATE_NAME=$(grep '^SUPERSET_WORKSPACE_NAME=' .env | cut -d= -f2)
+rm -rf "$HOME/.superset-$STATE_NAME"
 
-# Wipe Postgres + Electric (including volume)
-docker compose -f docker-compose.dev.yml down -v
-docker compose -f docker-compose.dev.yml up -d
+# Wipe only this worktree's Postgres database, then recreate it
+DB_NAME=$(grep '^SUPERSET_LOCAL_DATABASE_NAME=' .env | cut -d= -f2)
+docker exec superset-pg dropdb -U superset --if-exists "$DB_NAME"
+bun setup:local
 ```
 
 ## Architecture notes for contributors
 
 - **Deployment profiles** — `packages/shared/src/deployment-profile.ts` resolves `cloud | local | ci | internal` from env flags. Strict profiles fail boot on missing keys; lenient profiles (`local`, `ci`) let the app boot. Use `shouldSkipEnvValidation()` from this module when wiring env schemas, and `isLocalProfile()` when gating local-only behavior.
-- **Desktop state isolation** — `.env.example` sets `SUPERSET_WORKSPACE_NAME=local-dev`, so contributor runs use `~/.superset-local-dev` and do not reuse production / canary state from `~/.superset`. Local profile desktop predev also skips macOS Launch Services cleanup and protocol patching.
+- **Per-worktree local state** — `bun setup:local` rewrites `.env` to use a worktree-specific `SUPERSET_WORKSPACE_NAME`, `SUPERSET_LOCAL_DATABASE_NAME`, and local Postgres URLs. Local worktrees share one Docker Postgres container on port 5433, but not a database, auth sessions, JWKS rows, or desktop state. Local profile desktop predev also skips macOS Launch Services cleanup and protocol patching.
 - **DB driver swap** — `packages/db/src/client.ts` detects whether `DATABASE_URL` is a Neon host (`*.neon.tech`, `*.neon.build`) and uses Drizzle's `neon-http` adapter for cloud, or `node-postgres` for any other Postgres (including the local Docker one).
 - **Dev auto-sign-in** — `apps/desktop/src/main/lib/dev-auto-sign-in.ts` runs once during `app.whenReady()` only in the `local` profile. POSTs to `/api/auth/sign-in/email` (auto-signs-up if user doesn't exist), persists the token via the same `saveToken()` that OAuth uses. The renderer doesn't know dev mode exists.
 - **Renderer organization selection** — pages prefer `session.activeOrganizationId` from Better Auth, falling back to `MOCK_ORG_ID` only if there's no session at all. Make sure new code that needs `activeOrganizationId` follows this same priority (real session first).

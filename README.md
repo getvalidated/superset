@@ -97,7 +97,7 @@ bun setup:local
 bun dev
 ```
 
-`bun setup:local` copies local examples, starts Docker Postgres/Electric, trusts Caddy's local CA, and runs migrations. It does not overwrite existing files. The desktop window opens auto-signed-in as `admin@local.test`, with state isolated under `~/.superset-local-dev` so source builds do not reuse production or canary desktop state. See [Local Development](docs/LOCAL_DEVELOPMENT.md) for details and troubleshooting.
+`bun setup:local` copies local examples, assigns this worktree its own local database and desktop state, starts Docker Postgres/Electric, trusts Caddy's local CA, and runs migrations. It does not overwrite internal `.env` files. The desktop window opens auto-signed-in as `admin@local.test`, with state isolated under `~/.superset-local-dev-*` so source builds do not reuse production or canary desktop state. See [Local Development](docs/LOCAL_DEVELOPMENT.md) for details and troubleshooting.
 
 To build a distributable desktop app:
 

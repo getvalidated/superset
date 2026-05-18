@@ -26,6 +26,10 @@ interface AuthErrorBody {
 	message?: string;
 }
 
+interface SessionResponse {
+	user?: unknown;
+}
+
 async function postAuth<T>(
 	path: string,
 	body: Record<string, unknown>,
@@ -60,6 +64,24 @@ async function waitForApiReady(): Promise<boolean> {
 	return false;
 }
 
+async function isStoredTokenValid(token: string): Promise<boolean> {
+	try {
+		const res = await fetch(
+			`${mainEnv.NEXT_PUBLIC_API_URL}/api/auth/get-session`,
+			{
+				headers: { Authorization: `Bearer ${token}` },
+				signal: AbortSignal.timeout(DEV_AUTH_TIMEOUT_MS),
+			},
+		);
+		if (!res.ok) return false;
+
+		const data = (await res.json().catch(() => null)) as SessionResponse | null;
+		return !!data?.user;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Dev-only: in the local profile, sign in (or sign up) as the seed
  * admin user and persist the token so the renderer's AuthProvider can
@@ -75,8 +97,22 @@ export async function ensureDevAuthToken(): Promise<void> {
 
 	const stored = await loadToken();
 	if (stored.token && stored.expiresAt) {
-		const isExpired = new Date(stored.expiresAt) < new Date();
-		if (!isExpired) return;
+		const expiresAt = new Date(stored.expiresAt);
+		const isExpired =
+			Number.isNaN(expiresAt.getTime()) || expiresAt < new Date();
+		if (!isExpired) {
+			const ready = await waitForApiReady();
+			if (!ready) {
+				console.warn(
+					`[dev-auto-sign-in] API at ${mainEnv.NEXT_PUBLIC_API_URL} did not respond within ${HEALTH_POLL_TIMEOUT_MS}ms — skipping. Use the sign-in form once the API is up.`,
+				);
+				return;
+			}
+
+			if (await isStoredTokenValid(stored.token)) return;
+
+			console.log("[dev-auto-sign-in] stored token is stale; refreshing");
+		}
 	}
 
 	const ready = await waitForApiReady();

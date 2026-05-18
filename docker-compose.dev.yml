@@ -4,7 +4,7 @@
 # can talk to both immediately. Internal devs use `.superset/setup.sh`
 # instead (Neon branches + per-workspace Electric containers).
 #
-#   docker compose -f docker-compose.dev.yml up -d
+#   bun setup:local
 #
 # See docs/LOCAL_DEVELOPMENT.md for full setup.
 
@@ -36,8 +36,8 @@ services:
         condition: service_healthy
     environment:
       # Docker Desktop exposes host.docker.internal so Electric can reach
-      # Postgres through the host's stable 5433 port.
-      DATABASE_URL: postgres://superset:superset@host.docker.internal:5433/superset
+      # the worktree-specific database through the host's stable 5433 port.
+      DATABASE_URL: postgres://superset:superset@host.docker.internal:5433/${SUPERSET_LOCAL_DATABASE_NAME:-superset}
       ELECTRIC_SECRET: local_electric_dev_secret
     ports:
       - "4649:3000"
