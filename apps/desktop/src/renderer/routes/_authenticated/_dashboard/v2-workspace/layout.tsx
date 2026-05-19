@@ -51,6 +51,9 @@ function V2WorkspaceLayout() {
 	);
 	const workspace = workspaces?.[0] ?? null;
 	const failedEntry = failedEntries?.[0] ?? null;
+	const canUseWorkspace =
+		workspace !== null &&
+		(workspace.$synced === true || pendingTransaction?.type === "update");
 
 	useEffect(() => {
 		if (workspace?.$synced === true && pendingTransaction?.type === "insert") {
@@ -62,15 +65,15 @@ function V2WorkspaceLayout() {
 	useEffect(() => {
 		if (
 			!workspace ||
-			isCreatePending ||
+			!canUseWorkspace ||
 			lastEnsuredWorkspaceIdRef.current === workspace.id
 		)
 			return;
 		lastEnsuredWorkspaceIdRef.current = workspace.id;
 		ensureWorkspaceInSidebar(workspace.id, workspace.projectId);
-	}, [ensureWorkspaceInSidebar, workspace, isCreatePending]);
+	}, [ensureWorkspaceInSidebar, workspace, canUseWorkspace]);
 
-	const hostStatus = useRemoteHostStatus(isCreatePending ? null : workspace);
+	const hostStatus = useRemoteHostStatus(canUseWorkspace ? workspace : null);
 
 	if (!workspaceId || !isReady || !workspaces) {
 		return <div className="flex h-full w-full" />;
@@ -91,6 +94,10 @@ function V2WorkspaceLayout() {
 				startedAt={new Date(workspace.createdAt).getTime()}
 			/>
 		);
+	}
+
+	if (!canUseWorkspace) {
+		return <div className="flex h-full w-full" />;
 	}
 
 	if (hostStatus.status === "incompatible") {

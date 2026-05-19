@@ -1,9 +1,9 @@
 import { create } from "zustand";
 
 export type WorkspaceTransactionType = "insert" | "update" | "delete";
-export type WorkspaceTransactionState =
-	| "pending"
-	| "persisting"
+export type WorkspaceTransactionState = "pending" | "persisting";
+export type TrackableWorkspaceTransactionState =
+	| WorkspaceTransactionState
 	| "completed"
 	| "failed";
 
@@ -18,7 +18,7 @@ export interface WorkspaceTransactionSnapshot {
 
 interface TrackableWorkspaceTransaction {
 	id: string;
-	state: WorkspaceTransactionState;
+	state: TrackableWorkspaceTransactionState;
 	createdAt: Date;
 	mutations: Array<{ type: WorkspaceTransactionType }>;
 	isPersisted: {
@@ -41,6 +41,9 @@ export const useWorkspaceTransactionsStore = create<WorkspaceTransactionsState>(
 		track: (workspaceId, transaction) => {
 			const mutation = transaction.mutations[0];
 			if (!mutation) return;
+			if (transaction.state === "completed" || transaction.state === "failed") {
+				return;
+			}
 
 			const writeSnapshot = (state: WorkspaceTransactionState) => {
 				set((current) => ({
@@ -59,18 +62,15 @@ export const useWorkspaceTransactionsStore = create<WorkspaceTransactionsState>(
 			};
 
 			writeSnapshot(transaction.state);
-			queueMicrotask(() => writeSnapshot(transaction.state));
 
 			void transaction.isPersisted.promise.then(
 				() => {
 					if (get().byWorkspaceId[workspaceId]?.id === transaction.id) {
-						writeSnapshot("completed");
 						get().clear(workspaceId);
 					}
 				},
 				() => {
 					if (get().byWorkspaceId[workspaceId]?.id === transaction.id) {
-						writeSnapshot("failed");
 						get().clear(workspaceId);
 					}
 				},

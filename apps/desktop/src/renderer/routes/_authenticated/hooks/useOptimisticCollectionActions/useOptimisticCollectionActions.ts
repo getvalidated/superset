@@ -4,14 +4,14 @@ import { useCallback, useMemo } from "react";
 import { isDesktopChatDevMode } from "renderer/lib/dev-chat";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import {
+	type TrackableWorkspaceTransactionState,
 	useWorkspaceTransactionsStore,
-	type WorkspaceTransactionState,
 	type WorkspaceTransactionType,
 } from "renderer/stores/workspace-creates";
 
 export type PersistableTransaction = {
 	id: string;
-	state: WorkspaceTransactionState;
+	state: TrackableWorkspaceTransactionState;
 	createdAt: Date;
 	mutations: Array<{ type: WorkspaceTransactionType }>;
 	isPersisted: {
