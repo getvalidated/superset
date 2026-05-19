@@ -209,6 +209,35 @@ describe("stripTerminalRuntimeEnv", () => {
 		expect(result.EDITOR).toBe("vim");
 	});
 
+	test("launchctl-injected user credentials pass through", () => {
+		const env: Record<string, string> = {
+			HOME: "/Users/test",
+			DD_API_KEY: "dd-launchctl-key",
+			DD_APP_KEY: "dd-app-key",
+			DATADOG_SITE: "datadoghq.com",
+			OPENAI_API_KEY: "sk-user",
+			ANTHROPIC_API_KEY: "ant-user",
+			GITHUB_TOKEN: "ghp_user",
+		};
+		const result = stripTerminalRuntimeEnv(env);
+		expect(result.DD_API_KEY).toBe("dd-launchctl-key");
+		expect(result.DD_APP_KEY).toBe("dd-app-key");
+		expect(result.DATADOG_SITE).toBe("datadoghq.com");
+		expect(result.OPENAI_API_KEY).toBe("sk-user");
+		expect(result.ANTHROPIC_API_KEY).toBe("ant-user");
+		expect(result.GITHUB_TOKEN).toBe("ghp_user");
+	});
+
+	test("RELAY_URL is stripped (desktop-injected during host-service spawn)", () => {
+		const env: Record<string, string> = {
+			HOME: "/Users/test",
+			RELAY_URL: "https://relay.example.com",
+		};
+		const result = stripTerminalRuntimeEnv(env);
+		expect(result.RELAY_URL).toBeUndefined();
+		expect(result.HOME).toBe("/Users/test");
+	});
+
 	test("explicit Superset support keys are kept", () => {
 		const result = stripTerminalRuntimeEnv(secretsEnv);
 		expect(result.SUPERSET_HOME_DIR).toBe("/Users/test/.superset");
