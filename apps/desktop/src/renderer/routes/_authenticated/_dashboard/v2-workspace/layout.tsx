@@ -4,6 +4,7 @@ import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useWorkspaceTransactionsStore } from "renderer/stores/workspace-creates";
 import { WorkspaceCreateErrorState } from "./components/WorkspaceCreateErrorState";
 import { WorkspaceCreatingState } from "./components/WorkspaceCreatingState";
 import { WorkspaceHostIncompatibleState } from "./components/WorkspaceHostIncompatibleState";
@@ -26,6 +27,13 @@ function V2WorkspaceLayout() {
 		workspaceMatch !== false ? workspaceMatch.workspaceId : null;
 	const collections = useCollections();
 	const { ensureWorkspaceInSidebar } = useDashboardSidebarState();
+	const pendingTransaction = useWorkspaceTransactionsStore((state) =>
+		workspaceId ? (state.byWorkspaceId[workspaceId] ?? null) : null,
+	);
+	const clearWorkspaceTransaction = useWorkspaceTransactionsStore(
+		(state) => state.clear,
+	);
+	const isCreatePending = pendingTransaction?.type === "insert";
 
 	const { data: workspaces, isReady } = useLiveQuery(
 		(q) =>
@@ -43,21 +51,26 @@ function V2WorkspaceLayout() {
 	);
 	const workspace = workspaces?.[0] ?? null;
 	const failedEntry = failedEntries?.[0] ?? null;
-	const isSynced = workspace?.$synced === true;
+
+	useEffect(() => {
+		if (workspace?.$synced === true) {
+			clearWorkspaceTransaction(workspace.id);
+		}
+	}, [clearWorkspaceTransaction, workspace]);
 
 	const lastEnsuredWorkspaceIdRef = useRef<string | null>(null);
 	useEffect(() => {
 		if (
 			!workspace ||
-			!isSynced ||
+			isCreatePending ||
 			lastEnsuredWorkspaceIdRef.current === workspace.id
 		)
 			return;
 		lastEnsuredWorkspaceIdRef.current = workspace.id;
 		ensureWorkspaceInSidebar(workspace.id, workspace.projectId);
-	}, [ensureWorkspaceInSidebar, workspace, isSynced]);
+	}, [ensureWorkspaceInSidebar, workspace, isCreatePending]);
 
-	const hostStatus = useRemoteHostStatus(isSynced ? workspace : null);
+	const hostStatus = useRemoteHostStatus(isCreatePending ? null : workspace);
 
 	if (!workspaceId || !isReady || !workspaces) {
 		return <div className="flex h-full w-full" />;
@@ -70,7 +83,7 @@ function V2WorkspaceLayout() {
 		return <WorkspaceNotFoundState workspaceId={workspaceId} />;
 	}
 
-	if (!isSynced) {
+	if (isCreatePending) {
 		return (
 			<WorkspaceCreatingState
 				name={workspace.name}
