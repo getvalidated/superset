@@ -18,6 +18,7 @@ import { useV2AgentChoices } from "renderer/hooks/useV2AgentChoices";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { DevicePicker } from "renderer/routes/_authenticated/components/DashboardNewWorkspaceModal/components/DashboardNewWorkspaceForm/components/DevicePicker";
 import { useWorkspaceHostOptions } from "renderer/routes/_authenticated/components/DashboardNewWorkspaceModal/components/DashboardNewWorkspaceForm/components/DevicePicker/hooks/useWorkspaceHostOptions/useWorkspaceHostOptions";
+import { AGENT_STORAGE_KEY as V2_WORKSPACE_AGENT_STORAGE_KEY } from "renderer/routes/_authenticated/components/DashboardNewWorkspaceModal/components/DashboardNewWorkspaceForm/PromptGroup/types";
 import { hideAll as hideAllTippy } from "tippy.js";
 import { useProjectFileSearch } from "../../hooks/useProjectFileSearch";
 import { useRecentProjects } from "../../hooks/useRecentProjects";
@@ -55,7 +56,11 @@ export function CreateAutomationDialog({
 	const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
 		null,
 	);
-	const [agent, setAgent] = useState<string | null>(null);
+	const [agent, setAgent] = useState<string | null>(() => {
+		if (typeof window === "undefined") return null;
+		const stored = window.localStorage.getItem(V2_WORKSPACE_AGENT_STORAGE_KEY);
+		return stored && stored !== "none" ? stored : null;
+	});
 	const [rrule, setRrule] = useState(DEFAULT_RRULE);
 	const [v2WorkspaceId, setV2WorkspaceId] = useState<string | null>(null);
 
@@ -75,7 +80,15 @@ export function CreateAutomationDialog({
 
 	useEffect(() => {
 		if (agent && hostAgents.some((option) => option.id === agent)) return;
-		const fallback = hostAgents[0]?.id ?? null;
+		const stored =
+			typeof window !== "undefined"
+				? window.localStorage.getItem(V2_WORKSPACE_AGENT_STORAGE_KEY)
+				: null;
+		const storedMatch =
+			stored && stored !== "none"
+				? hostAgents.find((option) => option.id === stored)?.id
+				: undefined;
+		const fallback = storedMatch ?? hostAgents[0]?.id ?? null;
 		if (fallback !== agent) setAgent(fallback);
 	}, [agent, hostAgents]);
 
