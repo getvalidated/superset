@@ -24,6 +24,7 @@ import type {
 	SelectV2Workspace,
 	SelectWorkspace,
 } from "@superset/db/schema";
+import type { AppRouter as HostServiceAppRouter } from "@superset/host-service";
 import type { AppRouter } from "@superset/trpc";
 import { BasicIndex } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
@@ -40,8 +41,10 @@ import {
 	localStorageCollectionOptions,
 } from "@tanstack/react-db";
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
+import type { inferRouterOutputs } from "@trpc/server";
 import { env } from "renderer/env.renderer";
 import { getAuthToken, getJwt } from "renderer/lib/auth-client";
+import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import superjson from "superjson";
 import { z } from "zod";
 import {
@@ -49,6 +52,8 @@ import {
 	type DashboardSidebarSectionRow,
 	dashboardSidebarProjectSchema,
 	dashboardSidebarSectionSchema,
+	type FailedWorkspaceCreateRow,
+	failedWorkspaceCreateSchema,
 	healV2UserPreferences,
 	healWorkspaceLocalState,
 	type V2TerminalPresetRow,
@@ -56,6 +61,7 @@ import {
 	v2TerminalPresetSchema,
 	v2UserPreferencesSchema,
 	type WorkspaceLocalStateRow,
+	type WorkspacesCreateInput,
 	workspaceLocalStateSchema,
 } from "./dashboardSidebarLocal";
 import { withReadHeal } from "./withReadHeal";
@@ -69,6 +75,16 @@ export const ELECTRIC_WRITE_SYNC_TIMEOUT_MS = 30_000;
 function electricTxidMatch(txid: unknown) {
 	if (typeof txid !== "number") return undefined;
 	return { txid, timeout: ELECTRIC_WRITE_SYNC_TIMEOUT_MS };
+}
+
+type HostWorkspacesCreateResult =
+	inferRouterOutputs<HostServiceAppRouter>["workspaces"]["create"];
+
+export interface WorkspaceCreateMutationMetadata {
+	hostUrl: string;
+	input: WorkspacesCreateInput;
+	result?: HostWorkspacesCreateResult;
+	[key: string]: unknown;
 }
 
 const persistence = createElectronSQLitePersistence({
@@ -174,6 +190,13 @@ export interface OrgCollections {
 		LocalStorageCollectionUtils,
 		typeof v2UserPreferencesSchema,
 		z.input<typeof v2UserPreferencesSchema>
+	>;
+	failedWorkspaceCreates: Collection<
+		FailedWorkspaceCreateRow,
+		string,
+		LocalStorageCollectionUtils,
+		typeof failedWorkspaceCreateSchema,
+		z.input<typeof failedWorkspaceCreateSchema>
 	>;
 }
 
@@ -424,6 +447,14 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				columnMapper,
 			},
 			getKey: (item) => item.id,
+			onInsert: async ({ transaction }) => {
+				const metadata = transaction.mutations[0]
+					.metadata as WorkspaceCreateMutationMetadata;
+				const client = getHostServiceClientByUrl(metadata.hostUrl);
+				const result = await client.workspaces.create.mutate(metadata.input);
+				metadata.result = result;
+				return electricTxidMatch(result.txid);
+			},
 			onUpdate: async ({ transaction }) => {
 				const { original, changes } = transaction.mutations[0];
 				const { branch, hostId, name, taskId } = changes;
@@ -788,6 +819,15 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		),
 	);
 
+	const failedWorkspaceCreates = createIndexedCollection(
+		localStorageCollectionOptions({
+			id: `failed_workspace_creates-${organizationId}`,
+			storageKey: `failed-workspace-creates-${organizationId}`,
+			schema: failedWorkspaceCreateSchema,
+			getKey: (item) => item.id,
+		}),
+	);
+
 	return {
 		tasks,
 		taskStatuses,
@@ -817,6 +857,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		v2SidebarSections,
 		v2TerminalPresets,
 		v2UserPreferences,
+		failedWorkspaceCreates,
 	};
 }
 

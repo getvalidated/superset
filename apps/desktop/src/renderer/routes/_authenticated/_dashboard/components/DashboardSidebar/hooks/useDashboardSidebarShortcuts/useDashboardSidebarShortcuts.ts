@@ -57,7 +57,7 @@ export function useDashboardSidebarShortcuts(
 		() =>
 			groups
 				.flatMap((project) => getProjectChildrenWorkspaces(project.children))
-				.filter((workspace) => !workspace.creationStatus),
+				.filter((workspace) => workspace.isSynced),
 		[groups],
 	);
 	const workspaceShortcutLabels =
