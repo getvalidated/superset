@@ -746,7 +746,7 @@ describe("v2Project.create — GitHub avatar auto-hydration", () => {
 			code: "BAD_REQUEST",
 			message: "Could not parse GitHub remote URL",
 		});
-		expect(dbInsert).not.toHaveBeenCalled();
+		expect(txInsert).not.toHaveBeenCalled();
 		expect(fetchAndStoreGitHubAvatarMock).not.toHaveBeenCalled();
 	});
 
@@ -759,7 +759,7 @@ describe("v2Project.create — GitHub avatar auto-hydration", () => {
 			code: "FORBIDDEN",
 			message: "Not a member of this organization",
 		});
-		expect(dbInsert).not.toHaveBeenCalled();
+		expect(txInsert).not.toHaveBeenCalled();
 	});
 
 	it("returns the inserted project immediately and kicks off background avatar hydration", async () => {
