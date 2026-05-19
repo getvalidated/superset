@@ -53,10 +53,10 @@ function V2WorkspaceLayout() {
 	const failedEntry = failedEntries?.[0] ?? null;
 
 	useEffect(() => {
-		if (workspace?.$synced === true) {
+		if (workspace?.$synced === true && pendingTransaction?.type === "insert") {
 			clearWorkspaceTransaction(workspace.id);
 		}
-	}, [clearWorkspaceTransaction, workspace]);
+	}, [clearWorkspaceTransaction, pendingTransaction, workspace]);
 
 	const lastEnsuredWorkspaceIdRef = useRef<string | null>(null);
 	useEffect(() => {

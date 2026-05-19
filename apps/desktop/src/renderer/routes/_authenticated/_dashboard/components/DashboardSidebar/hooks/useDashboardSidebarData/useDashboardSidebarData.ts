@@ -292,7 +292,8 @@ export function useDashboardSidebarData() {
 			...rawSidebarWorkspaces,
 			...rawLocalMainWorkspaces,
 		]) {
-			if (workspace.isSynced && workspaceTransactionsById[workspace.id]) {
+			const transaction = workspaceTransactionsById[workspace.id];
+			if (workspace.isSynced && transaction?.type === "insert") {
 				clearWorkspaceTransaction(workspace.id);
 			}
 		}
