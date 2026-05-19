@@ -1,4 +1,8 @@
-import { snakeCamelMapper } from "@electric-sql/client";
+import {
+	FetchError,
+	type ShapeStreamOptions,
+	snakeCamelMapper,
+} from "@electric-sql/client";
 import type {
 	SelectAgentCommand,
 	SelectAutomation,
@@ -43,7 +47,12 @@ import {
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import type { inferRouterOutputs } from "@trpc/server";
 import { env } from "renderer/env.renderer";
-import { getAuthToken, getJwt } from "renderer/lib/auth-client";
+import {
+	authClient,
+	getAuthToken,
+	getJwt,
+	setJwt,
+} from "renderer/lib/auth-client";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import superjson from "superjson";
 import { z } from "zod";
@@ -228,6 +237,24 @@ const electricHeaders = {
 	},
 };
 
+type ElectricSyncErrorHandler = NonNullable<ShapeStreamOptions["onError"]>;
+
+const handleElectricSyncError: ElectricSyncErrorHandler = async (error) => {
+	if (error instanceof FetchError && error.status === 401) {
+		try {
+			const result = await authClient.token();
+			if (result.data?.token) {
+				setJwt(result.data.token);
+			}
+		} catch (refreshError) {
+			console.error("[collections] JWT refresh after 401 failed", refreshError);
+		}
+	} else {
+		console.error("[collections] Electric sync error", error);
+	}
+	return {};
+};
+
 const organizationsCollection = createPersistedElectricCollection(
 	electricCollectionOptions<SelectOrganization>({
 		id: "organizations",
@@ -236,6 +263,7 @@ const organizationsCollection = createPersistedElectricCollection(
 			params: { table: "auth.organizations" },
 			headers: electricHeaders,
 			columnMapper,
+			onError: handleElectricSyncError,
 		},
 		getKey: (item) => item.id,
 	}),
@@ -253,6 +281,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 			onUpdate: async ({ transaction }) => {
@@ -282,6 +311,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -298,6 +328,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -314,6 +345,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 			onUpdate: async ({ transaction }) => {
@@ -350,6 +382,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			// Composite PK on (organization_id, machine_id); within an
 			// org-scoped collection, machineId alone is unique.
@@ -380,6 +413,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			// Composite PK on (organization_id, user_id, machine_id); within
 			// an org-scoped collection, (user_id, machine_id) is unique.
@@ -398,6 +432,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => `${item.userId}:${item.hostId}`,
 			onInsert: async ({ transaction }) => {
@@ -445,6 +480,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 			onInsert: async ({ transaction }) => {
@@ -487,6 +523,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -503,6 +540,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -519,6 +557,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -535,6 +574,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -551,6 +591,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -567,6 +608,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -583,6 +625,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 			onUpdate: async ({ transaction }) => {
@@ -607,6 +650,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -623,6 +667,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -639,6 +684,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -655,6 +701,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 			onDelete: async ({ transaction }) => {
@@ -681,6 +728,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -697,6 +745,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -713,6 +762,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
@@ -729,6 +779,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				},
 				headers: electricHeaders,
 				columnMapper,
+				onError: handleElectricSyncError,
 			},
 			getKey: (item) => item.id,
 		}),
