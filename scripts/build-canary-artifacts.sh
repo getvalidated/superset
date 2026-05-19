@@ -13,10 +13,12 @@ if [ -z "$WORKFLOW_REF" ]; then
   BUILD_REF_ARGS=(-f build_ref="$WORKFLOW_SHA")
 fi
 
+DISPATCH_USER="$(gh api user --jq '.login')"
 DISPATCHED_AFTER="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 RUN_LIST_ARGS=(
   --workflow="$WORKFLOW"
   --event workflow_dispatch
+  --user "$DISPATCH_USER"
   --branch "$WORKFLOW_REF"
   --created ">=$DISPATCHED_AFTER"
   --limit=1
