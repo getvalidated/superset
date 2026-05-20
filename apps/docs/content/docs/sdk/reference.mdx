@@ -244,10 +244,12 @@ const { sessionId } = await client.agents.run({
 
 Recurring agent runs scheduled by RRULE. Requires a Pro subscription on the org for `create` / `update` / `delete`.
 
-### `automations.list()`
+### `automations.list(params?)`
 
 ```ts
 const automations = await client.automations.list();
+// or filter by case-insensitive substring on name:
+const triage = await client.automations.list({ name: 'triage' });
 ```
 
 Each row is an `AutomationSummary` — the `prompt` body is omitted (it can be
