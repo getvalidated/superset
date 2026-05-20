@@ -23,6 +23,8 @@ type TerminalServerMessage =
 	| { type: "exit"; exitCode: number; signal: number }
 	| { type: "title"; title: string | null };
 
+export type TerminalExitListener = (exitCode: number, signal: number) => void;
+
 export interface TerminalTransport {
 	socket: WebSocket | null;
 	connectionState: ConnectionState;
@@ -32,6 +34,12 @@ export interface TerminalTransport {
 	onDataDisposable: { dispose(): void } | null;
 	stateListeners: Set<() => void>;
 	titleListeners: Set<() => void>;
+	/**
+	 * Fires once the server reports the PTY exited. Lets the pane react (e.g.
+	 * close itself on a clean `exit`) instead of leaving a "[terminal] exited"
+	 * line in the buffer with no way to dismiss it.
+	 */
+	exitListeners: Set<TerminalExitListener>;
 	/**
 	 * Transport-level status log (WebSocket close/error/reconnect notices).
 	 * Surfaced to the pane UI instead of being written into the xterm buffer,
@@ -145,6 +153,7 @@ export function createTransport(): TerminalTransport {
 		onDataDisposable: null,
 		stateListeners: new Set(),
 		titleListeners: new Set(),
+		exitListeners: new Set(),
 		logs: [],
 		logListeners: new Set(),
 		_reconnectTimer: null,
@@ -342,9 +351,21 @@ function attachSocketListeners(
 		if (message.type === "exit") {
 			transport._terminated = true;
 			cancelReconnect(transport);
-			terminal.writeln(
-				`\r\n[terminal] exited with code ${message.exitCode} (signal ${message.signal})`,
-			);
+			// Clean exit (typing `exit`, or a `&& exit`-style chain): stay silent
+			// and let the pane close itself via the exit listeners. Issue #4757.
+			const isCleanExit = message.exitCode === 0 && message.signal === 0;
+			if (!isCleanExit) {
+				terminal.writeln(
+					`\r\n[terminal] exited with code ${message.exitCode} (signal ${message.signal})`,
+				);
+			}
+			for (const listener of transport.exitListeners) {
+				try {
+					listener(message.exitCode, message.signal);
+				} catch (err) {
+					console.warn("[terminal] exit listener threw:", err);
+				}
+			}
 		}
 	});
 
@@ -441,6 +462,7 @@ export function disposeTransport(transport: TerminalTransport) {
 		transport._titleNotifyTimer = null;
 	}
 	transport.titleListeners.clear();
+	transport.exitListeners.clear();
 	transport.logs = [];
 	transport.logListeners.clear();
 }
