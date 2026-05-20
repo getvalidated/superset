@@ -100,6 +100,17 @@ Soft-delete a task.
 await client.tasks.delete(id);
 ```
 
+### `tasks.statuses.list()`
+
+List the task statuses (workflow states) configured for the active organization, in display order. Useful for resolving status ids before [`tasks.create`](#taskscreatebody) or [`tasks.update`](#tasksupdatebody).
+
+```ts
+const statuses = await client.tasks.statuses.list();
+const todo = statuses.find((s) => s.type === 'unstarted');
+```
+
+Returns `Array<TaskStatus>` — each entry is `{ id, name, color, type, position }`.
+
 ---
 
 ## workspaces
@@ -145,6 +156,16 @@ Returns a `WorkspaceCreateResult`:
 - `workspace` — the created workspace row (`id`, `name`, `branch`, `hostId`, `projectId`, `type`, `taskId`, …).
 - `terminals` — terminals opened on the host (`{ terminalId, label? }`).
 - `agents` — one entry per agent in the request (empty if `agents` was omitted). Each entry is either `{ ok: true, kind: 'terminal' | 'chat', sessionId, label }` or `{ ok: false, error }`.
+
+### `workspaces.update(id, params)`
+
+Update fields on an existing workspace. Currently only `name` is exposed — moving a workspace to a different branch or host requires host-side orchestration and is not safe to drive from the cloud API directly.
+
+```ts
+await client.workspaces.update('<workspaceId>', { name: 'wire-up-auth-v2' });
+```
+
+Returns the updated workspace row (`id`, `name`, `branch`, `hostId`, `projectId`, `type`, `taskId`, …).
 
 ### `workspaces.delete(id, opts?)`
 
