@@ -159,7 +159,7 @@ Returns a `WorkspaceCreateResult`:
 
 ### `workspaces.update(id, params)`
 
-Update fields on an existing workspace. Currently only `name` is exposed — moving a workspace to a different branch or host requires host-side orchestration and is not safe to drive from the cloud API directly.
+Update fields on an existing workspace. Moving a workspace to a different branch or host requires host-side orchestration and is not safe to drive from the cloud API directly.
 
 ```ts
 await client.workspaces.update('<workspaceId>', { name: 'wire-up-auth-v2' });

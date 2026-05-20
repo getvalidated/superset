@@ -16,7 +16,7 @@ export default command({
 			throw new CLIError("No active organization", "Run: superset auth login");
 		}
 
-		if (options.taskId && options.clearTask) {
+		if (options.taskId !== undefined && options.clearTask) {
 			throw new CLIError(
 				"Cannot combine --task-id and --clear-task",
 				"Pass one or the other",
