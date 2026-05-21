@@ -6,7 +6,8 @@ usage() {
 Usage: bun run release:canary -- [--skip-signing] [commit]
 
 Options:
-  --skip-signing        Build the macOS canary artifact without code signing or notarization.
+  --skip-signing        Build unsigned macOS artifacts for manual testing only.
+                        Unsigned builds do not update the desktop-canary release feed.
   -h, --help            Show this help message.
 
 Examples:
