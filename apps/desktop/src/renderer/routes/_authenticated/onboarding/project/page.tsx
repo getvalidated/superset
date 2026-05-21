@@ -48,8 +48,11 @@ function OnboardingProjectPage() {
 			toast.error("Could not finish onboarding. Please try again.");
 			return;
 		}
+		// Land on the dashboard first, then open the modal. Opening it in the same
+		// tick as navigate mounts the Dialog mid-route-transition, which thrashes
+		// Radix's ref composition into a "Maximum update depth" loop.
+		await navigate({ to: "/v2-workspaces", replace: true });
 		openNewWorkspaceModal(projectId);
-		navigate({ to: "/v2-workspaces", replace: true });
 	};
 
 	const handleOpenFolder = async () => {
