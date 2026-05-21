@@ -34,44 +34,6 @@ Superset is a macOS app for running many CLI coding agents in parallel. Each age
 - **Local-first** — worktrees, file edits, and agent processes run on your machine. Your code and git history never leave it.
 - **Bring your own keys** — Superset doesn't proxy or resell agents. They use the subscriptions and API keys you already have.
 
-## Features
-
-### Parallel agents in isolated git worktrees
-
-Each task runs in its own git worktree off the same repository — shared object store, independent branch and working directory. Agents install dependencies and run tests without touching each other or your main checkout.
-
-### Notifications when an agent needs you
-
-Superset watches every workspace and pings you the moment an agent asks a question or finishes. The sidebar shows every workspace's state at a glance, so you jump straight to the one that needs you.
-
-### Built-in diff review and inline editing
-
-Every workspace has a diff view for uncommitted, staged, and last-turn changes. Edit and commit in-app — or hand the worktree to VS Code, Cursor, Zed, or your terminal in one click.
-
-### Reproducible workspace setup
-
-A `.superset/config.json` defines what runs on create and destroy — copy `.env`, install dependencies, run migrations, tear down branches. New workspaces come up identical to your main checkout in seconds.
-
-## Supported Agents
-
-These agents run out of the box — no per-agent configuration:
-
-|  |  |  |
-|:--|:--|:--|
-| <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/claude.svg" /> &nbsp;[Claude Code](https://github.com/anthropics/claude-code) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/codex-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/codex.svg" /></picture> &nbsp;[OpenAI Codex CLI](https://github.com/openai/codex) | <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/cursor.svg" /> &nbsp;[Cursor Agent](https://docs.cursor.com/agent) |
-| <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/gemini.svg" /> &nbsp;[Gemini CLI](https://github.com/google-gemini/gemini-cli) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/copilot-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/copilot.svg" /></picture> &nbsp;[GitHub Copilot](https://github.com/features/copilot) | <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/amp.svg" /> &nbsp;[Amp Code](https://ampcode.com/) |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/mastracode-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/mastracode.svg" /></picture> &nbsp;[Mastracode](https://code.mastra.ai/) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/opencode-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/opencode.svg" /></picture> &nbsp;[OpenCode](https://github.com/opencode-ai/opencode) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/pi-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/pi.svg" /></picture> &nbsp;[Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) |
-
-**Plus any other CLI agent** — if it runs in a terminal, it runs on Superset.
-
-## What runs locally
-
-Superset runs on your machine. Your code, git worktrees, and agent processes never leave it.
-
-- **Local** — every git worktree, file edit, diff, and agent process runs as a local process on your Mac. Your source code is never uploaded.
-- **Account** — Superset requires a free account (GitHub or Google sign-in). The hosted backend stores only your account and workspace metadata — names, branches, status — to sync state across sessions.
-- **Your agents** — Superset doesn't proxy your agents; they use whatever subscriptions or API keys you've already configured.
-
 ## Getting Started
 
 > [!NOTE]
@@ -140,6 +102,44 @@ open apps/desktop/release
 ```
 
 </details>
+
+## Features
+
+### Parallel agents in isolated git worktrees
+
+Each task runs in its own git worktree off the same repository — shared object store, independent branch and working directory. Agents install dependencies and run tests without touching each other or your main checkout.
+
+### Notifications when an agent needs you
+
+Superset watches every workspace and pings you the moment an agent asks a question or finishes. The sidebar shows every workspace's state at a glance, so you jump straight to the one that needs you.
+
+### Built-in diff review and inline editing
+
+Every workspace has a diff view for uncommitted, staged, and last-turn changes. Edit and commit in-app — or hand the worktree to VS Code, Cursor, Zed, or your terminal in one click.
+
+### Reproducible workspace setup
+
+A `.superset/config.json` defines what runs on create and destroy — copy `.env`, install dependencies, run migrations, tear down branches. New workspaces come up identical to your main checkout in seconds.
+
+## Supported Agents
+
+These agents run out of the box — no per-agent configuration:
+
+|  |  |  |
+|:--|:--|:--|
+| <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/claude.svg" /> &nbsp;[Claude Code](https://github.com/anthropics/claude-code) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/codex-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/codex.svg" /></picture> &nbsp;[OpenAI Codex CLI](https://github.com/openai/codex) | <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/cursor.svg" /> &nbsp;[Cursor Agent](https://docs.cursor.com/agent) |
+| <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/gemini.svg" /> &nbsp;[Gemini CLI](https://github.com/google-gemini/gemini-cli) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/copilot-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/copilot.svg" /></picture> &nbsp;[GitHub Copilot](https://github.com/features/copilot) | <img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/amp.svg" /> &nbsp;[Amp Code](https://ampcode.com/) |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/mastracode-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/mastracode.svg" /></picture> &nbsp;[Mastracode](https://code.mastra.ai/) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/opencode-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/opencode.svg" /></picture> &nbsp;[OpenCode](https://github.com/opencode-ai/opencode) | <picture><source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/icons/preset-icons/pi-white.svg" /><img height="16" align="top" src="packages/ui/src/assets/icons/preset-icons/pi.svg" /></picture> &nbsp;[Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) |
+
+**Plus any other CLI agent** — if it runs in a terminal, it runs on Superset.
+
+## What runs locally
+
+Superset runs on your machine. Your code, git worktrees, and agent processes never leave it.
+
+- **Local** — every git worktree, file edit, diff, and agent process runs as a local process on your Mac. Your source code is never uploaded.
+- **Account** — Superset requires a free account (GitHub or Google sign-in). The hosted backend stores only your account and workspace metadata — names, branches, status — to sync state across sessions.
+- **Your agents** — Superset doesn't proxy your agents; they use whatever subscriptions or API keys you've already configured.
 
 ## Configuration
 
