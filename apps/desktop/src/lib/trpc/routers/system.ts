@@ -1,15 +1,5 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { publicProcedure, router } from "..";
-
-const execFileAsync = promisify(execFile);
-
-const KNOWN_GH_PATHS = [
-	"/opt/homebrew/bin/gh",
-	"/usr/local/bin/gh",
-	"/usr/bin/gh",
-	"/bin/gh",
-];
+import { execWithShellEnv } from "./workspaces/utils/shell-env";
 
 interface GhDetectResult {
 	installed: boolean;
@@ -18,44 +8,18 @@ interface GhDetectResult {
 	path: string | null;
 }
 
-interface GhInstallResult {
-	version: string | null;
-	path: string;
-}
-
-async function tryGh(path: string): Promise<GhInstallResult | null> {
+async function detectGhCli(): Promise<GhDetectResult> {
+	// Resolve `gh` via the user's login-shell PATH (execWithShellEnv retries with
+	// the derived shell env on ENOENT), so we find it wherever it's installed —
+	// homebrew, MacPorts, nix, asdf, etc. — not just a hardcoded path list.
+	let version: string | null = null;
 	try {
-		const { stdout } = await execFileAsync(path, ["--version"], {
-			timeout: 3000,
+		const { stdout } = await execWithShellEnv("gh", ["--version"], {
+			timeout: 5000,
 		});
 		const firstLine = stdout.split("\n")[0]?.trim() ?? "";
-		const match = firstLine.match(/gh version (\S+)/);
-		const version = match?.[1] ?? null;
-		return { version, path };
+		version = firstLine.match(/gh version (\S+)/)?.[1] ?? null;
 	} catch {
-		return null;
-	}
-}
-
-async function checkGhAuth(path: string): Promise<boolean> {
-	try {
-		await execFileAsync(path, ["auth", "status"], { timeout: 3000 });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function detectGhCli(): Promise<GhDetectResult> {
-	let install: GhInstallResult | null = null;
-	for (const path of KNOWN_GH_PATHS) {
-		install = await tryGh(path);
-		if (install) break;
-	}
-	if (!install) {
-		install = await tryGh("gh");
-	}
-	if (!install) {
 		return {
 			installed: false,
 			authenticated: false,
@@ -63,13 +27,16 @@ async function detectGhCli(): Promise<GhDetectResult> {
 			path: null,
 		};
 	}
-	const authenticated = await checkGhAuth(install.path);
-	return {
-		installed: true,
-		authenticated,
-		version: install.version,
-		path: install.path,
-	};
+
+	let authenticated = false;
+	try {
+		await execWithShellEnv("gh", ["auth", "status"], { timeout: 5000 });
+		authenticated = true;
+	} catch {
+		// `gh auth status` exits non-zero when not logged in.
+	}
+
+	return { installed: true, authenticated, version, path: "gh" };
 }
 
 export const createSystemRouter = () => {
