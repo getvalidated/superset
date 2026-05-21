@@ -5,10 +5,10 @@ import {
 	DOWNLOAD_URL_MAC_X64,
 } from "@superset/shared/constants";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { SupersetLogo } from "@/app/components/Header/components/SupersetLogo";
 import { AppMockup } from "@/app/components/HeroSection/components/AppMockup";
-import { WaitlistModal } from "@/app/components/WaitlistModal";
+import { WaitlistForm } from "@/app/components/WaitlistForm";
 import { isMacPlatform, Platform, usePlatform } from "@/app/hooks/useOS";
 import { track } from "@/lib/analytics";
 
@@ -23,7 +23,6 @@ function macUrlFor(platform: Platform): string {
 export function DownloadInterstitial() {
 	const { platform } = usePlatform();
 	const firedRef = useRef(false);
-	const [waitlistOpen, setWaitlistOpen] = useState(false);
 
 	const isMac = isMacPlatform(platform);
 	// Only auto-download on Mac (the only built binary). Windows/Linux/Mobile see
@@ -64,19 +63,12 @@ export function DownloadInterstitial() {
 								Superset is Mac-only for now
 							</h1>
 							<p className="text-sm text-muted-foreground sm:text-base">
-								We're bringing Superset to Windows &amp; Linux. Join the
-								waitlist and we'll email you the moment it's ready.
+								We're bringing Superset to Windows &amp; Linux. Drop your email
+								and we'll let you know the moment it's ready.
 							</p>
-							<button
-								type="button"
-								onClick={() => {
-									track("waitlist_clicked", { platform });
-									setWaitlistOpen(true);
-								}}
-								className="flex w-fit items-center gap-2 rounded border border-brand/20 bg-brand/10 px-6 py-3 text-sm text-[#ff8c3a] transition-colors hover:border-brand/35 hover:bg-brand/15 sm:text-base"
-							>
-								Join the waitlist
-							</button>
+							<div className="max-w-sm">
+								<WaitlistForm />
+							</div>
 						</>
 					) : (
 						<>
@@ -112,11 +104,6 @@ export function DownloadInterstitial() {
 					<AppMockup activeDemo="Use Any Agents" />
 				</div>
 			</div>
-
-			<WaitlistModal
-				isOpen={waitlistOpen}
-				onClose={() => setWaitlistOpen(false)}
-			/>
 		</div>
 	);
 }
