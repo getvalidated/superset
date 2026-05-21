@@ -5,15 +5,16 @@ import {
 	DOWNLOAD_URL_MAC_X64,
 } from "@superset/shared/constants";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SupersetLogo } from "@/app/components/Header/components/SupersetLogo";
 import { AppMockup } from "@/app/components/HeroSection/components/AppMockup";
-import { Platform, usePlatform } from "@/app/hooks/useOS";
+import { WaitlistModal } from "@/app/components/WaitlistModal";
+import { isMacPlatform, Platform, usePlatform } from "@/app/hooks/useOS";
 import { track } from "@/lib/analytics";
 
 const AUTO_DOWNLOAD_DELAY_MS = 600;
 
-function urlFor(platform: Platform): string {
+function macUrlFor(platform: Platform): string {
 	return platform === Platform.MacIntel
 		? DOWNLOAD_URL_MAC_X64
 		: DOWNLOAD_URL_MAC_ARM64;
@@ -22,21 +23,25 @@ function urlFor(platform: Platform): string {
 export function DownloadInterstitial() {
 	const { platform } = usePlatform();
 	const firedRef = useRef(false);
+	const [waitlistOpen, setWaitlistOpen] = useState(false);
+
+	const isMac = isMacPlatform(platform);
+	// Only auto-download on Mac (the only built binary). Windows/Linux/Mobile see
+	// the waitlist instead — never the .dmg. Unknown waits for detection.
+	const showWaitlist = !isMac && platform !== Platform.Unknown;
 
 	useEffect(() => {
 		if (firedRef.current) return;
-		if (platform === Platform.Unknown) return;
+		if (!isMac) return;
 
 		firedRef.current = true;
-		const url = urlFor(platform);
+		const url = macUrlFor(platform);
 		track("download_started", { platform });
 
 		window.setTimeout(() => {
 			window.location.href = url;
 		}, AUTO_DOWNLOAD_DELAY_MS);
-	}, [platform]);
-
-	const downloadNowUrl = urlFor(platform);
+	}, [isMac, platform]);
 
 	return (
 		<div className="relative isolate min-h-screen overflow-hidden bg-background px-6 py-10 sm:px-12 sm:py-14 lg:px-20 lg:py-20">
@@ -50,23 +55,51 @@ export function DownloadInterstitial() {
 
 			<div className="mt-20 grid grid-cols-1 items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
 				<div className="flex flex-col gap-6">
-					<h1
-						className="text-3xl font-medium tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-6xl"
-						style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
-					>
-						You're about to get Superset
-					</h1>
-					<p className="text-sm text-muted-foreground sm:text-base">
-						Your download will start automatically. If it didn't start, you can{" "}
-						<a
-							href={downloadNowUrl}
-							onClick={() => track("download_manual_clicked", { platform })}
-							className="text-foreground underline underline-offset-4"
-						>
-							download now
-						</a>
-						.
-					</p>
+					{showWaitlist ? (
+						<>
+							<h1
+								className="text-3xl font-medium tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-6xl"
+								style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
+							>
+								Superset is Mac-only for now
+							</h1>
+							<p className="text-sm text-muted-foreground sm:text-base">
+								We're bringing Superset to Windows &amp; Linux. Join the
+								waitlist and we'll email you the moment it's ready.
+							</p>
+							<button
+								type="button"
+								onClick={() => {
+									track("waitlist_clicked", { platform });
+									setWaitlistOpen(true);
+								}}
+								className="flex w-fit items-center gap-2 rounded border border-brand/20 bg-brand/10 px-6 py-3 text-sm text-[#ff8c3a] transition-colors hover:border-brand/35 hover:bg-brand/15 sm:text-base"
+							>
+								Join the waitlist
+							</button>
+						</>
+					) : (
+						<>
+							<h1
+								className="text-3xl font-medium tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-6xl"
+								style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
+							>
+								You're about to get Superset
+							</h1>
+							<p className="text-sm text-muted-foreground sm:text-base">
+								Your download will start automatically. If it didn't start, you
+								can{" "}
+								<a
+									href={macUrlFor(platform)}
+									onClick={() => track("download_manual_clicked", { platform })}
+									className="text-foreground underline underline-offset-4"
+								>
+									download now
+								</a>
+								.
+							</p>
+						</>
+					)}
 				</div>
 
 				<div
@@ -79,6 +112,11 @@ export function DownloadInterstitial() {
 					<AppMockup activeDemo="Use Any Agents" />
 				</div>
 			</div>
+
+			<WaitlistModal
+				isOpen={waitlistOpen}
+				onClose={() => setWaitlistOpen(false)}
+			/>
 		</div>
 	);
 }
