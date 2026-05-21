@@ -1,6 +1,6 @@
-# OSS Local Setup — Complete Record
+# OSS Local Setup — Implementation Notes
 
-Authoritative design record for PR [#4616](https://github.com/superset-sh/superset/pull/4616). Contributor-facing setup instructions live in [docs/LOCAL_DEVELOPMENT.md](../docs/LOCAL_DEVELOPMENT.md).
+Implementation notes for PR [#4616](https://github.com/superset-sh/superset/pull/4616). Contributor-facing setup instructions live in [docs/LOCAL_DEVELOPMENT.md](../docs/LOCAL_DEVELOPMENT.md), which is the source of truth for the final workflow.
 
 ## Goal
 
@@ -40,8 +40,10 @@ Resolution order in `getDeploymentProfile()` (most-trusted wins):
 
 ```ts
 if (env.VERCEL === "1" || env.VERCEL_ENV) return "cloud";
-if (env.SUPERSET_PROFILE === "local") return "local";
-if (env.CI === "true")         return "ci";
+const explicit = getExplicitProfile(env);
+if (explicit === "local" && env.NODE_ENV === "production") return "internal";
+if (explicit) return explicit;
+if (env.CI === "true" || env.CI === "1") return "ci";
 return "internal";
 ```
 
@@ -63,7 +65,7 @@ const skipValidation = shouldSkipEnvValidation();
 
 ### Auth
 
-- **`packages/auth/src/server.ts`** — `emailAndPassword: { enabled: NODE_ENV !== "production", autoSignIn: true }`. Direct credential endpoints removed in prod builds. `afterCreateOrganization` hook gates Stripe customer creation on `env.STRIPE_SECRET_KEY` presence; `seedDefaultStatuses` always runs so OSS users complete org provisioning cleanly. OAuth providers register conditionally on their `*_CLIENT_ID`.
+- **`packages/auth/src/server.ts`** — `emailAndPassword: { enabled: isLocalProfile(), autoSignIn: true }`. Direct credential endpoints are local-profile only. `afterCreateOrganization` hook gates Stripe customer creation on `env.STRIPE_SECRET_KEY` presence; `seedDefaultStatuses` always runs so OSS users complete org provisioning cleanly. OAuth providers register conditionally on their `*_CLIENT_ID`.
 - **`packages/auth/src/lib/resend.ts`** — `Proxy` lazy-init with batch + emails console fallback when `RESEND_API_KEY` empty. Better Auth's `sendEmail` hook writes to terminal instead of crashing.
 - **`packages/auth/src/stripe.ts`** — `Proxy` lazy-init. Throws "Stripe not configured" only when a billing operation is exercised.
 - **`packages/trpc/src/router/support/support.ts`** — same lazy-init Proxy pattern for the support email path.
@@ -72,27 +74,27 @@ const skipValidation = shouldSkipEnvValidation();
 
 - **`apps/desktop/src/main/lib/dev-auto-sign-in.ts`** — fired once during `app.whenReady()` when `isLocalProfile()` is true. Polls `/api/auth/ok` with 1s interval × 60s timeout (auto-sign-in survives the race against API startup), then POSTs to `/api/auth/sign-in/email` (auto-signs-up the seed user if missing). Persists the token via the same `saveToken()` that OAuth uses. Renderer stays prod-pure.
 - **`apps/desktop/src/main/index.ts`** — calls `void ensureDevAuthToken()` (fire-and-forget) so the window opens immediately. `AuthProvider`'s `onTokenChanged` subscription re-hydrates when the token lands. Also exposes Chrome DevTools Protocol on `localhost:9333` in the local profile for headless verification.
-- **`apps/desktop/src/main/env.main.ts`** — env defaults switch to localhost in dev builds (`NODE_ENV=development`) so a fresh-clone session never silently points main-process clients at hosted production. Profile check inlined here (rather than imported from `@superset/shared`) because `electron.vite.config.ts` does `await import("./src/main/env.main")` at config-load time using Node's ESM loader, which can't transform `.ts` files from sibling workspace packages.
+- **`apps/desktop/src/main/env.main.ts`** — env defaults switch to localhost only in explicit local-profile dev builds (`NODE_ENV=development` and `SUPERSET_PROFILE=local`) so a fresh-clone session never silently points main-process clients at hosted production. Profile check inlined here (rather than imported from `@superset/shared`) because `electron.vite.config.ts` does `await import("./src/main/env.main")` at config-load time using Node's ESM loader, which can't transform `.ts` files from sibling workspace packages.
 
 ### Desktop renderer
 
-- **`apps/desktop/src/renderer/env.renderer.ts`** — env defaults switch to localhost in dev builds for `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WEB_URL`, `NEXT_PUBLIC_ELECTRIC_URL`, `RELAY_URL`. Fresh-clone renderer never syncs against hosted Electric.
+- **`apps/desktop/src/renderer/env.renderer.ts`** — env defaults switch to localhost only in explicit local-profile dev builds for `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WEB_URL`, `NEXT_PUBLIC_ELECTRIC_URL`, `RELAY_URL`. Fresh-clone renderer never syncs against hosted Electric.
 - **`apps/desktop/src/renderer/routes/_authenticated/.../*`** (16 files) — flipped `env.SKIP_ENV_VALIDATION ? MOCK_ORG_ID : session.activeOrganizationId` to `session.activeOrganizationId ?? (env.SKIP_ENV_VALIDATION ? MOCK_ORG_ID : null)`. Prefer real session, fall back to mock only when there is no session. Fixed the "Host service not available" toast caused by the renderer querying host-service by the fake org ID while host-service spawned for the real auto-signed-in admin org.
 
 ### Build pipeline
 
-- **`apps/desktop/electron.vite.config.ts`** + **`apps/desktop/vite/helpers.ts`** — added `devOrProdUrl()` helper that returns `process.env[key]` if set, else a dev-vs-prod fallback based on `NODE_ENV`. Used in `define` blocks for main + renderer `process.env` replacements and in `htmlEnvTransformPlugin` for `%NEXT_PUBLIC_*%` placeholders in `index.html`. Builds default to localhost-friendly URLs in dev mode.
+- **`apps/desktop/electron.vite.config.ts`** + **`apps/desktop/vite/helpers.ts`** — added `devOrProdUrl()` helper that returns `process.env[key]` if set, else a localhost fallback only for explicit local-profile dev builds. Used in `define` blocks for main + renderer `process.env` replacements and in `htmlEnvTransformPlugin` for `%NEXT_PUBLIC_*%` placeholders in `index.html`.
 
 ### Web app
 
-- **`apps/web/src/app/(auth)/components/DevAuthForm/`** — email/password form, gated `NODE_ENV !== "production"`. Prefilled with seed credentials so contributors click "Sign in" once.
+- **`apps/web/src/app/(auth)/components/DevSignInButton/`** — email/password sign-in action, gated to non-production builds using local API/web URLs. Prefilled with seed credentials so contributors click "Sign in" once.
 - **`apps/web/src/app/(auth)/sign-in/.../page.tsx`** + **`sign-up/.../page.tsx`** — wire the form.
 
 ### Telemetry / observability
 
 - **`apps/api/src/lib/analytics.ts`** + **`packages/trpc/src/lib/analytics.ts`** — PostHog `Proxy` lazy-init returning a no-op surface (`capture`, `getFeatureFlag`, etc.) when `NEXT_PUBLIC_POSTHOG_KEY` is missing.
-- **`apps/api/src/lib/boot-summary.ts`** — one-time API startup log printing every disabled integration and the env var to enable it. Visible to contributors so degradation is never silent.
-- **`apps/api/src/app/api/health/route.ts`** — `GET /api/health` returns `{ ok, profile, integrations: { stripe: "configured" | "missing", … } }` for prod monitoring + contributor sanity checks.
+- **`apps/api/src/lib/boot-summary.ts`** — one-time API startup log in lenient profiles, printing every disabled integration and the env var to enable it. Visible to contributors so degradation is never silent, while strict prod/internal boot stays quiet.
+- **`apps/api/src/app/api/health/route.ts`** — `GET /api/health` returns `{ ok: true }` in strict profiles and adds `{ profile, integrations: { stripe: "configured" | "missing", … } }` in lenient profiles for contributor sanity checks.
 
 ### Plumbing
 
@@ -212,7 +214,7 @@ I shipped the deployment-profile changes without checking `gh pr checks 4616`. T
 
 | Commit | Theme |
 |---|---|
-| [`04130c0`](https://github.com/superset-sh/superset/pull/4616/commits/04130c0) | Core OSS path: DB driver swap, lazy-init guards (Stripe/Resend/PostHog), Better Auth email/password, desktop dev auto-sign-in, 17-file MOCK_ORG_ID priority fix, web app DevAuthForm, `db:seed:dev`, CDP for verification, docs |
+| [`04130c0`](https://github.com/superset-sh/superset/pull/4616/commits/04130c0) | Core OSS path: DB driver swap, lazy-init guards (Stripe/Resend/PostHog), Better Auth email/password, desktop dev auto-sign-in, MOCK_ORG_ID priority fix, web app dev sign-in, `db:seed:dev`, CDP for verification, docs |
 | [`2b609b5`](https://github.com/superset-sh/superset/pull/4616/commits/2b609b5) | Deployment profiles + boot summary + `/api/health` endpoint |
 | [`f3c76b9`](https://github.com/superset-sh/superset/pull/4616/commits/f3c76b9) | Flipped discriminator (strict by default, local profile opts into lenient) |
 | [`101cd30`](https://github.com/superset-sh/superset/pull/4616/commits/101cd30) | Added `ci` profile (GitHub Actions auto-detect) |
@@ -260,13 +262,11 @@ Local CI reproduction:
 - `bun run --cwd apps/desktop typecheck` — clean
 - `bun turbo run build --filter=@superset/desktop` — succeeds
 
-## What's still deferred (honest TODO list)
+## Follow-ups
 
 These are real follow-ups, none of them blocking the OSS path from working today:
 
-- **`.env.example` with working defaults** — README says "edit DATABASE_URL + BETTER_AUTH_SECRET" without telling contributors the values. Pre-fill `postgres://superset:superset@localhost:5433/superset` + a sentinel `BETTER_AUTH_SECRET=dev_secret_not_for_production_*` and move optional integration keys to a `# OPTIONAL` block.
-- **`bun setup` orchestrator** — current contributor flow is 6 commands. A `bun setup` wrapping `docker compose up`, `cp .env.example .env` if missing, `bun install`, `bun run db:migrate`, copy `.dev.vars`, with idempotency + friendly errors would collapse it to two: `bun setup && bun dev`.
-- **Full integration crash audit** — Stripe, Resend, PostHog, trpc-support-Resend are wrapped. GitHub App (`@octokit/app`), Freestyle, Linear, Slack, QStash signing keys, Anthropic (`@anthropic-ai/sdk`), Blob (`@vercel/blob`) may still crash at import in the local profile. Mechanical `grep -rn "new \w\+(.*env\." packages apps` survey.
+- **Complete integration crash audit** — Stripe, Resend, PostHog, support email, QStash queue creation, and the common OAuth providers are guarded. Less-used integrations still deserve a follow-up import-time audit.
 - **Mailpit instead of console-log emails** — Better Auth's `sendEmail` falls back to stdout. Mailpit container would give contributors a clickable UI at `localhost:8025`.
 - **CI fresh-clone smoke test** — without one, the OSS path silently rots the next time someone adds a crash-on-import integration. A GitHub Actions job that does `git clone` in a fresh runner, follows the README, hits `/api/auth/ok`, fails if anything red.
 - **Per-integration group `.refine()` validation** — Formbricks pattern. E.g. if `STRIPE_SECRET_KEY` is set then `STRIPE_WEBHOOK_SECRET` must also be set. Catches half-configured prod deploys.
@@ -310,7 +310,7 @@ These are real follow-ups, none of them blocking the OSS path from working today
 ┌──────────────────────────────────────────────────────────────┐
 │  bun dev (with SUPERSET_PROFILE=local)                         │
 │                                                                │
-│  apps/web      :4640  ─ Next.js, DevAuthForm visible          │
+│  apps/web      :4640  ─ Next.js, local DevSignInButton visible│
 │  apps/api      :4641  ─ Better Auth + tRPC, /api/health       │
 │                                                                │
 │  apps/desktop:                                                 │
@@ -336,7 +336,7 @@ These are real follow-ups, none of them blocking the OSS path from working today
 
 | Profile      | `skipValidation` | Boot summary    | `/api/health` shows         | Sign-in path                                  |
 |--------------|------------------|------------------|------------------------------|------------------------------------------------|
-| `cloud`      | false (strict)   | `profile=cloud (strict)`    | `profile: "cloud"`        | OAuth (email/password disabled in prod build)  |
-| `internal`   | false (strict)   | `profile=internal (strict)` | `profile: "internal"`     | OAuth + dev email/password form (NODE_ENV=dev) |
+| `cloud`      | false (strict)   | none                         | `{ ok: true }`            | OAuth                                          |
+| `internal`   | false (strict)   | none                         | `{ ok: true }`            | OAuth                                          |
 | `ci`         | true (lenient)   | `profile=ci (lenient)`      | `profile: "ci"`           | n/a (build/test job, no runtime auth)          |
 | `local`      | true (lenient)   | lists disabled features     | `profile: "local"`        | dev auto-sign-in + dev email/password form     |

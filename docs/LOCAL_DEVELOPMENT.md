@@ -92,7 +92,7 @@ For programmatic monitoring (or to confirm a key took effect), hit `GET /api/hea
 { "ok": true, "profile": "local", "integrations": { "stripe": "missing", ... } }
 ```
 
-For the web app (`http://localhost:4640`), the sign-in and sign-up pages render a dev-only email/password form when `NODE_ENV !== "production"`. Use the same credentials.
+For the web app (`http://localhost:4640`), the sign-in and sign-up pages render a dev-only email/password form when running a non-production build against local API/web URLs. Use the same credentials.
 
 ## What works locally
 
