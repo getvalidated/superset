@@ -71,6 +71,12 @@ function createRendererEnvSchema(isLocalDevelopment: boolean) {
 
 export function parseRendererEnv(rawEnv: RendererEnvInput) {
 	const normalizedEnv = emptyStringAsUndefined(rawEnv);
+	if (
+		normalizedEnv.NODE_ENV === "production" &&
+		normalizedEnv.SUPERSET_PROFILE === "local"
+	) {
+		normalizedEnv.SUPERSET_PROFILE = undefined;
+	}
 	const isLocalDevelopment =
 		normalizedEnv.NODE_ENV === "development" &&
 		normalizedEnv.SUPERSET_PROFILE === "local";

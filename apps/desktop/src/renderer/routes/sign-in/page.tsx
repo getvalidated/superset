@@ -18,7 +18,8 @@ export const Route = createFileRoute("/sign-in/")({
 function SignInPage() {
 	const signInMutation = electronTrpc.auth.signIn.useMutation();
 	const { hasLocalToken, isPending, session } = useSessionRecovery();
-	const isLocalProfile = env.SUPERSET_PROFILE === "local";
+	const isLocalProfile =
+		env.NODE_ENV === "development" && env.SUPERSET_PROFILE === "local";
 
 	// Dev bypass: AuthProvider handles auto-sign-in; if session lands, redirect
 	if (env.SKIP_ENV_VALIDATION && session?.user) {

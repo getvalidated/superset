@@ -36,13 +36,13 @@ describe("parseRendererEnv", () => {
 		expect(env.RELAY_URL).toBe("http://localhost:4653");
 	});
 
-	test("keeps production defaults when local profile leaks into a production build", () => {
+	test("ignores local profile when it leaks into a production build", () => {
 		const env = parseRendererEnv({
 			NODE_ENV: "production",
 			SUPERSET_PROFILE: "local",
 		});
 
-		expect(env.SUPERSET_PROFILE).toBe("local");
+		expect(env.SUPERSET_PROFILE).toBeUndefined();
 		expect(env.NEXT_PUBLIC_API_URL).toBe("https://api.superset.sh");
 		expect(env.NEXT_PUBLIC_WEB_URL).toBe("https://app.superset.sh");
 		expect(env.RELAY_URL).toBe("https://relay.superset.sh");
