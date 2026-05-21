@@ -614,6 +614,7 @@ describe("workspaces.create PR checkout integration", () => {
 		)?.worktreePath;
 		expect(worktreePath).toBeTruthy();
 		if (!worktreePath) throw new Error("expected worktree path");
+		expect(result.workspace.branch).toBe("feature/deleted-head");
 		expect(
 			(
 				await scenario.repo.git.raw([
