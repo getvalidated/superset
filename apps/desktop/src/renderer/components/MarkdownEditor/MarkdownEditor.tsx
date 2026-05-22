@@ -136,7 +136,8 @@ interface MarkdownEditorProps {
 	onSave?: (markdown: string) => void;
 	onChange?: (markdown: string) => void;
 	placeholder?: string;
-	autoFocus?: boolean;
+	/** true focuses at the end; "start"/"end" pick the caret position. */
+	autoFocus?: boolean | "start" | "end";
 	className?: string;
 	editorClassName?: string;
 	onModEnter?: () => void;
@@ -149,8 +150,6 @@ interface MarkdownEditorProps {
 		fileMention?: boolean;
 		bubbleMenu?: boolean;
 	};
-	/** Tailwind min-height for the editable area. Defaults to "min-h-[100px]". */
-	minHeightClassName?: string;
 }
 
 function getMarkdown(editor: Editor | null): string {
@@ -185,7 +184,6 @@ export function MarkdownEditor({
 	onModEnter,
 	searchFiles,
 	features,
-	minHeightClassName = "min-h-[100px]",
 }: MarkdownEditorProps) {
 	const showSlashCommand = features?.slashCommand ?? true;
 	const showEmoji = features?.emoji ?? true;
@@ -201,12 +199,12 @@ export function MarkdownEditor({
 	const urlPolicy = useInlineUrlPolicy();
 
 	const editor = useEditor({
-		autofocus: autoFocus ? "end" : false,
+		autofocus: autoFocus === true ? "end" : autoFocus || false,
 		extensions: [
 			Document,
 			Text,
 			Paragraph.configure({
-				HTMLAttributes: { class: "mt-0 mb-3 leading-relaxed" },
+				HTMLAttributes: { class: "my-0 leading-relaxed" },
 			}),
 			StyledHeading.configure({ levels: [1, 2, 3, 4, 5, 6] }),
 			Bold.configure({
@@ -324,7 +322,7 @@ export function MarkdownEditor({
 		content,
 		editorProps: {
 			attributes: {
-				class: cn("focus:outline-none", minHeightClassName, editorClassName),
+				class: cn("focus:outline-none min-h-[100px]", editorClassName),
 			},
 			handleKeyDown: (_, event) => {
 				if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {

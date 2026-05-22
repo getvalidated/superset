@@ -435,11 +435,10 @@ export function PromptGroup({
 					key={resetKey}
 					content={prompt}
 					onChange={(markdown) => updateDraft({ prompt: markdown })}
-					autoFocus
+					autoFocus="start"
 					placeholder="What do you want to do?"
-					className="px-3 pt-3"
-					editorClassName="max-h-[200px] overflow-y-auto text-sm"
-					minHeightClassName="min-h-[44px]"
+					className="flex flex-col h-[200px] px-3 pt-3"
+					editorClassName="overflow-y-auto text-sm"
 					features={{
 						slashCommand: false,
 						emoji: false,
