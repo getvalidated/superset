@@ -1,11 +1,11 @@
 import { db } from "@superset/db/client";
-import { users } from "@superset/db/schema/auth";
+import { members, subscriptions, users } from "@superset/db/schema";
 import {
 	DEV_EMAIL,
 	DEV_NAME,
 	DEV_PASSWORD,
 } from "@superset/shared/dev-credentials";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "./server";
 
 async function seedDevAccount(): Promise<void> {
@@ -15,18 +15,49 @@ async function seedDevAccount(): Promise<void> {
 		);
 	}
 
-	const existing = await db.query.users.findFirst({
+	let user = await db.query.users.findFirst({
 		where: eq(users.email, DEV_EMAIL),
 	});
-	if (existing) {
+	if (user) {
 		console.log(`Dev account already exists: ${DEV_EMAIL}`);
-		return;
+	} else {
+		await auth.api.signUpEmail({
+			body: { email: DEV_EMAIL, password: DEV_PASSWORD, name: DEV_NAME },
+		});
+		user = await db.query.users.findFirst({
+			where: eq(users.email, DEV_EMAIL),
+		});
+		console.log(`Seeded dev account: ${DEV_EMAIL}`);
+	}
+	if (!user) throw new Error("dev user was not created");
+
+	await db
+		.update(users)
+		.set({ onboardedAt: new Date() })
+		.where(eq(users.id, user.id));
+
+	const membership = await db.query.members.findFirst({
+		where: eq(members.userId, user.id),
+	});
+	if (!membership) throw new Error("dev user has no organization");
+
+	const activeSubscription = await db.query.subscriptions.findFirst({
+		where: and(
+			eq(subscriptions.referenceId, membership.organizationId),
+			eq(subscriptions.status, "active"),
+		),
+	});
+	if (!activeSubscription) {
+		await db.insert(subscriptions).values({
+			plan: "pro",
+			referenceId: membership.organizationId,
+			status: "active",
+			billingInterval: "monthly",
+			seats: 1,
+		});
 	}
 
-	await auth.api.signUpEmail({
-		body: { email: DEV_EMAIL, password: DEV_PASSWORD, name: DEV_NAME },
-	});
-	console.log(`Seeded dev account: ${DEV_EMAIL}`);
+	console.log(`Dev account ready: ${DEV_EMAIL} (onboarded, pro)`);
 }
 
 seedDevAccount()
