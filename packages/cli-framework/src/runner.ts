@@ -54,10 +54,19 @@ export async function run(opts: RunOptions): Promise<void> {
  * (a file redirect masks it because the write lands fast). Awaiting the
  * `write` callback guarantees the bytes reached the OS before the command
  * completes and the process is allowed to exit.
+ *
+ * Broken-pipe errors (consumer exited early, e.g. `… | head`) resolve
+ * cleanly — `console.log` swallowed them silently, and surfacing them as
+ * `Error: write EPIPE` is worse UX than the truncation we set out to fix.
  */
 async function writeStdout(text: string): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
-		process.stdout.write(`${text}\n`, (err) => (err ? reject(err) : resolve()));
+		process.stdout.write(`${text}\n`, (err) => {
+			if (!err) return resolve();
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === "EPIPE" || code === "ECONNRESET") return resolve();
+			reject(err);
+		});
 	});
 }
 

@@ -21,8 +21,12 @@ export default command({
 		assigneeMe: boolean().alias("m").desc("Filter to my tasks"),
 		creatorMe: boolean().desc("Filter to tasks I created"),
 		search: string().alias("s").desc("Search by title"),
-		limit: number().default(50).desc("Max results to return (auto-paginated)"),
-		offset: number().default(0).desc("Skip results"),
+		limit: number()
+			.int()
+			.min(1)
+			.default(50)
+			.desc("Max results to return (auto-paginated)"),
+		offset: number().int().min(0).default(0).desc("Skip results"),
 		all: boolean().desc("Fetch every result (ignores --limit)"),
 	},
 	display: (data) =>
@@ -66,7 +70,9 @@ export default command({
 
 		return paginated(data, {
 			returned: data.length,
-			limit: options.all ? data.length : options.limit,
+			// `--all` ignores --limit, so `null` signals "no cap applied"
+			// rather than echoing back a misleading number.
+			limit: options.all ? null : options.limit,
 			offset: options.offset,
 			hasMore,
 		});

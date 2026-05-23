@@ -7,8 +7,8 @@ export type OutputFlags = {
 export type Pagination = {
 	/** Number of items in this response. */
 	returned: number;
-	/** Max items the caller asked for. */
-	limit: number;
+	/** Max items the caller asked for, or `null` if no cap was applied (e.g. `--all`). */
+	limit: number | null;
 	/** Items skipped before this page. */
 	offset: number;
 	/** Whether more items exist beyond this page. */
@@ -96,12 +96,18 @@ function paginationFooter(pagination: Pagination): string {
 function isPaginatedResult(
 	result: unknown,
 ): result is PaginatedResult<unknown> {
+	if (typeof result !== "object" || result === null) return false;
+	if (!("data" in result) || !("pagination" in result)) return false;
+	const data = (result as { data: unknown }).data;
+	const pagination = (result as { pagination: unknown }).pagination;
+	if (!Array.isArray(data)) return false;
+	if (typeof pagination !== "object" || pagination === null) return false;
+	const p = pagination as Record<string, unknown>;
 	return (
-		typeof result === "object" &&
-		result !== null &&
-		"data" in result &&
-		"pagination" in result &&
-		Array.isArray((result as { data: unknown }).data)
+		typeof p.returned === "number" &&
+		(typeof p.limit === "number" || p.limit === null) &&
+		typeof p.offset === "number" &&
+		typeof p.hasMore === "boolean"
 	);
 }
 
