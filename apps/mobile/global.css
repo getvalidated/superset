@@ -52,12 +52,12 @@
 			--color-secondary: hsl(40 5% 95%);
 			--color-secondary-foreground: hsl(0 0% 14.5%);
 			--color-muted: hsl(40 5% 95%);
-			--color-muted-foreground: hsl(0 0% 35%);
+			--color-muted-foreground: hsl(0 0% 50.2%);
 			--color-accent: hsl(40 7% 90%);
 			--color-accent-foreground: hsl(0 0% 14.5%);
 
 			/* ── Destructive ─────────────────────────────────── */
-			--color-destructive: hsl(0 84.2% 60.2%);
+			--color-destructive: hsl(0 61.2% 53.5%);
 			--color-destructive-foreground: hsl(0 0% 100%);
 
 			/* ── Structure ────────────────────────────────────── */

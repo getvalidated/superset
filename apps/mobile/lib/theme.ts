@@ -33,12 +33,12 @@ export const THEME = {
 		secondary: "hsl(40 5% 95%)",
 		secondaryForeground: "hsl(0 0% 14.5%)",
 		muted: "hsl(40 5% 95%)",
-		mutedForeground: "hsl(0 0% 35%)",
+		mutedForeground: "hsl(0 0% 50.2%)",
 		accent: "hsl(40 7% 90%)",
 		accentForeground: "hsl(0 0% 14.5%)",
 
 		// Destructive
-		destructive: "hsl(0 84.2% 60.2%)",
+		destructive: "hsl(0 61.2% 53.5%)",
 		destructiveForeground: "hsl(0 0% 100%)",
 
 		// Structure
