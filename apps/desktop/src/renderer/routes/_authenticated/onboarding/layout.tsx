@@ -7,18 +7,20 @@ import {
 	useLocation,
 	useNavigate,
 } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createChatServiceIpcClient } from "renderer/components/Chat/utils/chat-service-client";
 import { track } from "renderer/lib/analytics";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { electronQueryClient } from "renderer/providers/ElectronTRPCProvider";
-import { useOnboardingRerunStore } from "renderer/stores/onboarding-rerun";
 import { OnboardingNavigation } from "./components/OnboardingNavigation";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
 	component: OnboardingFlowLayout,
+	validateSearch: (search: Record<string, unknown>): { rerun?: boolean } => ({
+		rerun: search.rerun === true ? true : undefined,
+	}),
 });
 
 const STEPS = [
@@ -48,17 +50,12 @@ function OnboardingFlowLayout() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [skipping, setSkipping] = useState(false);
-	const isRerun = useOnboardingRerunStore((s) => s.isRerun);
-	const endRerun = useOnboardingRerunStore((s) => s.endRerun);
-
-	// Leaving the onboarding flow always clears the rerun flag, so a later
-	// restored `/onboarding` route falls back to the redirect below.
-	useEffect(() => endRerun, [endRerun]);
+	const { rerun } = Route.useSearch();
 
 	if (isPending) return null;
 	// Already-onboarded users are redirected out — unless they explicitly
-	// relaunched the flow from Settings (isRerun).
-	if (session?.user?.onboardedAt && !isRerun) {
+	// relaunched the flow from Settings (?rerun=true).
+	if (session?.user?.onboardedAt && !rerun) {
 		return <Navigate to="/" replace />;
 	}
 

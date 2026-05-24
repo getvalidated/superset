@@ -7,7 +7,6 @@ import {
 	useIsV2OnlyUser,
 } from "renderer/hooks/useIsV2CloudEnabled";
 import { track } from "renderer/lib/analytics";
-import { useStartOnboardingRerun } from "renderer/stores/onboarding-rerun";
 import { useOpenV1ImportModal } from "renderer/stores/v1-import-modal";
 import { useV2LocalOverrideStore } from "renderer/stores/v2-local-override";
 import {
@@ -40,12 +39,10 @@ export function ExperimentalSettings({
 	const setOptInV2 = useV2LocalOverrideStore((state) => state.setOptInV2);
 	const openV1ImportModal = useOpenV1ImportModal();
 	const navigate = useNavigate();
-	const startOnboardingRerun = useStartOnboardingRerun();
 
 	const handleRerunOnboarding = () => {
 		track("onboarding_rerun_opened");
-		startOnboardingRerun();
-		void navigate({ to: "/onboarding" });
+		void navigate({ to: "/onboarding", search: { rerun: true } });
 	};
 
 	return (
