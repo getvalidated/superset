@@ -1,4 +1,4 @@
-import { and, eq } from "@tanstack/db";
+import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -209,15 +209,6 @@ export function useDashboardSidebarData() {
 		(q) =>
 			q
 				.from({ workspaces: collections.v2Workspaces })
-				.leftJoin(
-					{ userHosts: collections.v2UsersHosts },
-					({ workspaces, userHosts }) =>
-						and(
-							eq(userHosts.organizationId, workspaces.organizationId),
-							eq(userHosts.hostId, workspaces.hostId),
-							eq(userHosts.userId, currentUserId ?? ""),
-						),
-				)
 				.innerJoin(
 					{ projects: collections.v2Projects },
 					({ workspaces, projects }) => eq(workspaces.projectId, projects.id),
@@ -231,42 +222,70 @@ export function useDashboardSidebarData() {
 					({ workspaces, sidebarWorkspaces }) =>
 						eq(sidebarWorkspaces.workspaceId, workspaces.id),
 				)
-				.select(
-					({ sidebarWorkspaces, workspaces, projects, repos, userHosts }) => ({
-						id: workspaces.id,
-						workspaceProjectId: workspaces.projectId,
-						sidebarProjectId: sidebarWorkspaces?.sidebarState.projectId ?? null,
-						projectName: projects.name,
-						projectSlug: projects.slug,
-						projectGithubRepositoryId: projects.githubRepositoryId,
-						projectGithubOwner: repos?.owner ?? null,
-						projectGithubRepoName: repos?.name ?? null,
-						projectIconUrl: projects.iconUrl,
-						projectCreatedAt: projects.createdAt,
-						projectUpdatedAt: projects.updatedAt,
-						hostId: workspaces.hostId,
-						type: workspaces.type,
-						createdByUserId: workspaces.createdByUserId,
-						hasUserHostAccess: userHosts?.userId != null,
-						name: workspaces.name,
-						branch: workspaces.branch,
-						taskId: workspaces.taskId,
-						createdAt: workspaces.createdAt,
-						updatedAt: workspaces.updatedAt,
-						isSynced: workspaces.$synced,
-						hasLocalSidebarState: sidebarWorkspaces?.workspaceId != null,
-						tabOrder: sidebarWorkspaces?.sidebarState.tabOrder ?? null,
-						sectionId: sidebarWorkspaces?.sidebarState.sectionId ?? null,
-						isHidden: sidebarWorkspaces?.sidebarState.isHidden ?? false,
-					}),
-				),
+				.select(({ sidebarWorkspaces, workspaces, projects, repos }) => ({
+					id: workspaces.id,
+					organizationId: workspaces.organizationId,
+					workspaceProjectId: workspaces.projectId,
+					sidebarProjectId: sidebarWorkspaces?.sidebarState.projectId ?? null,
+					projectName: projects.name,
+					projectSlug: projects.slug,
+					projectGithubRepositoryId: projects.githubRepositoryId,
+					projectGithubOwner: repos?.owner ?? null,
+					projectGithubRepoName: repos?.name ?? null,
+					projectIconUrl: projects.iconUrl,
+					projectCreatedAt: projects.createdAt,
+					projectUpdatedAt: projects.updatedAt,
+					hostId: workspaces.hostId,
+					type: workspaces.type,
+					createdByUserId: workspaces.createdByUserId,
+					name: workspaces.name,
+					branch: workspaces.branch,
+					taskId: workspaces.taskId,
+					createdAt: workspaces.createdAt,
+					updatedAt: workspaces.updatedAt,
+					isSynced: workspaces.$synced,
+					hasLocalSidebarState: sidebarWorkspaces?.workspaceId != null,
+					tabOrder: sidebarWorkspaces?.sidebarState.tabOrder ?? null,
+					sectionId: sidebarWorkspaces?.sidebarState.sectionId ?? null,
+					isHidden: sidebarWorkspaces?.sidebarState.isHidden ?? false,
+				})),
+		[collections],
+	);
+
+	// Separate query — TanStack DB join conditions only accept a single
+	// equality, so we can't filter `v2UsersHosts` by (org, host, user) inline.
+	const { data: currentUserHosts = [] } = useLiveQuery(
+		(q) =>
+			q
+				.from({ userHosts: collections.v2UsersHosts })
+				.where(({ userHosts }) => eq(userHosts.userId, currentUserId ?? ""))
+				.select(({ userHosts }) => ({
+					organizationId: userHosts.organizationId,
+					hostId: userHosts.hostId,
+				})),
 		[collections, currentUserId],
 	);
+	const userHostAccessKeys = useMemo(
+		() =>
+			new Set(
+				currentUserHosts.map((row) => `${row.organizationId}:${row.hostId}`),
+			),
+		[currentUserHosts],
+	);
+
 	const rawSidebarWorkspacesWithHostStatus = useMemo(
 		() =>
 			rawSidebarWorkspaces
 				.filter((workspace) =>
-					shouldIncludeSidebarWorkspace(workspace, currentUserId),
+					shouldIncludeSidebarWorkspace(
+						{
+							...workspace,
+							hasUserHostAccess: userHostAccessKeys.has(
+								`${workspace.organizationId}:${workspace.hostId}`,
+							),
+						},
+						currentUserId,
+					),
 				)
 				.map((workspace) => ({
 					...workspace,
@@ -281,6 +300,7 @@ export function useDashboardSidebarData() {
 			currentUserId,
 			hostsByMachineId,
 			rawSidebarWorkspaces,
+			userHostAccessKeys,
 			workspaceTransactionsById,
 		],
 	);
