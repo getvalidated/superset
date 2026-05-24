@@ -84,7 +84,7 @@ export const THEME = {
 		secondaryForeground: "hsl(30 6% 91%)",
 		muted: "hsl(15 4% 16%)",
 		mutedForeground: "hsl(15 4% 65%)",
-		accent: "hsl(15 6% 14%)",
+		accent: "hsl(20 4% 16%)",
 		accentForeground: "hsl(30 6% 91%)",
 
 		// Destructive
@@ -98,7 +98,7 @@ export const THEME = {
 		radius: "0.625rem",
 
 		// State palette
-		stateLiveFg: "hsl(149 35% 47%)",
+		stateLiveFg: "hsl(148 36% 49%)",
 		stateLiveBg: "hsla(149 35% 47% / 0.18)",
 		stateWarningFg: "hsl(43 60% 56%)",
 		stateWarningBg: "hsla(43 60% 56% / 0.18)",
@@ -109,7 +109,7 @@ export const THEME = {
 		stateNeutralFg: "hsl(15 4% 65%)",
 
 		// Domain — chat
-		streamingCursor: "hsl(149 35% 47%)",
+		streamingCursor: "hsl(148 36% 49%)",
 		toolRule: "hsl(17 69% 60%)",
 
 		// Typography

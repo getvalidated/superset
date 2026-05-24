@@ -101,7 +101,7 @@
 			--color-secondary-foreground: hsl(30 6% 91%);
 			--color-muted: hsl(15 4% 16%);
 			--color-muted-foreground: hsl(15 4% 65%);
-			--color-accent: hsl(15 6% 14%);
+			--color-accent: hsl(20 4% 16%);
 			--color-accent-foreground: hsl(30 6% 91%);
 
 			/* ── Destructive ─────────────────────────────────── */
@@ -114,7 +114,7 @@
 			--color-ring: hsl(15 3% 22%);
 
 			/* ── State palette ────────────────────────────────── */
-			--color-state-live-fg: hsl(149 35% 47%);
+			--color-state-live-fg: hsl(148 36% 49%);
 			--color-state-live-bg: hsla(149 35% 47% / 0.18);
 			--color-state-warning-fg: hsl(43 60% 56%);
 			--color-state-warning-bg: hsla(43 60% 56% / 0.18);
@@ -125,7 +125,7 @@
 			--color-state-neutral-fg: hsl(15 4% 65%);
 
 			/* ── Domain — chat ────────────────────────────────── */
-			--color-streaming-cursor: hsl(149 35% 47%);
+			--color-streaming-cursor: hsl(148 36% 49%);
 			--color-tool-rule: hsl(17 69% 60%);
 		}
 	}
