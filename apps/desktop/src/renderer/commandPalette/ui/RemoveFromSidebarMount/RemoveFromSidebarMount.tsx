@@ -28,7 +28,7 @@ export function RemoveFromSidebarMount() {
 	const handleConfirm = useCallback(() => {
 		if (!target) return;
 		navigateAwayFromWorkspace(target.workspaceId);
-		hideWorkspaceInSidebar(target.workspaceId, target.projectId);
+		hideWorkspaceInSidebar(target.workspaceId);
 		clear();
 	}, [target, navigateAwayFromWorkspace, hideWorkspaceInSidebar, clear]);
 

@@ -68,8 +68,7 @@ export const workspaceProvider: CommandProvider = {
 			});
 		}
 
-		const projectId = workspace.projectId;
-		if (!isMain && projectId) {
+		if (!isMain) {
 			commands.push({
 				id: `workspace.delete:${workspace.id}`,
 				title: `Delete ${workspace.name}`,
@@ -80,7 +79,6 @@ export const workspaceProvider: CommandProvider = {
 				run: () =>
 					useDeleteWorkspaceIntent.getState().request({
 						workspaceId: workspace.id,
-						projectId,
 						workspaceName: workspace.name,
 					}),
 			});

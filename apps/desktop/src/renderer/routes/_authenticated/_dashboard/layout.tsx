@@ -44,7 +44,6 @@ type DeleteTarget =
 	| {
 			version: "v2";
 			workspaceId: string;
-			projectId: string;
 			workspaceName: string;
 			open: boolean;
 	  };
@@ -140,7 +139,6 @@ function DashboardLayout() {
 			) {
 				setDeleteTarget({
 					workspaceId: currentV2WorkspaceId,
-					projectId: currentV2Workspace.projectId,
 					workspaceName: currentV2Workspace.name || currentV2Workspace.branch,
 					version: "v2",
 					open: true,
@@ -226,10 +224,7 @@ function DashboardLayout() {
 						);
 					}}
 					onDeleted={() => {
-						hideWorkspaceInSidebar(
-							deleteTarget.workspaceId,
-							deleteTarget.projectId,
-						);
+						hideWorkspaceInSidebar(deleteTarget.workspaceId);
 						setDeleteTarget(null);
 					}}
 				/>

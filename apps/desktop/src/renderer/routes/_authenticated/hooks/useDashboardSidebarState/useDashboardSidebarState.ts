@@ -474,22 +474,18 @@ export function useDashboardSidebarState() {
 		[collections],
 	);
 
-	const removeWorkspaceFromSidebar = useCallback(
-		(workspaceId: string) => {
-			const workspace = collections.v2WorkspaceLocalState.get(workspaceId);
-			if (!workspace) return;
-			cleanupWorkspacePaneRuntimes([workspace]);
-			collections.v2WorkspaceLocalState.delete(workspaceId);
-		},
-		[collections],
-	);
-
 	const hideWorkspaceInSidebar = useCallback(
-		(workspaceId: string, projectId: string) => {
-			const workspace = collections.v2WorkspaceLocalState.get(workspaceId);
-			if (workspace) {
-				cleanupWorkspacePaneRuntimes([workspace]);
+		(workspaceId: string) => {
+			const localState = collections.v2WorkspaceLocalState.get(workspaceId);
+			if (localState) {
+				cleanupWorkspacePaneRuntimes([localState]);
 			}
+			const projectId =
+				localState?.sidebarState.projectId ??
+				collections.v2Workspaces.get(workspaceId)?.projectId;
+			// If neither row exists, the workspace is already gone — the data live
+			// query will drop it on its own, so we don't need to write a tombstone.
+			if (!projectId) return;
 			writeHiddenWorkspaceSidebarState(collections, workspaceId, projectId);
 		},
 		[collections],
@@ -540,7 +536,6 @@ export function useDashboardSidebarState() {
 		moveWorkspaceToSectionAtIndex,
 		removeProjectFromSidebar,
 		reorderProjectChildren,
-		removeWorkspaceFromSidebar,
 		reorderProjects,
 		reorderWorkspaces,
 		renameSection,

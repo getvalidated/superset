@@ -23,7 +23,7 @@ export function DeleteWorkspaceMount() {
 			open
 			onOpenChange={handleOpenChange}
 			onDeleted={() => {
-				hideWorkspaceInSidebar(target.workspaceId, target.projectId);
+				hideWorkspaceInSidebar(target.workspaceId);
 				close();
 			}}
 		/>

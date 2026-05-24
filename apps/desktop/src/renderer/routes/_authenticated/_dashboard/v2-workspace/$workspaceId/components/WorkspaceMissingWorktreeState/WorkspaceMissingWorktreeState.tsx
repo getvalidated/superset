@@ -7,7 +7,6 @@ import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/u
 
 interface WorkspaceMissingWorktreeStateProps {
 	workspaceId: string;
-	projectId: string;
 	workspaceName: string;
 	branch: string;
 	worktreePath?: string;
@@ -17,7 +16,6 @@ interface WorkspaceMissingWorktreeStateProps {
 
 export function WorkspaceMissingWorktreeState({
 	workspaceId,
-	projectId,
 	workspaceName,
 	branch,
 	worktreePath,
@@ -112,7 +110,7 @@ export function WorkspaceMissingWorktreeState({
 					open={deleteDialogOpen}
 					onOpenChange={setDeleteDialogOpen}
 					onDeleted={() => {
-						hideWorkspaceInSidebar(workspaceId, projectId);
+						hideWorkspaceInSidebar(workspaceId);
 					}}
 				/>
 			</div>

@@ -82,7 +82,7 @@ export function useDashboardSidebarWorkspaceItemActions({
 	};
 
 	const handleDeleted = () => {
-		hideWorkspaceInSidebar(workspaceId, projectId);
+		hideWorkspaceInSidebar(workspaceId);
 	};
 
 	const handleRemoveFromSidebar = () => {
