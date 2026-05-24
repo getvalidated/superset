@@ -34,6 +34,7 @@
 @layer theme {
 	:root {
 		@variant light {
+			/* Primary split pointer: mobile ember; desktop neutral/sidebar-primary. */
 			--color-radius: 0.625rem;
 
 			/* ── Surfaces ─────────────────────────────────────── */
@@ -45,6 +46,7 @@
 			--color-popover-foreground: hsl(0 0% 14.5%);
 
 			/* ── Ember accent (BRAND) ────────────────────────── */
+			/* See @variant dark for the deliberate mobile/desktop primary split. */
 			--color-primary: hsl(17 69% 60%);
 			--color-primary-foreground: hsl(0 0% 100%);
 
@@ -103,6 +105,12 @@
 			--color-popover-foreground: hsl(30 6% 91%);
 
 			/* ── Ember accent (BRAND) ────────────────────────── */
+			/*
+			 * NOTE: deliberate primary split from desktop (2026-05-23 red-hat).
+			 * Mobile keeps --color-primary as ember because rn-reusables Button
+			 * uses bg-primary for its default fill. Desktop keeps primary neutral
+			 * and routes ember through --sidebar-primary and chart accents.
+			 */
 			--color-primary: hsl(17 69% 60%);
 			--color-primary-foreground: hsl(13 16% 7%);
 
