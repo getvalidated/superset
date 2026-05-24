@@ -37,12 +37,30 @@ const meta: Meta<typeof EmptyState> = {
 	argTypes: {
 		heading: { control: "text" },
 		body: { control: "text" },
+		icon: { control: false },
+		cta: { control: false },
 	},
 };
 
 export default meta;
 
 type Story = StoryObj<typeof EmptyState>;
+
+const renderWithCta =
+	(label: string): Story["render"] =>
+	(args) => (
+		<EmptyState
+			{...args}
+			cta={
+				<Pressable
+					accessibilityRole="button"
+					className="bg-secondary px-4 py-2 rounded-md"
+				>
+					<Text>{label}</Text>
+				</Pressable>
+			}
+		/>
+	);
 
 export const NoProjects: Story = {};
 
@@ -67,15 +85,8 @@ export const SearchNoMatch: Story = {
 		icon: Search,
 		heading: "No matches",
 		body: 'No sessions in superset match "zzzz".',
-		cta: (
-			<Pressable
-				accessibilityRole="button"
-				className="bg-secondary px-4 py-2 rounded-md"
-			>
-				<Text>Clear search</Text>
-			</Pressable>
-		),
 	},
+	render: renderWithCta("Clear search"),
 };
 
 export const FiltersNoMatch: Story = {
@@ -83,13 +94,6 @@ export const FiltersNoMatch: Story = {
 		icon: Settings,
 		heading: "No matches",
 		body: "No sessions match your filters. Try clearing some.",
-		cta: (
-			<Pressable
-				accessibilityRole="button"
-				className="bg-secondary px-4 py-2 rounded-md"
-			>
-				<Text>Clear filters</Text>
-			</Pressable>
-		),
 	},
+	render: renderWithCta("Clear filters"),
 };
