@@ -1,20 +1,19 @@
 import { PortalHost } from "@rn-primitives/portal";
 import type { Preview } from "@storybook/react-native";
-import { NavigationContainer } from "expo-router/react-navigation";
 import { View } from "react-native";
 import { cn } from "@/lib/utils";
 
+// NavigationContainer is provided by StorybookRouterProvider —
+// do NOT add one here or SDK 56's expo-router compat check will fail.
 const preview: Preview = {
 	decorators: [
 		(Story, context) => {
 			const isFullscreen = context.parameters?.layout === "fullscreen";
 			return (
-				<NavigationContainer>
-					<View className={cn("flex-1 bg-background", !isFullscreen && "p-4")}>
-						<Story />
-						<PortalHost />
-					</View>
-				</NavigationContainer>
+				<View className={cn("flex-1 bg-background", !isFullscreen && "p-4")}>
+					<Story />
+					<PortalHost />
+				</View>
 			);
 		},
 	],
