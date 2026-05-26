@@ -20,18 +20,13 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 	/* splash already hidden — fine to swallow */
 });
 
-// Storybook root toggle: when EXPO_PUBLIC_STORYBOOK=true, swap the entire root
-// for the Storybook UI. When falsy (default for all EAS production profiles),
-// Metro dead-code-eliminates the require() so @storybook/react-native and all
-// *.stories.tsx files are excluded from the production bundle.
-// See: plans/chat-mobile-plan/13-testing-strategy.md
 const StorybookRoot =
 	process.env.EXPO_PUBLIC_STORYBOOK === "true"
 		? require("../.rnstorybook").default
 		: null;
 
 export default function App() {
-	const [fontsLoaded] = useFonts({
+	const [fontsLoaded, fontError] = useFonts({
 		Geist_400Regular,
 		Geist_500Medium,
 		Geist_600SemiBold,
@@ -41,12 +36,15 @@ export default function App() {
 	});
 
 	useEffect(() => {
-		if (fontsLoaded) {
+		if (fontsLoaded || fontError) {
+			if (fontError) {
+				console.error("Font loading failed:", fontError);
+			}
 			SplashScreen.hideAsync().catch(() => {});
 		}
-	}, [fontsLoaded]);
+	}, [fontsLoaded, fontError]);
 
-	if (!fontsLoaded) return null;
+	if (!fontsLoaded && !fontError) return null;
 
 	const Root = StorybookRoot ?? RootLayout;
 	return <Root />;

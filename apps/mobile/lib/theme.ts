@@ -4,137 +4,48 @@ import {
 	type Theme,
 } from "expo-router/react-navigation";
 
-/**
- * Superset mobile theme — ember warm palette (Path A, 2026-05-22).
- *
- * Mirrors `apps/mobile/global.css` key-for-key. Tailwind class consumers
- * (`bg-background`, `text-primary`, etc.) resolve through global.css;
- * non-className consumers (e.g. `NAV_THEME` for expo-router, hooks that
- * read raw color values) resolve through this object.
- *
- * Source of truth: `designs/tokens/tokens.css` at the worktree root.
- * Audit: `plans/chat-mobile-plan/14-token-migration-audit.md`.
- */
 export const THEME = {
 	light: {
-		// Surfaces
 		background: "hsl(0 0% 100%)",
-		foreground: "hsl(0 0% 14.5%)",
+		foreground: "hsl(0 0% 3.9%)",
 		card: "hsl(0 0% 100%)",
-		cardForeground: "hsl(0 0% 14.5%)",
+		cardForeground: "hsl(0 0% 3.9%)",
 		popover: "hsl(0 0% 100%)",
-		popoverForeground: "hsl(0 0% 14.5%)",
-
-		// Ember accent (BRAND)
-		primary: "hsl(17 69% 60%)",
-		primaryForeground: "hsl(0 0% 100%)",
-
-		// Neutrals
-		secondary: "hsl(40 5% 95%)",
-		secondaryForeground: "hsl(0 0% 14.5%)",
-		muted: "hsl(40 5% 95%)",
-		mutedForeground: "hsl(0 0% 50.2%)",
-		accent: "hsl(40 7% 90%)",
-		accentForeground: "hsl(0 0% 14.5%)",
-		tertiary: "hsl(20 9.1% 93.5%)",
-		tertiaryActive: "hsl(15 6.1% 87.1%)",
-		sidebar: "hsl(0 0% 98%)",
-		sidebarPrimary: "hsl(0 0% 9%)",
-		sidebarAccent: "hsl(0 0% 96.1%)",
-		sidebarForeground: "hsl(0 0% 3.9%)",
-		sidebarBorder: "hsl(0 0% 89.8%)",
-		highlight: "hsl(18 100% 48%)",
-		highlightMatch: "rgba(255, 211, 61, 0.35)",
-		highlightActive: "rgba(255, 150, 50, 0.55)",
-
-		// Destructive
-		destructive: "hsl(0 61.2% 53.5%)",
-		destructiveForeground: "hsl(0 0% 100%)",
-
-		// Structure
-		border: "hsl(0 0% 92%)",
-		input: "hsl(0 0% 92%)",
-		ring: "hsl(0 0% 71%)",
+		popoverForeground: "hsl(0 0% 3.9%)",
+		primary: "hsl(0 0% 9%)",
+		primaryForeground: "hsl(0 0% 98%)",
+		secondary: "hsl(0 0% 96.1%)",
+		secondaryForeground: "hsl(0 0% 9%)",
+		muted: "hsl(0 0% 96.1%)",
+		mutedForeground: "hsl(0 0% 45.1%)",
+		accent: "hsl(0 0% 96.1%)",
+		accentForeground: "hsl(0 0% 9%)",
+		destructive: "hsl(0 84.2% 60.2%)",
+		border: "hsl(0 0% 89.8%)",
+		input: "hsl(0 0% 89.8%)",
+		ring: "hsl(0 0% 63%)",
 		radius: "0.625rem",
-
-		// State palette
-		stateLiveFg: "hsl(160 35% 39%)",
-		stateLiveBg: "hsl(160 35% 95%)",
-		stateWarningFg: "hsl(38 70% 45%)",
-		stateWarningBg: "hsl(38 70% 95%)",
-		stateDangerFg: "hsl(0 84% 60%)",
-		stateDangerBg: "hsl(0 84% 96%)",
-		stateSuccessFg: "hsl(160 35% 39%)",
-		stateSuccessBg: "hsl(160 35% 95%)",
-		stateNeutralFg: "hsl(0 0% 55%)",
-
-		// Domain — chat
-		streamingCursor: "hsl(160 35% 39%)",
-		toolRule: "hsl(17 69% 60%)",
-
-		// Typography
-		fontBody: "Geist_400Regular",
-		fontMono: "GeistMono_400Regular",
 	},
 	dark: {
-		// Surfaces (warm-neutral ramp)
-		background: "hsl(13 16% 7%)",
-		foreground: "hsl(30 6% 91%)",
-		card: "hsl(20 7% 12%)",
-		cardForeground: "hsl(30 6% 91%)",
-		popover: "hsl(20 7% 12%)",
-		popoverForeground: "hsl(30 6% 91%)",
-
-		// Ember accent (BRAND)
-		primary: "hsl(17 69% 60%)",
-		primaryForeground: "hsl(13 16% 7%)",
-
-		// Neutrals
-		secondary: "hsl(15 4% 16%)",
-		secondaryForeground: "hsl(30 6% 91%)",
-		muted: "hsl(15 4% 16%)",
-		mutedForeground: "hsl(15 4% 65%)",
-		accent: "hsl(20 4% 16%)",
-		accentForeground: "hsl(30 6% 91%)",
-		tertiary: "hsl(15 8.3% 9.4%)",
-		tertiaryActive: "hsl(24 7.2% 13.5%)",
-		sidebar: "hsl(15 8.3% 9.4%)",
-		sidebarPrimary: "hsl(17 69.9% 59.6%)",
-		sidebarAccent: "hsl(24 7.2% 13.5%)",
-		sidebarForeground: "hsl(30 8.7% 91%)",
-		sidebarBorder: "hsl(20 3.7% 15.9%)",
-		highlight: "hsl(17 69.9% 59.6%)",
-		highlightMatch: "rgba(224, 120, 80, 0.2)",
-		highlightActive: "rgba(224, 120, 80, 0.5)",
-
-		// Destructive
-		destructive: "hsl(0 56% 53%)",
-		destructiveForeground: "hsl(0 100% 90%)",
-
-		// Structure
-		border: "hsl(15 4% 16%)",
-		input: "hsl(15 4% 16%)",
-		ring: "hsl(15 3% 22%)",
+		background: "hsl(0 0% 3.9%)",
+		foreground: "hsl(0 0% 98%)",
+		card: "hsl(0 0% 3.9%)",
+		cardForeground: "hsl(0 0% 98%)",
+		popover: "hsl(0 0% 3.9%)",
+		popoverForeground: "hsl(0 0% 98%)",
+		primary: "hsl(0 0% 98%)",
+		primaryForeground: "hsl(0 0% 9%)",
+		secondary: "hsl(0 0% 14.9%)",
+		secondaryForeground: "hsl(0 0% 98%)",
+		muted: "hsl(0 0% 14.9%)",
+		mutedForeground: "hsl(0 0% 63.9%)",
+		accent: "hsl(0 0% 14.9%)",
+		accentForeground: "hsl(0 0% 98%)",
+		destructive: "hsl(0 70.9% 59.4%)",
+		border: "hsl(0 0% 14.9%)",
+		input: "hsl(0 0% 14.9%)",
+		ring: "hsl(300 0% 45%)",
 		radius: "0.625rem",
-
-		// State palette
-		stateLiveFg: "hsl(148 36% 49%)",
-		stateLiveBg: "hsla(149 35% 47% / 0.18)",
-		stateWarningFg: "hsl(43 60% 56%)",
-		stateWarningBg: "hsla(43 60% 56% / 0.18)",
-		stateDangerFg: "hsl(0 56% 53%)",
-		stateDangerBg: "hsla(0 56% 53% / 0.18)",
-		stateSuccessFg: "hsl(149 35% 47%)",
-		stateSuccessBg: "hsla(149 35% 47% / 0.18)",
-		stateNeutralFg: "hsl(15 4% 65%)",
-
-		// Domain — chat
-		streamingCursor: "hsl(148 36% 49%)",
-		toolRule: "hsl(17 69% 60%)",
-
-		// Typography
-		fontBody: "Geist_400Regular",
-		fontMono: "GeistMono_400Regular",
 	},
 };
 

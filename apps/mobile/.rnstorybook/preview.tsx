@@ -1,24 +1,20 @@
 import { PortalHost } from "@rn-primitives/portal";
 import type { Preview } from "@storybook/react-native";
+import { NavigationContainer } from "expo-router/react-navigation";
 import { View } from "react-native";
 import { cn } from "@/lib/utils";
-
-import { StorybookRouterProvider } from "./StorybookRouterProvider";
 
 const preview: Preview = {
 	decorators: [
 		(Story, context) => {
-			// Stories that declare `parameters.layout: 'fullscreen'` (per the
-			// Storybook convention) render edge-to-edge so views look like they
-			// would on a real device. Atoms/molecules keep the p-4 chrome.
 			const isFullscreen = context.parameters?.layout === "fullscreen";
 			return (
-				<StorybookRouterProvider>
+				<NavigationContainer>
 					<View className={cn("flex-1 bg-background", !isFullscreen && "p-4")}>
 						<Story />
 						<PortalHost />
 					</View>
-				</StorybookRouterProvider>
+				</NavigationContainer>
 			);
 		},
 	],
@@ -27,6 +23,11 @@ const preview: Preview = {
 			matchers: {
 				color: /(background|color|foreground)$/i,
 				date: /Date$/i,
+			},
+		},
+		moduleMock: {
+			mockingPairedModules: {
+				tty: () => require("./mocks/tty"),
 			},
 		},
 	},

@@ -1,160 +1,66 @@
 @import "tailwindcss";
 @import "uniwind";
 
-/* ============================================================
-   Superset mobile — ember warm palette (Path A, 2026-05-22)
-   Source of truth: designs/tokens/tokens.css at worktree root
-   Audit: plans/chat-mobile-plan/14-token-migration-audit.md
-
-   Flat shadcn-style keys (--color-*) preserved for rn-reusables
-   CLI compatibility. Light/dark via uniwind @variant. Active
-   theme set in screens/RootLayout/RootLayout.tsx via
-   Uniwind.setTheme().
-
-   oklch literals from designs/tokens converted to hsl for
-   uniwind/RN StyleSheet safety. color-mix() hover/pressed mixes
-   omitted — rn-reusables uses opacity/scale animations, not
-   color tokens, for interaction states.
-   ============================================================ */
-
 @theme {
-	/* Radius — uniwind reads --radius for the default Tailwind unit */
 	--radius: 0.625rem;
-
-	/* Typography */
 	--font-sans:
 		"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
 		sans-serif;
 	--font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
-
-	/* Mobile chrome essentials — full mobile-chrome surface added during atoms phase */
-	--spacing-touch-min: 44px;
 }
 
 @layer theme {
 	:root {
 		@variant light {
-			/* Primary split pointer: mobile ember; desktop neutral/sidebar-primary. */
-			--color-radius: 0.625rem;
-
-			/* ── Surfaces ─────────────────────────────────────── */
 			--color-background: hsl(0 0% 100%);
-			--color-foreground: hsl(0 0% 14.5%);
+			--color-foreground: hsl(0 0% 3.9%);
 			--color-card: hsl(0 0% 100%);
-			--color-card-foreground: hsl(0 0% 14.5%);
+			--color-card-foreground: hsl(0 0% 3.9%);
 			--color-popover: hsl(0 0% 100%);
-			--color-popover-foreground: hsl(0 0% 14.5%);
-
-			/* ── Ember accent (BRAND) ────────────────────────── */
-			/* See @variant dark for the deliberate mobile/desktop primary split. */
-			--color-primary: hsl(17 69% 60%);
-			--color-primary-foreground: hsl(0 0% 100%);
-
-			/* ── Neutrals ─────────────────────────────────────── */
-			--color-secondary: hsl(40 5% 95%);
-			--color-secondary-foreground: hsl(0 0% 14.5%);
-			--color-muted: hsl(40 5% 95%);
-			--color-muted-foreground: hsl(0 0% 50.2%);
-			--color-accent: hsl(40 7% 90%);
-			--color-accent-foreground: hsl(0 0% 14.5%);
-			--color-tertiary: hsl(20 9.1% 93.5%);
-			--color-tertiary-active: hsl(15 6.1% 87.1%);
-			--color-sidebar: hsl(0 0% 98%);
-			--color-sidebar-primary: hsl(0 0% 9%);
-			--color-sidebar-accent: hsl(0 0% 96.1%);
-			--color-sidebar-foreground: hsl(0 0% 3.9%);
-			--color-sidebar-border: hsl(0 0% 89.8%);
-			--color-highlight: hsl(18 100% 48%);
-			--color-highlight-match: rgba(255, 211, 61, 0.35);
-			--color-highlight-active: rgba(255, 150, 50, 0.55);
-
-			/* ── Destructive ─────────────────────────────────── */
-			--color-destructive: hsl(0 61.2% 53.5%);
-			--color-destructive-foreground: hsl(0 0% 100%);
-
-			/* ── Structure ────────────────────────────────────── */
-			--color-border: hsl(0 0% 92%);
-			--color-input: hsl(0 0% 92%);
-			--color-ring: hsl(0 0% 71%);
-
-			/* ── State palette (chat domain — additive) ──────── */
-			--color-state-live-fg: hsl(160 35% 39%);
-			--color-state-live-bg: hsl(160 35% 95%);
-			--color-state-warning-fg: hsl(38 70% 45%);
-			--color-state-warning-bg: hsl(38 70% 95%);
-			--color-state-danger-fg: hsl(0 84% 60%);
-			--color-state-danger-bg: hsl(0 84% 96%);
-			--color-state-success-fg: hsl(160 35% 39%);
-			--color-state-success-bg: hsl(160 35% 95%);
-			--color-state-neutral-fg: hsl(0 0% 55%);
-
-			/* ── Domain — chat ────────────────────────────────── */
-			--color-streaming-cursor: hsl(160 35% 39%);
-			--color-tool-rule: hsl(17 69% 60%);
+			--color-popover-foreground: hsl(0 0% 3.9%);
+			--color-primary: hsl(0 0% 9%);
+			--color-primary-foreground: hsl(0 0% 98%);
+			--color-secondary: hsl(0 0% 96.1%);
+			--color-secondary-foreground: hsl(0 0% 9%);
+			--color-muted: hsl(0 0% 96.1%);
+			--color-muted-foreground: hsl(0 0% 45.1%);
+			--color-accent: hsl(0 0% 96.1%);
+			--color-accent-foreground: hsl(0 0% 9%);
+			--color-destructive: hsl(0 84.2% 60.2%);
+			--color-border: hsl(0 0% 89.8%);
+			--color-input: hsl(0 0% 89.8%);
+			--color-ring: hsl(0 0% 63%);
+			--color-chart-1: hsl(12 76% 61%);
+			--color-chart-2: hsl(173 58% 39%);
+			--color-chart-3: hsl(197 37% 24%);
+			--color-chart-4: hsl(43 74% 66%);
+			--color-chart-5: hsl(27 87% 67%);
 		}
 
 		@variant dark {
-			--color-radius: 0.625rem;
-
-			/* ── Surfaces (warm-neutral ramp, desktop ember) ──── */
-			--color-background: hsl(13 16% 7%);
-			--color-foreground: hsl(30 6% 91%);
-			--color-card: hsl(20 7% 12%);
-			--color-card-foreground: hsl(30 6% 91%);
-			--color-popover: hsl(20 7% 12%);
-			--color-popover-foreground: hsl(30 6% 91%);
-
-			/* ── Ember accent (BRAND) ────────────────────────── */
-			/*
-			 * NOTE: deliberate primary split from desktop (2026-05-23 red-hat).
-			 * Mobile keeps --color-primary as ember because rn-reusables Button
-			 * uses bg-primary for its default fill. Desktop keeps primary neutral
-			 * and routes ember through --sidebar-primary and chart accents.
-			 */
-			--color-primary: hsl(17 69% 60%);
-			--color-primary-foreground: hsl(13 16% 7%);
-
-			/* ── Neutrals ─────────────────────────────────────── */
-			--color-secondary: hsl(15 4% 16%);
-			--color-secondary-foreground: hsl(30 6% 91%);
-			--color-muted: hsl(15 4% 16%);
-			--color-muted-foreground: hsl(15 4% 65%);
-			--color-accent: hsl(20 4% 16%);
-			--color-accent-foreground: hsl(30 6% 91%);
-			--color-tertiary: hsl(15 8.3% 9.4%);
-			--color-tertiary-active: hsl(24 7.2% 13.5%);
-			--color-sidebar: hsl(15 8.3% 9.4%);
-			--color-sidebar-primary: hsl(17 69.9% 59.6%);
-			--color-sidebar-accent: hsl(24 7.2% 13.5%);
-			--color-sidebar-foreground: hsl(30 8.7% 91%);
-			--color-sidebar-border: hsl(20 3.7% 15.9%);
-			--color-highlight: hsl(17 69.9% 59.6%);
-			--color-highlight-match: rgba(224, 120, 80, 0.2);
-			--color-highlight-active: rgba(224, 120, 80, 0.5);
-
-			/* ── Destructive ─────────────────────────────────── */
-			--color-destructive: hsl(0 56% 53%);
-			--color-destructive-foreground: hsl(0 100% 90%);
-
-			/* ── Structure ────────────────────────────────────── */
-			--color-border: hsl(15 4% 16%);
-			--color-input: hsl(15 4% 16%);
-			--color-ring: hsl(15 3% 22%);
-
-			/* ── State palette ────────────────────────────────── */
-			--color-state-live-fg: hsl(148 36% 49%);
-			--color-state-live-bg: hsla(149 35% 47% / 0.18);
-			--color-state-warning-fg: hsl(43 60% 56%);
-			--color-state-warning-bg: hsla(43 60% 56% / 0.18);
-			--color-state-danger-fg: hsl(0 56% 53%);
-			--color-state-danger-bg: hsla(0 56% 53% / 0.18);
-			--color-state-success-fg: hsl(149 35% 47%);
-			--color-state-success-bg: hsla(149 35% 47% / 0.18);
-			--color-state-neutral-fg: hsl(15 4% 65%);
-
-			/* ── Domain — chat ────────────────────────────────── */
-			--color-streaming-cursor: hsl(148 36% 49%);
-			--color-tool-rule: hsl(17 69% 60%);
+			--color-background: hsl(0 0% 3.9%);
+			--color-foreground: hsl(0 0% 98%);
+			--color-card: hsl(0 0% 3.9%);
+			--color-card-foreground: hsl(0 0% 98%);
+			--color-popover: hsl(0 0% 3.9%);
+			--color-popover-foreground: hsl(0 0% 98%);
+			--color-primary: hsl(0 0% 98%);
+			--color-primary-foreground: hsl(0 0% 9%);
+			--color-secondary: hsl(0 0% 14.9%);
+			--color-secondary-foreground: hsl(0 0% 98%);
+			--color-muted: hsl(0 0% 14.9%);
+			--color-muted-foreground: hsl(0 0% 63.9%);
+			--color-accent: hsl(0 0% 14.9%);
+			--color-accent-foreground: hsl(0 0% 98%);
+			--color-destructive: hsl(0 70.9% 59.4%);
+			--color-border: hsl(0 0% 14.9%);
+			--color-input: hsl(0 0% 14.9%);
+			--color-ring: hsl(300 0% 45%);
+			--color-chart-1: hsl(220 70% 50%);
+			--color-chart-2: hsl(160 60% 45%);
+			--color-chart-3: hsl(30 80% 55%);
+			--color-chart-4: hsl(280 65% 60%);
+			--color-chart-5: hsl(340 75% 55%);
 		}
 	}
 }
