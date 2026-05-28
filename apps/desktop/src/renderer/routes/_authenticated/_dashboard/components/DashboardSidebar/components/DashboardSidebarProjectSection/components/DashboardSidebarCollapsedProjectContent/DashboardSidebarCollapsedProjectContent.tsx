@@ -10,7 +10,7 @@ interface DashboardSidebarCollapsedProjectContentProps
 	extends ComponentPropsWithoutRef<"div"> {
 	projectName: string;
 	iconUrl: string | null;
-	projectColor: string | null;
+	projectColor: string;
 	isCollapsed: boolean;
 	totalWorkspaceCount: number;
 	workspaces: DashboardSidebarWorkspace[];

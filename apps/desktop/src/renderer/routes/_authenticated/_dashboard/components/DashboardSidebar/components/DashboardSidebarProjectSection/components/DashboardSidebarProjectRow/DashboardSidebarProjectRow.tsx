@@ -9,7 +9,7 @@ interface DashboardSidebarProjectRowProps
 	extends ComponentPropsWithoutRef<"div"> {
 	projectName: string;
 	iconUrl: string | null;
-	projectColor: string | null;
+	projectColor: string;
 	totalWorkspaceCount: number;
 	isCollapsed: boolean;
 	isRenaming: boolean;

@@ -19,7 +19,7 @@ import {
 import { ColorSelector } from "renderer/components/ColorSelector";
 
 interface DashboardSidebarProjectContextMenuProps {
-	projectColor: string | null;
+	projectColor: string;
 	onCreateSection: () => void;
 	onOpenInFinder: () => void;
 	onOpenSettings: () => void;

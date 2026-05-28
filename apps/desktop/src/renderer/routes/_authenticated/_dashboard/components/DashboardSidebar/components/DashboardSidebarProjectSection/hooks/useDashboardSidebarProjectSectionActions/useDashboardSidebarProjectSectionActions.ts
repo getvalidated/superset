@@ -22,7 +22,7 @@ export function useDashboardSidebarProjectSectionActions({
 	const { v2Projects: projectActions } = useOptimisticCollectionActions();
 	const { requestSectionRename } = useDashboardSidebarSectionRename();
 	const projectColor = useV2ProjectLocalMetaStore(
-		(state) => state.projects[project.id]?.color ?? null,
+		(state) => state.projects[project.id]?.color ?? PROJECT_COLOR_DEFAULT,
 	);
 	const setProjectColor = useV2ProjectLocalMetaStore(
 		(state) => state.setProjectColor,
@@ -57,7 +57,7 @@ export function useDashboardSidebarProjectSectionActions({
 	};
 
 	const handleSetColor = (color: string) => {
-		setProjectColor(project.id, color === PROJECT_COLOR_DEFAULT ? null : color);
+		setProjectColor(project.id, color);
 	};
 
 	const handleOpenInFinder = () => {
