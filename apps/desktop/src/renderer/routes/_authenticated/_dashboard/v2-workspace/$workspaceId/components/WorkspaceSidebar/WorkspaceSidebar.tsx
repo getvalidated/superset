@@ -45,6 +45,9 @@ interface WorkspaceSidebarProps {
 	/** Plumbed from usePaneRegistry's createNewAgentSession — used by the PR
 	 *  action header when the user picks a "Start new" agent. */
 	onCreateNewAgentSession?: PRActionCreateNewAgentSession;
+	/** Focus a terminal pane by id — used by the PR action header after
+	 *  sending a prompt to an existing agent so the user sees it land. */
+	onFocusExistingTerminal?: (terminalId: string) => void;
 	onSearch?: () => void;
 	selectedFilePath?: string;
 	pendingReveal?: PendingReveal | null;
@@ -83,6 +86,7 @@ export function WorkspaceSidebar({
 	onOpenComment,
 	onOpenChat,
 	onCreateNewAgentSession,
+	onFocusExistingTerminal,
 	onSearch,
 	selectedFilePath,
 	pendingReveal,
@@ -184,6 +188,7 @@ export function WorkspaceSidebar({
 				dispatch={dispatch}
 				onRetry={onRetry}
 				onCreateNewAgentSession={onCreateNewAgentSession}
+				onFocusExistingTerminal={onFocusExistingTerminal}
 			/>
 			<SidebarHeader
 				tabs={tabs}

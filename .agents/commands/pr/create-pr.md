@@ -9,8 +9,9 @@ Create a pull request for the current branch in one pass. The user
 clicked the Create PR button in the diff-editor sidebar — they expect
 the PR to be created without further prompting.
 
-An attachment named `pr-context.md` is included with this turn. It
-contains:
+PR context is provided alongside this turn — **either as a file
+attachment named `pr-context.md`, or fenced inline after the slash
+command** (look for a `# PR context` heading). It contains:
 
 - Current branch and base branch
 - Whether the branch is published (has upstream)
@@ -19,8 +20,8 @@ contains:
 - Required preconditions the user's branch must satisfy before
   `gh pr create` will succeed
 
-Read `pr-context.md` first. Use it as ground truth instead of re-deriving
-the state yourself.
+Read the PR context first. Use it as ground truth instead of
+re-deriving the state yourself.
 
 # Arguments
 

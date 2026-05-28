@@ -37,7 +37,8 @@ import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { useWorkspacePaneOpeners } from "./hooks/useWorkspacePaneOpeners";
 import { WorkspaceGitStatusProvider } from "./providers/WorkspaceGitStatusProvider";
 import { FileDocumentStoreProvider } from "./state/fileDocumentStore";
-import type { PaneViewerData } from "./types";
+import type { ChatPaneData, PaneViewerData } from "./types";
+import { focusTerminalPane } from "./utils/focusTerminalPane";
 import type { V2WorkspaceUrlOpenTarget } from "./utils/openUrlInV2Workspace";
 
 interface WorkspaceSearch {
@@ -176,6 +177,25 @@ function V2WorkspaceContent() {
 		store,
 	});
 	const createNewAgentSession = useCreateNewAgentSession({ store });
+	const openChatWithLaunchConfig = useCallback(
+		(launchConfig: ChatPaneData["launchConfig"]) => {
+			store.getState().addTab({
+				panes: [
+					{
+						kind: "chat",
+						data: { sessionId: null, launchConfig } as ChatPaneData,
+					},
+				],
+			});
+		},
+		[store],
+	);
+	const focusExistingTerminal = useCallback(
+		(terminalId: string) => {
+			focusTerminalPane(store, terminalId);
+		},
+		[store],
+	);
 	const defaultContextMenuActions = useDefaultContextMenuActions({
 		paneRegistry,
 		launcher,
@@ -362,7 +382,9 @@ function V2WorkspaceContent() {
 								onSelectFile={openFilePaneFromTreeClick}
 								onSelectDiffFile={openDiffPane}
 								onOpenComment={openCommentPane}
+								onOpenChat={openChatWithLaunchConfig}
 								onCreateNewAgentSession={createNewAgentSession}
+								onFocusExistingTerminal={focusExistingTerminal}
 								onSearch={handleQuickOpen}
 								selectedFilePath={selectedFilePath}
 								pendingReveal={pendingReveal}

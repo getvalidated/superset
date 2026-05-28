@@ -20,6 +20,10 @@ interface UsePRActionDispatchArgs {
 	/** Legacy chat-tab path used when no agent target is selected. */
 	flowDispatch: PRFlowDispatch;
 	onCreateNewAgentSession?: PRActionCreateNewAgentSession;
+	/** Focus an existing terminal pane after a successful send. Without
+	 *  this, the user clicks the button and the message lands in an
+	 *  off-screen pane with no visible feedback. */
+	onFocusExistingTerminal?: (terminalId: string) => void;
 }
 
 interface SubmitArgs {
@@ -44,6 +48,7 @@ export function usePRActionDispatch({
 	workspaceId,
 	flowDispatch,
 	onCreateNewAgentSession,
+	onFocusExistingTerminal,
 }: UsePRActionDispatchArgs) {
 	const { send: sendToTerminalAgent } = useSendToTerminalAgent();
 
@@ -57,6 +62,7 @@ export function usePRActionDispatch({
 			const plan = planDispatch(state, { draft: false });
 			if (!plan) return; // state isn't actionable
 
+			const verb = state.kind === "pr-exists" ? "Updating" : "Creating";
 			const inlined = formatInlinedPrompt(plan.prompt, state);
 
 			if (target.kind === "existing") {
@@ -66,8 +72,10 @@ export function usePRActionDispatch({
 						terminalId: target.terminalId,
 						text: inlined,
 					});
+					onFocusExistingTerminal?.(target.terminalId);
+					toast.success(`${verb} PR with agent`);
 				} catch {
-					// useSendToTerminalAgent surfaces its own toast.
+					// useSendToTerminalAgent surfaces its own error toast.
 				}
 				return;
 			}
@@ -76,17 +84,27 @@ export function usePRActionDispatch({
 				toast.error("Couldn't start a new agent session");
 				return;
 			}
-			await onCreateNewAgentSession({
+			const result = await onCreateNewAgentSession({
 				configId: target.configId,
 				placement: target.placement,
 				prompt: inlined,
 			});
+			if (result) toast.success(`${verb} PR in new agent session`);
 		},
-		[workspaceId, flowDispatch, sendToTerminalAgent, onCreateNewAgentSession],
+		[
+			workspaceId,
+			flowDispatch,
+			sendToTerminalAgent,
+			onCreateNewAgentSession,
+			onFocusExistingTerminal,
+		],
 	);
 }
 
 function formatInlinedPrompt(prompt: string, state: PRFlowState): string {
 	const context = buildPRContext(state);
-	return `${prompt}\n\n--- pr-context.md ---\n${context}`;
+	// Inline PR context with a heading the skill recognises. Keep the
+	// `pr-context.md` reference so the skill body's "file attachment or
+	// inlined" framing reads naturally either way.
+	return `${prompt}\n\n**pr-context.md**\n\n${context}`;
 }

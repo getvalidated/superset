@@ -28,6 +28,9 @@ interface PRActionHeaderProps {
 	/** Host-side terminal-agent launcher. When omitted, "Start new" picks
 	 *  surface an error toast. */
 	onCreateNewAgentSession?: PRActionCreateNewAgentSession;
+	/** Focus the target terminal pane after sending to an existing session
+	 *  so the user can see the agent receive the prompt. */
+	onFocusExistingTerminal?: (terminalId: string) => void;
 }
 
 export function PRActionHeader({
@@ -36,6 +39,7 @@ export function PRActionHeader({
 	dispatch,
 	onRetry,
 	onCreateNewAgentSession,
+	onFocusExistingTerminal,
 }: PRActionHeaderProps) {
 	const action = selectActionButton(state);
 
@@ -61,6 +65,7 @@ export function PRActionHeader({
 		workspaceId,
 		flowDispatch: dispatch,
 		onCreateNewAgentSession,
+		onFocusExistingTerminal,
 	});
 
 	const onPickTarget = (
