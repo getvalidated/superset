@@ -7,6 +7,7 @@ import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/u
 import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/hooks/useOptimisticCollectionActions";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import { useV2ProjectLocalMetaStore } from "renderer/stores/v2-project-local-meta";
+import { PROJECT_COLOR_DEFAULT } from "shared/constants/project-colors";
 import type { DashboardSidebarProject } from "../../../../types";
 
 interface UseDashboardSidebarProjectSectionActionsOptions {
@@ -56,7 +57,7 @@ export function useDashboardSidebarProjectSectionActions({
 	};
 
 	const handleSetColor = (color: string) => {
-		setProjectColor(project.id, color);
+		setProjectColor(project.id, color === PROJECT_COLOR_DEFAULT ? null : color);
 	};
 
 	const handleOpenInFinder = () => {
