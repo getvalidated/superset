@@ -4,20 +4,42 @@ import type {
 	PullRequest,
 } from "../getPRFlowState";
 
+interface BuildPRContextOptions {
+	/** Contents of the per-project `.superset/pr-prompt.md`, when present.
+	 *  Trimmed and appended as a `## Project guidelines` section that the
+	 *  slash command honours. Empty/null skips the section entirely. */
+	projectPrompt?: string | null;
+}
+
 /**
  * Builds the markdown attachment that is passed to the agent when the
  * PR action button is clicked. The skill reads this file to decide
  * whether to commit, publish, or push before calling `gh pr create`.
  */
-export function buildPRContext(state: PRFlowState): string {
-	switch (state.kind) {
-		case "no-pr":
-			return renderNoPR(state.sync);
-		case "pr-exists":
-			return renderPrExists(state.pr, state.sync);
-		default:
-			return renderStub(state.kind);
-	}
+export function buildPRContext(
+	state: PRFlowState,
+	options: BuildPRContextOptions = {},
+): string {
+	const base = (() => {
+		switch (state.kind) {
+			case "no-pr":
+				return renderNoPR(state.sync);
+			case "pr-exists":
+				return renderPrExists(state.pr, state.sync);
+			default:
+				return renderStub(state.kind);
+		}
+	})();
+	return appendProjectGuidelines(base, options.projectPrompt);
+}
+
+function appendProjectGuidelines(
+	context: string,
+	projectPrompt: string | null | undefined,
+): string {
+	const trimmed = projectPrompt?.trim();
+	if (!trimmed) return context;
+	return `${context}\n## Project guidelines\n\n${trimmed}\n`;
 }
 
 function renderNoPR(sync: BranchSyncStatus): string {

@@ -4,7 +4,7 @@ import { VscGitPullRequest } from "react-icons/vsc";
 import { useTerminalAgentBindings } from "renderer/hooks/host-service/useTerminalAgentBindings";
 import { useWorkspaceHostUrl } from "renderer/hooks/host-service/useWorkspaceHostUrl";
 import { useV2AgentConfigs } from "renderer/hooks/useV2AgentConfigs";
-import type { PRFlowDispatch } from "../../hooks/usePRFlowDispatch";
+import type { OpenChatFn } from "../../hooks/planDispatch";
 import {
 	type PRActionCreateNewAgentSession,
 	PRActionSplitButton,
@@ -12,6 +12,7 @@ import {
 	usePRActionDispatch,
 } from "./components/PRActionSplitButton";
 import { PRStatusGroup } from "./components/PRStatusGroup";
+import { useProjectPRPrompt } from "./hooks/useProjectPRPrompt";
 import {
 	type PRFlowState,
 	selectActionButton,
@@ -21,9 +22,10 @@ import {
 interface PRActionHeaderProps {
 	workspaceId: string;
 	state: PRFlowState;
-	/** Legacy chat-tab flow — used as the fallback transport when no agent
-	 *  target has been picked yet. */
-	dispatch: PRFlowDispatch;
+	/** Opens a chat tab seeded with the slash command + pr-context.md
+	 *  attachment. Used as the fallback transport when no agent target
+	 *  is selected. */
+	onOpenChat?: OpenChatFn;
 	onRetry?: () => void;
 	/** Host-side terminal-agent launcher. When omitted, "Start new" picks
 	 *  surface an error toast. */
@@ -31,15 +33,18 @@ interface PRActionHeaderProps {
 	/** Focus the target terminal pane after sending to an existing session
 	 *  so the user can see the agent receive the prompt. */
 	onFocusExistingTerminal?: (terminalId: string) => void;
+	/** "Open in editor" deep-link inside the Edit-prompt dialog. */
+	onOpenPromptInEditor?: (absolutePath: string) => void;
 }
 
 export function PRActionHeader({
 	workspaceId,
 	state,
-	dispatch,
+	onOpenChat,
 	onRetry,
 	onCreateNewAgentSession,
 	onFocusExistingTerminal,
+	onOpenPromptInEditor,
 }: PRActionHeaderProps) {
 	const action = selectActionButton(state);
 
@@ -61,11 +66,13 @@ export function PRActionHeader({
 		onValueChange,
 	} = usePRActionAgentTarget({ sessions, configs });
 
+	const projectPrompt = useProjectPRPrompt(workspaceId);
 	const submit = usePRActionDispatch({
 		workspaceId,
-		flowDispatch: dispatch,
+		onOpenChat,
 		onCreateNewAgentSession,
 		onFocusExistingTerminal,
+		projectPrompt: projectPrompt.content ?? null,
 	});
 
 	const onPickTarget = (
@@ -79,6 +86,7 @@ export function PRActionHeader({
 	};
 
 	const splitButtonProps = {
+		workspaceId,
 		sessions,
 		configs,
 		selectedValue,
@@ -87,6 +95,7 @@ export function PRActionHeader({
 		onSubmit: (
 			target: import("renderer/hooks/agents/useAgentTarget").AgentTarget | null,
 		) => submit({ state, target }),
+		onOpenPromptInEditor,
 	};
 
 	return (

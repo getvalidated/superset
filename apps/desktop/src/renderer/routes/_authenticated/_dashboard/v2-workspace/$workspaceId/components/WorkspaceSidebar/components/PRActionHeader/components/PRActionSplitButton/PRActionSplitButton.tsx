@@ -5,6 +5,7 @@ import {
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
+import { useState } from "react";
 import {
 	VscChevronDown,
 	VscEdit,
@@ -14,11 +15,13 @@ import {
 import type { AgentTarget } from "renderer/hooks/agents/useAgentTarget";
 import type { TerminalAgentBinding } from "renderer/hooks/host-service/useTerminalAgentBindings";
 import { PRAgentPickerMenu } from "./components/PRAgentPickerMenu";
+import { PRPromptEditDialog } from "./components/PRPromptEditDialog";
 
 type SplitButtonKind = "create" | "update";
 
 interface PRActionSplitButtonProps {
 	kind: SplitButtonKind;
+	workspaceId: string;
 	sessions: TerminalAgentBinding[];
 	configs: HostAgentConfig[];
 	/** Currently-selected encoded value (`existing:<id>` | `new:<id>`) so the
@@ -29,6 +32,9 @@ interface PRActionSplitButtonProps {
 	/** Fires the action with the currently-resolved target (or null fallback
 	 *  → chat tab). The dispatch hook owns transport routing. */
 	onSubmit: (target: AgentTarget | null) => void | Promise<void>;
+	/** Deep-link for the "Open in editor" affordance inside the
+	 *  Edit-prompt dialog. */
+	onOpenPromptInEditor?: (absolutePath: string) => void;
 	/** Disables the primary + swaps the action icon for a spinner. */
 	busy?: boolean;
 }
@@ -47,15 +53,18 @@ interface PRActionSplitButtonProps {
  */
 export function PRActionSplitButton({
 	kind,
+	workspaceId,
 	sessions,
 	configs,
 	selectedValue,
 	resolvedTarget,
 	onPickTarget,
 	onSubmit,
+	onOpenPromptInEditor,
 	busy = false,
 }: PRActionSplitButtonProps) {
 	const copy = labels(kind, busy);
+	const [promptDialogOpen, setPromptDialogOpen] = useState(false);
 	const primaryHandler = () => void onSubmit(resolvedTarget);
 	const handlePick = (target: AgentTarget) => {
 		onPickTarget(target);
@@ -106,9 +115,16 @@ export function PRActionSplitButton({
 						configs={configs}
 						value={selectedValue}
 						onPickTarget={handlePick}
+						onEditPrompt={() => setPromptDialogOpen(true)}
 					/>
 				</DropdownMenuContent>
 			</DropdownMenu>
+			<PRPromptEditDialog
+				workspaceId={workspaceId}
+				open={promptDialogOpen}
+				onOpenChange={setPromptDialogOpen}
+				onOpenInEditor={onOpenPromptInEditor}
+			/>
 		</div>
 	);
 }

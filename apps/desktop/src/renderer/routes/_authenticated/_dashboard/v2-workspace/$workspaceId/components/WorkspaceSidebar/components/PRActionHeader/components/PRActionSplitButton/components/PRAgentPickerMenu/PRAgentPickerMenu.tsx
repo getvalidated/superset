@@ -4,7 +4,7 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 } from "@superset/ui/dropdown-menu";
-import { LuPlus } from "react-icons/lu";
+import { LuPencil, LuPlus } from "react-icons/lu";
 import { usePresetIcon } from "renderer/assets/app-icons/preset-icons";
 import {
 	type AgentTarget,
@@ -21,6 +21,9 @@ interface PRAgentPickerMenuProps {
 	/** Fired when the user picks an item — receives the resolved target so
 	 *  the parent can both persist the pick and submit through it. */
 	onPickTarget: (target: AgentTarget) => void;
+	/** Opens the per-project PR prompt editor. When omitted, the trailing
+	 *  "Edit PR prompt…" item is hidden. */
+	onEditPrompt?: () => void;
 }
 
 const groupLabelClass =
@@ -38,15 +41,28 @@ export function PRAgentPickerMenu({
 	configs,
 	value,
 	onPickTarget,
+	onEditPrompt,
 }: PRAgentPickerMenuProps) {
 	const hasSessions = sessions.length > 0;
 	const hasConfigs = configs.length > 0;
+	const editPromptItem = onEditPrompt ? (
+		<>
+			<DropdownMenuSeparator />
+			<DropdownMenuItem onSelect={onEditPrompt} className="text-xs">
+				<LuPencil className="size-3.5 text-muted-foreground" />
+				Edit PR prompt…
+			</DropdownMenuItem>
+		</>
+	) : null;
 
 	if (!hasSessions && !hasConfigs) {
 		return (
-			<DropdownMenuItem disabled className="text-xs text-muted-foreground">
-				No agents configured — add a preset in Settings
-			</DropdownMenuItem>
+			<>
+				<DropdownMenuItem disabled className="text-xs text-muted-foreground">
+					No agents configured — add a preset in Settings
+				</DropdownMenuItem>
+				{editPromptItem}
+			</>
 		);
 	}
 
@@ -112,6 +128,7 @@ export function PRAgentPickerMenu({
 					})}
 				</>
 			) : null}
+			{editPromptItem}
 		</>
 	);
 }

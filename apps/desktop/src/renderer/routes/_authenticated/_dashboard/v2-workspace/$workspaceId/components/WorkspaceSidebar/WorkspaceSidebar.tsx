@@ -13,8 +13,8 @@ import { FilesTab } from "./components/FilesTab";
 import { PRActionHeader } from "./components/PRActionHeader";
 import type { PRActionCreateNewAgentSession } from "./components/PRActionHeader/components/PRActionSplitButton";
 import { SidebarHeader } from "./components/SidebarHeader";
+import type { OpenChatFn } from "./hooks/planDispatch";
 import { useChangesTab } from "./hooks/useChangesTab";
-import { type OpenChatFn, usePRFlowDispatch } from "./hooks/usePRFlowDispatch";
 import { usePRFlowState } from "./hooks/usePRFlowState";
 import { useReviewTab } from "./hooks/useReviewTab";
 import type { SidebarTabDefinition } from "./types";
@@ -48,6 +48,9 @@ interface WorkspaceSidebarProps {
 	/** Focus a terminal pane by id — used by the PR action header after
 	 *  sending a prompt to an existing agent so the user sees it land. */
 	onFocusExistingTerminal?: (terminalId: string) => void;
+	/** Open a file in the editor — used by the PR-prompt edit dialog's
+	 *  "Open in editor" link. */
+	onOpenFileAtAbsolutePath?: (absolutePath: string) => void;
 	onSearch?: () => void;
 	selectedFilePath?: string;
 	pendingReveal?: PendingReveal | null;
@@ -87,6 +90,7 @@ export function WorkspaceSidebar({
 	onOpenChat,
 	onCreateNewAgentSession,
 	onFocusExistingTerminal,
+	onOpenFileAtAbsolutePath,
 	onSearch,
 	selectedFilePath,
 	pendingReveal,
@@ -154,9 +158,6 @@ export function WorkspaceSidebar({
 	});
 
 	const { flowState, onRetry } = usePRFlowState(workspaceId);
-	const dispatch = usePRFlowDispatch({
-		onOpenChat: onOpenChat ?? (() => {}),
-	});
 
 	const filesTab: SidebarTabDefinition = {
 		id: "files",
@@ -185,10 +186,11 @@ export function WorkspaceSidebar({
 			<PRActionHeader
 				workspaceId={workspaceId}
 				state={flowState}
-				dispatch={dispatch}
+				onOpenChat={onOpenChat}
 				onRetry={onRetry}
 				onCreateNewAgentSession={onCreateNewAgentSession}
 				onFocusExistingTerminal={onFocusExistingTerminal}
+				onOpenPromptInEditor={onOpenFileAtAbsolutePath}
 			/>
 			<SidebarHeader
 				tabs={tabs}

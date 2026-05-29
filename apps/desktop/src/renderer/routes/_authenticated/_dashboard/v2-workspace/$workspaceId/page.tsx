@@ -385,6 +385,7 @@ function V2WorkspaceContent() {
 								onOpenChat={openChatWithLaunchConfig}
 								onCreateNewAgentSession={createNewAgentSession}
 								onFocusExistingTerminal={focusExistingTerminal}
+								onOpenFileAtAbsolutePath={openFilePane}
 								onSearch={handleQuickOpen}
 								selectedFilePath={selectedFilePath}
 								pendingReveal={pendingReveal}

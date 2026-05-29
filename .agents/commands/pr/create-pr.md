@@ -23,6 +23,13 @@ command** (look for a `# PR context` heading). It contains:
 Read the PR context first. Use it as ground truth instead of
 re-deriving the state yourself.
 
+If the PR context contains a `## Project guidelines` section near the
+end, treat its bullets as **non-negotiable preferences** for this
+repo's PRs (e.g. title formats, required body sections, draft
+defaults). Apply them when drafting the title and body in step 2.
+Project guidelines override only stylistic defaults — they don't
+relax any guardrails below.
+
 # Arguments
 
 - `--draft` — create the PR as a draft. Pass `--draft` through to the

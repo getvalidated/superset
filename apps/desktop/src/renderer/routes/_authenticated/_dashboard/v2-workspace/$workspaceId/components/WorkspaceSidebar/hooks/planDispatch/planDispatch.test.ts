@@ -4,7 +4,7 @@ import type {
 	PRFlowState,
 	PullRequest,
 } from "../../components/PRActionHeader/utils/getPRFlowState";
-import { planDispatch } from "./usePRFlowDispatch";
+import { formatInlinedPRPrompt, planDispatch } from "./planDispatch";
 
 const sync: BranchSyncStatus = {
 	hasRepo: true,
@@ -101,5 +101,65 @@ describe("planDispatch", () => {
 		expect(decoded).toContain("# PR context");
 		expect(decoded).toContain("#42");
 		expect(decoded).toContain("Current: `feature-x`");
+	});
+
+	test("projectPrompt is appended as a 'Project guidelines' section", () => {
+		const plan = planDispatch(noPrState, {
+			draft: false,
+			projectPrompt: "Title format: feat(scope): description.",
+		});
+		expect(plan?.contextMarkdown).toContain("## Project guidelines");
+		expect(plan?.contextMarkdown).toContain(
+			"Title format: feat(scope): description.",
+		);
+	});
+
+	test("empty/whitespace projectPrompt skips the section", () => {
+		const plan = planDispatch(noPrState, {
+			draft: false,
+			projectPrompt: "   \n  \n",
+		});
+		expect(plan?.contextMarkdown).not.toContain("Project guidelines");
+	});
+});
+
+function requirePlan(plan: ReturnType<typeof planDispatch>) {
+	if (!plan) throw new Error("planDispatch returned null in test");
+	return plan;
+}
+
+describe("formatInlinedPRPrompt", () => {
+	test("composes slash command + heading + context markdown", () => {
+		const plan = requirePlan(planDispatch(noPrState, { draft: false }));
+		const text = formatInlinedPRPrompt(plan);
+		expect(text).toContain("/pr/create-pr");
+		expect(text).toContain("**pr-context.md**");
+		expect(text).toContain("# PR context");
+		// The slash command must come first so the agent recognises it as
+		// the skill invocation before parsing the context.
+		const slashIdx = text.indexOf("/pr/create-pr");
+		const headingIdx = text.indexOf("**pr-context.md**");
+		const contextIdx = text.indexOf("# PR context");
+		expect(slashIdx).toBeLessThan(headingIdx);
+		expect(headingIdx).toBeLessThan(contextIdx);
+	});
+
+	test("forwards projectPrompt through into the inlined body", () => {
+		const plan = requirePlan(
+			planDispatch(noPrState, {
+				draft: false,
+				projectPrompt: "Title format: feat(scope): description.",
+			}),
+		);
+		const text = formatInlinedPRPrompt(plan);
+		expect(text).toContain("## Project guidelines");
+		expect(text).toContain("Title format: feat(scope): description.");
+	});
+
+	test("pr-exists state inlines /pr/update-pr", () => {
+		const plan = requirePlan(planDispatch(prExistsState, { draft: false }));
+		const text = formatInlinedPRPrompt(plan);
+		expect(text.startsWith("/pr/update-pr")).toBe(true);
+		expect(text).toContain("#42");
 	});
 });
