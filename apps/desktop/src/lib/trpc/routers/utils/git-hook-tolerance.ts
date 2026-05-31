@@ -1,6 +1,10 @@
 interface GitCommandException extends Error {
 	stdout?: string;
 	stderr?: string;
+	// node:child_process exec errors carry the child's exit code (number) or a
+	// spawn-error string like "ENOENT", and `signal` when killed by a signal.
+	code?: number | string;
+	signal?: string;
 }
 
 function getErrorText(error: unknown): string {
@@ -20,8 +24,41 @@ function getErrorText(error: unknown): string {
 }
 
 /**
+ * Recognises a failure that comes from the post-checkout hook itself. Husky and
+ * similar managers print identifiable diagnostics, so we can match on them.
+ */
+function isPostCheckoutHookFailure(error: unknown): boolean {
+	const text = getErrorText(error).toLowerCase();
+	if (!text.includes("post-checkout")) {
+		return false;
+	}
+
+	return (
+		text.includes("hook") ||
+		text.includes("husky") ||
+		text.includes("command not found")
+	);
+}
+
+/**
+ * Recognises a process that died from / propagated a signal rather than a git
+ * usage error. A post-checkout hook pipeline that hits SIGPIPE under
+ * `set -o pipefail` surfaces as exit 141 (128 + SIGPIPE) with no diagnostic
+ * text, so the keyword check above can't see it (#4350). Genuine git failures
+ * ("fatal: …") exit with 128 or 1, so this branch stays clear of them.
+ */
+function isSignalTerminatedFailure(error: unknown): boolean {
+	const { code, signal } = error as GitCommandException;
+	if (typeof signal === "string" && signal.length > 0) {
+		return true;
+	}
+	return typeof code === "number" && code > 128;
+}
+
+/**
  * Runs a git command whose checkout step may fire hooks (e.g. `post-checkout`),
- * tolerating a non-zero exit when the intended end-state was actually reached.
+ * tolerating a non-zero exit when — and only when — the failure plausibly came
+ * from that hook step AND the intended end-state was actually reached.
  *
  * `git worktree add` and branch checkout run the repo's `post-checkout` hook
  * AFTER the worktree is created and the branch is checked out. A flaky hook can
@@ -29,13 +66,12 @@ function getErrorText(error: unknown): string {
  * pipeline that dies with SIGPIPE / exit 141 (`git worktree list | awk '…exit'`
  * under `set -o pipefail`) — even though git already finished its work.
  *
- * We deliberately do NOT try to recognise hook failures by matching stderr text:
- * a SIGPIPE death produces none of the usual keywords, so any such heuristic is
- * under-inclusive and rethrows over a worktree that is fully present on disk
- * (see issue #4350). Instead we ask `didSucceed` whether the concrete outcome we
- * wanted is real (worktree registered in `git worktree list` / branch switched).
- * If it is, the non-zero exit is non-fatal. If it isn't, the error is genuine
- * and we rethrow it unchanged.
+ * We forgive the failure only if it looks like a hook failure (recognisable
+ * diagnostics) or a signal-terminated process (exit > 128), and the concrete
+ * outcome we wanted is real (`didSucceed`: worktree registered / branch
+ * switched). Genuine git usage errors ("fatal: …", exit 128/1) are NEVER
+ * swallowed — even if `didSucceed` would pass over a stale/pre-existing worktree
+ * at the same path — so a real `worktree add` failure is not hidden.
  */
 export async function runWithPostCheckoutHookTolerance({
 	run,
@@ -49,6 +85,13 @@ export async function runWithPostCheckoutHookTolerance({
 	try {
 		await run();
 	} catch (error) {
+		if (
+			!isPostCheckoutHookFailure(error) &&
+			!isSignalTerminatedFailure(error)
+		) {
+			throw error;
+		}
+
 		let succeeded = false;
 		try {
 			succeeded = await didSucceed();
@@ -62,7 +105,7 @@ export async function runWithPostCheckoutHookTolerance({
 
 		const message = getErrorText(error);
 		console.warn(
-			`[git] ${context} but the command exited non-zero (non-fatal): ${message}`,
+			`[git] ${context} but the post-checkout step exited non-zero (non-fatal): ${message}`,
 		);
 	}
 }
