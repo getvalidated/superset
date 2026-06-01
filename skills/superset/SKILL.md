@@ -38,6 +38,18 @@ superset workspaces delete <id> [<id>...]
 
 Provide exactly one of `--branch` or `--pr`. With `--pr`, the host checks out the verified PR head and derives the branch. `--base-branch <name>` is the fork point when `--branch` doesn't exist yet.
 
+Optionally act on the new workspace as soon as it's materialized:
+
+```bash
+superset workspaces create --project <id> --local --name "..." --branch <branch> --agent claude --prompt "fix the build"
+superset workspaces create --project <id> --local --name "..." --branch <branch> --command "bun install && bun test"
+```
+
+- `--agent`/`--prompt` launch an agent in the workspace (both required together).
+- `--command <cmd>` runs a one-off shell command in the worktree.
+
+The two are independent — pass either or both.
+
 ## Agents
 
 ```bash
