@@ -1,5 +1,3 @@
-import { eq } from "drizzle-orm";
-import { workspaces } from "../../../../db/schema";
 import { createTerminalSessionInternal } from "../../../../terminal/terminal";
 import type { HostServiceContext } from "../../../../types";
 import type { TerminalDescriptor } from "./types";
@@ -23,16 +21,6 @@ interface StartCommandTerminalResult {
 export async function startCommandTerminal(
 	args: StartCommandTerminalArgs,
 ): Promise<StartCommandTerminalResult> {
-	const row = args.ctx.db
-		.select({ worktreePath: workspaces.worktreePath })
-		.from(workspaces)
-		.where(eq(workspaces.id, args.workspaceId))
-		.get();
-
-	if (!row || !row.worktreePath) {
-		return { terminal: null, warning: "Workspace has no worktree path" };
-	}
-
 	const terminalId = crypto.randomUUID();
 	const result = await createTerminalSessionInternal({
 		terminalId,

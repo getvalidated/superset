@@ -1056,27 +1056,27 @@ export const workspacesRouter = router({
 				}
 			}
 
-			const agentsResult = await dispatchSugarAgents(
-				ctx,
-				workspaceRow.id,
-				input.agents ?? [],
-			);
+			const [agentsResult, commandResult] = await Promise.all([
+				dispatchSugarAgents(ctx, workspaceRow.id, input.agents ?? []),
+				input.command
+					? startCommandTerminal({
+							ctx,
+							workspaceId: workspaceRow.id,
+							command: input.command,
+						})
+					: Promise.resolve(null),
+			]);
 
-			if (input.command && !alreadyExists) {
-				const { terminal, warning } = await startCommandTerminal({
-					ctx,
-					workspaceId: workspaceRow.id,
-					command: input.command,
+			if (commandResult?.warning) {
+				console.warn(
+					`[workspaces.create] command warning: ${commandResult.warning}`,
+				);
+			}
+			if (commandResult?.terminal) {
+				terminalsResult.push({
+					terminalId: commandResult.terminal.id,
+					label: commandResult.terminal.label,
 				});
-				if (warning) {
-					console.warn(`[workspaces.create] command warning: ${warning}`);
-				}
-				if (terminal) {
-					terminalsResult.push({
-						terminalId: terminal.id,
-						label: terminal.label,
-					});
-				}
 			}
 
 			return {

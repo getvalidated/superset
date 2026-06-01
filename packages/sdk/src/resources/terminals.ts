@@ -5,8 +5,6 @@ import { APIResource } from "../core/resource";
  * Terminals are PTY sessions that live on a developer's host service, scoped
  * to a workspace. Creating one is routed to the workspace's host through the
  * relay tunnel.
- *
- * Mirrors the CLI's `superset terminals …` commands.
  */
 export class Terminals extends APIResource {
 	/**
@@ -14,8 +12,6 @@ export class Terminals extends APIResource {
 	 * that owns the workspace (cloud index) and opens a fresh PTY on that host,
 	 * optionally running `command`. Pass an explicit `hostId` to skip the
 	 * lookup.
-	 *
-	 * Mirrors `superset terminals create`.
 	 */
 	async create(
 		params: TerminalCreateParams,
