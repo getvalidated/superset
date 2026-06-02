@@ -14,6 +14,8 @@ import {
 	useState,
 } from "react";
 import { useDrop } from "react-dnd";
+import type { StoreApi } from "zustand/vanilla";
+import type { WorkspaceStore } from "../../../../../core/store";
 import type { Tab } from "../../../../../types";
 import type { PaneRegistry } from "../../../../types";
 import { PANE_DRAG_TYPE } from "../Tab/components/Pane/components/PaneHeader";
@@ -22,6 +24,7 @@ import { computeInsertIndex, TAB_WIDTH } from "./utils";
 
 interface TabBarProps<TData> {
 	tabs: Tab<TData>[];
+	store: StoreApi<WorkspaceStore<TData>>;
 	registry: PaneRegistry<TData>;
 	activeTabId: string | null;
 	onSelectTab: (tabId: string) => void;
@@ -72,6 +75,7 @@ function AddTabButton<_TData>({
 
 export function TabBar<TData>({
 	tabs,
+	store,
 	registry,
 	activeTabId,
 	onSelectTab,
@@ -204,16 +208,17 @@ export function TabBar<TData>({
 							<TabItem
 								tab={tab}
 								tabs={tabs}
+								store={store}
 								registry={registry}
 								index={i}
 								isActive={tab.id === activeTabId}
-								onSelect={() => onSelectTab(tab.id)}
-								onClose={() => onCloseTab(tab.id)}
-								onCloseOthers={() => onCloseOtherTabs(tab.id)}
+								onSelectTab={onSelectTab}
+								onCloseTab={onCloseTab}
+								onCloseOtherTabs={onCloseOtherTabs}
 								onCloseAll={onCloseAllTabs}
-								onRename={(title) => onRenameTab(tab.id, title)}
-								icon={renderTabIcon?.(tab)}
-								accessory={renderTabAccessory?.(tab)}
+								onRenameTab={onRenameTab}
+								renderIcon={renderTabIcon}
+								renderAccessory={renderTabAccessory}
 							/>
 						</div>
 					))}

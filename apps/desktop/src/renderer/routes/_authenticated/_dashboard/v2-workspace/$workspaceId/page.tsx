@@ -1,7 +1,7 @@
 import { Workspace } from "@superset/panes";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuickOpenStore } from "renderer/commandPalette/ui/QuickOpen/quickOpenStore";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
@@ -263,16 +263,91 @@ function V2WorkspaceContent() {
 		void workspaceRun.toggleWorkspaceRun();
 	});
 
-	const workspaceRunButton = (
-		<V2WorkspaceRunButton
-			projectId={workspace.projectId}
-			definition={workspaceRun.definition}
-			isRunning={workspaceRun.isRunning}
-			isPending={workspaceRun.isPending}
-			canForceStop={workspaceRun.canForceStop}
-			onToggle={workspaceRun.toggleWorkspaceRun}
-			onForceStop={workspaceRun.forceStopWorkspaceRun}
-		/>
+	const workspaceRunButton = useMemo(
+		() => (
+			<V2WorkspaceRunButton
+				projectId={workspace.projectId}
+				definition={workspaceRun.definition}
+				isRunning={workspaceRun.isRunning}
+				isPending={workspaceRun.isPending}
+				canForceStop={workspaceRun.canForceStop}
+				onToggle={workspaceRun.toggleWorkspaceRun}
+				onForceStop={workspaceRun.forceStopWorkspaceRun}
+			/>
+		),
+		[
+			workspace.projectId,
+			workspaceRun.canForceStop,
+			workspaceRun.definition,
+			workspaceRun.forceStopWorkspaceRun,
+			workspaceRun.isPending,
+			workspaceRun.isRunning,
+			workspaceRun.toggleWorkspaceRun,
+		],
+	);
+	const renderTabAccessory = useCallback(
+		(tab: Parameters<typeof getV2NotificationSourcesForTab>[0]) => (
+			<V2NotificationStatusIndicator
+				sources={getV2NotificationSourcesForTab(tab)}
+			/>
+		),
+		[],
+	);
+	const renderBelowTabBar = useCallback(
+		() =>
+			showPresetsBar ? (
+				<V2PresetsBar
+					matchedPresets={matchedPresets}
+					executePreset={executePreset}
+					showPresetsBar={showPresetsBar}
+					onToggleShowPresetsBar={setShowPresetsBar}
+					trailing={workspaceRunButton}
+				/>
+			) : (
+				<div className="flex h-8 min-w-0 shrink-0 items-center border-b border-border bg-background px-2">
+					{workspaceRunButton}
+				</div>
+			),
+		[
+			executePreset,
+			matchedPresets,
+			setShowPresetsBar,
+			showPresetsBar,
+			workspaceRunButton,
+		],
+	);
+	const renderAddTabMenu = useCallback(
+		() => (
+			<AddTabMenu
+				onAddTerminal={addTerminalTab}
+				onAddChat={addChatTab}
+				onAddBrowser={addBrowserTab}
+				showPresetsBar={showPresetsBar}
+				onToggleShowPresetsBar={setShowPresetsBar}
+			/>
+		),
+		[
+			addBrowserTab,
+			addChatTab,
+			addTerminalTab,
+			setShowPresetsBar,
+			showPresetsBar,
+		],
+	);
+	const renderTabBarTrailing = useCallback(
+		() => <BackgroundTerminalsButton workspaceId={workspaceId} store={store} />,
+		[store, workspaceId],
+	);
+	const renderEmptyState = useCallback(
+		() => (
+			<WorkspaceEmptyState
+				onOpenBrowser={addBrowserTab}
+				onOpenChat={addChatTab}
+				onOpenQuickOpen={handleQuickOpen}
+				onOpenTerminal={addTerminalTab}
+			/>
+		),
+		[addBrowserTab, addChatTab, addTerminalTab, handleQuickOpen],
 	);
 
 	return (
@@ -293,49 +368,11 @@ function V2WorkspaceContent() {
 							paneActions={defaultPaneActions}
 							contextMenuActions={defaultContextMenuActions}
 							renderTabIcon={renderBrowserTabIcon}
-							renderTabAccessory={(tab) => (
-								<V2NotificationStatusIndicator
-									sources={getV2NotificationSourcesForTab(tab)}
-								/>
-							)}
-							renderBelowTabBar={() =>
-								showPresetsBar ? (
-									<V2PresetsBar
-										matchedPresets={matchedPresets}
-										executePreset={executePreset}
-										showPresetsBar={showPresetsBar}
-										onToggleShowPresetsBar={setShowPresetsBar}
-										trailing={workspaceRunButton}
-									/>
-								) : (
-									<div className="flex h-8 min-w-0 shrink-0 items-center border-b border-border bg-background px-2">
-										{workspaceRunButton}
-									</div>
-								)
-							}
-							renderAddTabMenu={() => (
-								<AddTabMenu
-									onAddTerminal={addTerminalTab}
-									onAddChat={addChatTab}
-									onAddBrowser={addBrowserTab}
-									showPresetsBar={showPresetsBar}
-									onToggleShowPresetsBar={setShowPresetsBar}
-								/>
-							)}
-							renderTabBarTrailing={() => (
-								<BackgroundTerminalsButton
-									workspaceId={workspaceId}
-									store={store}
-								/>
-							)}
-							renderEmptyState={() => (
-								<WorkspaceEmptyState
-									onOpenBrowser={addBrowserTab}
-									onOpenChat={addChatTab}
-									onOpenQuickOpen={handleQuickOpen}
-									onOpenTerminal={addTerminalTab}
-								/>
-							)}
+							renderTabAccessory={renderTabAccessory}
+							renderBelowTabBar={renderBelowTabBar}
+							renderAddTabMenu={renderAddTabMenu}
+							renderTabBarTrailing={renderTabBarTrailing}
+							renderEmptyState={renderEmptyState}
 							onBeforeCloseTab={onBeforeCloseTab}
 							onInteractionStateChange={onWorkspaceInteractionStateChange}
 							store={store}

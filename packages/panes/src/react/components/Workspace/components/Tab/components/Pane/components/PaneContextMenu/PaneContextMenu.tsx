@@ -9,7 +9,7 @@ import {
 	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@superset/ui/context-menu";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type {
 	ContextMenuActionConfig,
 	RendererContext,
@@ -83,16 +83,20 @@ export function PaneContextMenu<TData>({
 	actions,
 	context,
 }: PaneContextMenuProps<TData>) {
+	const [isOpen, setIsOpen] = useState(false);
+
 	if (actions.length === 0) {
 		return <>{children}</>;
 	}
 
 	return (
-		<ContextMenu>
+		<ContextMenu onOpenChange={setIsOpen}>
 			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-			<ContextMenuContent>
-				<ContextMenuItems actions={actions} context={context} />
-			</ContextMenuContent>
+			{isOpen && (
+				<ContextMenuContent>
+					<ContextMenuItems actions={actions} context={context} />
+				</ContextMenuContent>
+			)}
 		</ContextMenu>
 	);
 }

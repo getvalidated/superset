@@ -11,6 +11,7 @@ const EMPTY_STATE: WorkspaceState<PaneViewerData> = {
 	tabs: [],
 	activeTabId: null,
 };
+const PANE_LAYOUT_PERSIST_DEBOUNCE_MS = 1_000;
 
 function getSnapshot(state: WorkspaceState<PaneViewerData>): string {
 	return JSON.stringify(state);
@@ -38,6 +39,11 @@ export function useV2WorkspacePaneLayout() {
 		workspaceId,
 		lastSyncedSnapshot: getSnapshot(EMPTY_STATE),
 	});
+	const pendingPersistRef = useRef<{
+		snapshot: string;
+		state: WorkspaceState<PaneViewerData>;
+	} | null>(null);
+	const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const { data: localWorkspaceRows = [] } = useLiveQuery(
 		(query) =>
@@ -65,6 +71,11 @@ export function useV2WorkspacePaneLayout() {
 			workspaceId,
 			lastSyncedSnapshot: getSnapshot(EMPTY_STATE),
 		};
+		pendingPersistRef.current = null;
+		if (persistTimerRef.current) {
+			clearTimeout(persistTimerRef.current);
+			persistTimerRef.current = null;
+		}
 	}, [workspaceId]);
 
 	useEffect(() => {
@@ -78,6 +89,22 @@ export function useV2WorkspacePaneLayout() {
 	}, [persistedPaneLayout, store]);
 
 	useEffect(() => {
+		const flushPendingPersist = () => {
+			const pending = pendingPersistRef.current;
+			pendingPersistRef.current = null;
+			persistTimerRef.current = null;
+			if (!pending) return;
+
+			if (!collections.v2WorkspaceLocalState.get(workspaceId)) {
+				return;
+			}
+
+			collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
+				draft.paneLayout = pending.state;
+			});
+			syncStateRef.current.lastSyncedSnapshot = pending.snapshot;
+		};
+
 		const unsubscribe = store.subscribe((nextStore) => {
 			const nextWorkspaceState: WorkspaceState<PaneViewerData> = {
 				version: nextStore.version,
@@ -93,13 +120,24 @@ export function useV2WorkspacePaneLayout() {
 				return;
 			}
 
-			collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-				draft.paneLayout = nextWorkspaceState;
-			});
-			syncStateRef.current.lastSyncedSnapshot = nextSnapshot;
+			pendingPersistRef.current = {
+				snapshot: nextSnapshot,
+				state: nextWorkspaceState,
+			};
+			if (persistTimerRef.current) {
+				clearTimeout(persistTimerRef.current);
+			}
+			persistTimerRef.current = setTimeout(
+				flushPendingPersist,
+				PANE_LAYOUT_PERSIST_DEBOUNCE_MS,
+			);
 		});
 
 		return () => {
+			if (persistTimerRef.current) {
+				clearTimeout(persistTimerRef.current);
+				flushPendingPersist();
+			}
 			unsubscribe();
 		};
 	}, [collections, store, workspaceId]);

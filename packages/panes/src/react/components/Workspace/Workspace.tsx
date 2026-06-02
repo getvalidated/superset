@@ -1,5 +1,5 @@
 import { cn } from "@superset/ui/utils";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import type { Pane } from "../../../types";
 import type { WorkspaceProps } from "../../types";
@@ -46,22 +46,58 @@ export function Workspace<TData>({
 		previousPanesRef.current = current;
 	}, [tabs, registry]);
 
-	const closeTab = async (tabId: string) => {
-		const tab = store.getState().getTab(tabId);
-		if (!tab) return;
-		if (onBeforeCloseTab) {
-			const allowed = await onBeforeCloseTab(tab);
-			if (!allowed) return;
+	const closeTab = useCallback(
+		async (tabId: string) => {
+			const tab = store.getState().getTab(tabId);
+			if (!tab) return;
+			if (onBeforeCloseTab) {
+				const allowed = await onBeforeCloseTab(tab);
+				if (!allowed) return;
+			}
+			// Re-check after the await: the tab may have been removed concurrently.
+			if (!store.getState().getTab(tabId)) return;
+			store.getState().removeTab(tabId);
+			try {
+				onAfterCloseTab?.(tab);
+			} catch (err) {
+				console.error("onAfterCloseTab threw", err);
+			}
+		},
+		[onAfterCloseTab, onBeforeCloseTab, store],
+	);
+
+	const selectTab = useCallback(
+		(tabId: string) => store.getState().setActiveTab(tabId),
+		[store],
+	);
+	const closeOtherTabs = useCallback(
+		async (tabId: string) => {
+			for (const tab of store.getState().tabs) {
+				if (tab.id !== tabId) await closeTab(tab.id);
+			}
+		},
+		[closeTab, store],
+	);
+	const closeAllTabs = useCallback(async () => {
+		for (const tab of store.getState().tabs) {
+			await closeTab(tab.id);
 		}
-		// Re-check after the await: the tab may have been removed concurrently.
-		if (!store.getState().getTab(tabId)) return;
-		store.getState().removeTab(tabId);
-		try {
-			onAfterCloseTab?.(tab);
-		} catch (err) {
-			console.error("onAfterCloseTab threw", err);
-		}
-	};
+	}, [closeTab, store]);
+	const renameTab = useCallback(
+		(tabId: string, title: string | undefined) =>
+			store.getState().setTabTitleOverride({ tabId, titleOverride: title }),
+		[store],
+	);
+	const reorderTab = useCallback(
+		(tabId: string, toIndex: number) =>
+			store.getState().reorderTab({ tabId, toIndex }),
+		[store],
+	);
+	const movePaneToNewTab = useCallback(
+		(paneId: string, toIndex: number) =>
+			store.getState().movePaneToNewTab({ paneId, toIndex }),
+		[store],
+	);
 
 	return (
 		<div
@@ -72,29 +108,16 @@ export function Workspace<TData>({
 		>
 			<TabBar
 				tabs={tabs}
+				store={store}
 				registry={registry}
 				activeTabId={activeTabId}
-				onSelectTab={(tabId) => store.getState().setActiveTab(tabId)}
+				onSelectTab={selectTab}
 				onCloseTab={closeTab}
-				onCloseOtherTabs={async (tabId) => {
-					for (const tab of tabs) {
-						if (tab.id !== tabId) await closeTab(tab.id);
-					}
-				}}
-				onCloseAllTabs={async () => {
-					for (const tab of tabs) {
-						await closeTab(tab.id);
-					}
-				}}
-				onRenameTab={(tabId, title) =>
-					store.getState().setTabTitleOverride({ tabId, titleOverride: title })
-				}
-				onReorderTab={(tabId, toIndex) =>
-					store.getState().reorderTab({ tabId, toIndex })
-				}
-				onMovePaneToNewTab={(paneId, toIndex) =>
-					store.getState().movePaneToNewTab({ paneId, toIndex })
-				}
+				onCloseOtherTabs={closeOtherTabs}
+				onCloseAllTabs={closeAllTabs}
+				onRenameTab={renameTab}
+				onReorderTab={reorderTab}
+				onMovePaneToNewTab={movePaneToNewTab}
 				renderTabIcon={renderTabIcon}
 				renderAddTabMenu={renderAddTabMenu}
 				renderTabBarTrailing={renderTabBarTrailing}

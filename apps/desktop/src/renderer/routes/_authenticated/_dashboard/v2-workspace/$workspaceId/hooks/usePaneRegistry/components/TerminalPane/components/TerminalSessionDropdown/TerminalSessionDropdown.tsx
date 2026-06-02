@@ -90,7 +90,6 @@ export function TerminalSessionDropdown({
 }: TerminalSessionDropdownProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
-	const collections = useCollections();
 	const { terminalId } = context.pane.data as TerminalPaneData;
 	const terminalInstanceId = context.pane.id;
 	const utils = workspaceTrpc.useUtils();
@@ -106,15 +105,7 @@ export function TerminalSessionDropdown({
 			staleTime: TERMINAL_SESSION_LIST_STALE_MS,
 		},
 	);
-	useRenderStressInstrumentation("TerminalSessionDropdown", {
-		warnAt: 30,
-		getDetails: () => ({
-			workspaceId,
-			terminalId,
-			isOpen,
-			hasSessionData: Boolean(sessionsQuery.data),
-		}),
-	});
+	const collections = useCollections();
 	const { data: localWorkspaceRows = [] } = useLiveQuery(
 		(query) =>
 			query
@@ -126,6 +117,15 @@ export function TerminalSessionDropdown({
 	);
 	const workspaceRunTerminals =
 		localWorkspaceRows[0]?.workspaceRunTerminals ?? {};
+	useRenderStressInstrumentation("TerminalSessionDropdown", {
+		warnAt: 30,
+		getDetails: () => ({
+			workspaceId,
+			terminalId,
+			isOpen,
+			hasSessionData: Boolean(sessionsQuery.data),
+		}),
+	});
 	const workspaceRunState = workspaceRunTerminals[terminalId]?.state ?? null;
 
 	const sessions = useMemo<VisibleTerminalSession[]>(() => {

@@ -1,6 +1,6 @@
 import type { SelectV2Workspace } from "@superset/db/schema";
 import { buildHostRoutingKey } from "@superset/shared/host-routing";
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import {
 	getHostServiceHeaders,
@@ -32,13 +32,18 @@ export function WorkspaceProvider({
 					workspace.organizationId,
 					workspace.hostId,
 				)}`;
+	const resolvedHostUrl = hostUrl ?? "";
+	const contextValue = useMemo(
+		() => ({ workspace, hostUrl: resolvedHostUrl }),
+		[workspace, resolvedHostUrl],
+	);
 
 	if (!hostUrl) {
 		return <div className="flex h-full w-full" />;
 	}
 
 	return (
-		<WorkspaceContext.Provider value={{ workspace, hostUrl }}>
+		<WorkspaceContext.Provider value={contextValue}>
 			<WorkspaceTrpcProvider
 				cacheKey={workspace.id}
 				key={`${workspace.id}:${hostUrl}`}

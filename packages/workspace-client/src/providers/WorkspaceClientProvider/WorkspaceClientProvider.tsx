@@ -102,15 +102,9 @@ export function WorkspaceClientProvider({
 	children,
 }: WorkspaceClientProviderProps) {
 	const clients = getWorkspaceClients(cacheKey, hostUrl, headers, wsToken);
-	const contextValue: WorkspaceClientContextValue = {
-		hostUrl: clients.hostUrl,
-		queryClient: clients.queryClient,
-		trpcClient: clients.trpcClient,
-		getWsToken: clients.getWsToken,
-	};
 
 	return (
-		<WorkspaceClientContext.Provider value={contextValue}>
+		<WorkspaceClientContext.Provider value={clients}>
 			<workspaceTrpc.Provider
 				client={clients.trpcClient}
 				queryClient={clients.queryClient}
