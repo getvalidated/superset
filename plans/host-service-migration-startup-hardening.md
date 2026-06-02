@@ -9,16 +9,29 @@ In progress on `host-service-lifecycle-bu`.
   `bun run test:integration:db` under Electron-as-node): real `createDb` + real
   0005 + a sibling process holding the write lock → ~5s stall → `SQLITE_BUSY` →
   swallowed → `host_settings` missing.
-- **Landed (primary layer A + B + health window):**
-  - `db.ts`: explicit `busy_timeout = 8000` + **fail closed** (throw instead of
-    swallow). Confirmed safe — drizzle wraps all pending migrations in one
-    `BEGIN/COMMIT` with `ROLLBACK`+rethrow, so a failure leaves the DB at its
-    prior version (never half-applied).
+- **Landed (primary layer — removal-first):**
+  - `db.ts`: the fix is mostly a **deletion**. The bug was the `try/catch` that
+    swallowed a failed `migrate()` and returned a broken `db`; deleting it *is*
+    fail-closed — `migrate()` throws naturally to `serve.ts`
+    `main().catch(... process.exit(1))`. No re-throw wrapper, no `sqlite.close()`
+    (the OS reclaims the fd on `exit(1)`), no retry loop. Confirmed safe —
+    drizzle wraps all pending migrations in one `BEGIN/COMMIT` with
+    `ROLLBACK`+rethrow, so a failure leaves the DB at its prior version (never
+    half-applied).
+  - The only genuine *addition* is one line: `busy_timeout = 8000`. It has no
+    bad code to replace, and it's what earns the deletion — once we fail closed,
+    a transient lock (a draining prior host-service) would otherwise crash, so
+    busy_timeout makes fail-closed wait-then-succeed instead of trigger-happy.
+    `MIGRATION_BUSY_TIMEOUT_MS` is now exported and imported by the test (deleted
+    the hand-mirrored copy so the budget can't drift).
   - `apps/desktop/.../host-service-utils.ts`: `HEALTH_POLL_TIMEOUT_MS`
     `10_000 → 20_000` so a recoverable ~8s stall isn't SIGKILLed before bind.
   - Test now asserts the fixed behavior (fail-closed on sustained contention;
     recovery when the lock clears within the timeout) + baseline. 3/3 green;
     host-service unit suite 691/0; typecheck + lint clean.
+  - **Dropped vs. the original plan:** A's "bounded retry ~3× with backoff" — an
+    outer retry on `SQLITE_BUSY` is redundant when `busy_timeout` already makes
+    better-sqlite3 wait on the lock internally. Less code, same behavior.
 - **Not yet done (structural layer):** C (coordinator auto-recovery on spawn
   failure — incl. failing fast on child-exit instead of polling the full 20s),
   D (decouple migrating/ready from port bind), E (single-writer per org). These
@@ -82,35 +95,39 @@ This tells us which layers actually bit, and lets us assert the fix resolves it.
 
 ## Fix
 
-Layered. Primary layer stops the bleeding and is high-confidence; structural
-layer removes the failure mode by construction.
+Layered, and **removal-first**: prefer deleting the bad code over adding
+guards. Primary layer stops the bleeding with a deletion + one pragma;
+structural layer removes the failure mode by construction — and once it lands,
+the primary-layer compensations (busy_timeout, widened health window) can
+themselves be *removed*.
 
-### Primary (resilience + correctness) — `db.ts` + coordinator
+### Primary (resilience + correctness) — `db.ts` — DONE
 
-**A. `busy_timeout` + bounded retry around `migrate()`** (`db.ts`)
-- Add `sqlite.pragma("busy_timeout = 15000")`.
-- Retry `migrate()` up to ~3× with backoff, retrying only on
-  `SQLITE_BUSY`/`SQLITE_LOCKED`.
-
-**B. Stop swallowing — fail closed** (`db.ts`)
-- If `migrate()` still fails after retries, **throw**. Confirm drizzle's
-  per-migration transaction first (above) so a rolled-back 0005 leaves a clean
-  0004 DB. The throw propagates `createApp → main().catch → exit(1)`, so the
-  coordinator's health poll fails instead of serving a broken DB.
+**A/B. Delete the swallow → fail closed** (`db.ts`)
+- The defect is the `try/catch` around `migrate()` that logs and returns the db
+  anyway. Deleting it is the whole fix: `migrate()` throws to `createApp →
+  main().catch → exit(1)`, so the coordinator's health poll fails instead of
+  serving a broken DB. Confirmed drizzle's per-migration transaction first, so a
+  rolled-back 0005 leaves a clean 0004 DB. No retry loop (busy_timeout subsumes
+  it), no re-throw wrapper, no manual `close()`.
+- Add exactly one line — `busy_timeout = 8000` — so a transient lock is waited
+  out rather than turned into a crash by the now-strict fail-closed path.
 
 **C. Auto-escalate a failed spawn to `reset()`** (`host-service-coordinator.ts`)
+— *not landed; this is #4997.*
 - On `pollHealthCheck` failure in `spawn()`, run `reset()` once (SIGKILL the
-  manifest pid + remove manifest + respawn) before giving up. Clears a stale
-  lock-holder automatically instead of looping. Guard against infinite
-  escalation (one reset attempt, then surface the error).
+  manifest pid + remove manifest + respawn) before giving up, **and fail fast on
+  child-exit** instead of polling the full 20s. Clears a stale lock-holder
+  automatically instead of looping. Guard against infinite escalation (one reset
+  attempt, then surface the error).
 
-**Numeric interaction (must get right):** with migrate-before-bind, a 15s
-`busy_timeout` exceeds the 10s health window — B/C would just convert a
-half-migration into a clean kill at 10s. So **either** raise the health budget
-above `busy_timeout` + expected migration time, **or** land the structural fix
-(D) which removes the window's relevance. Don't ship A/B/C without one of these.
+**Numeric interaction:** busy_timeout (8s) sits under the health window (20s),
+so a recoverable stall finishes before the supervisor kills the child. These two
+numbers only matter because migration runs before bind under contention — D + E
+below remove that, after which the 20s window can drop back toward 10s and
+busy_timeout stops being load-bearing.
 
-### Structural (removes factors 3 & 4) — request lifecycle
+### Structural (removes factors 3 & 4, and the contention source) — request lifecycle
 
 **D. Decouple "alive / migrating" from "ready."**
 - Bind the port first; run migration in the background; track
@@ -143,11 +160,13 @@ above `busy_timeout` + expected migration time, **or** land the structural fix
 ## Sequencing
 
 1. Step 0 (log triage) — confirm bucket, in parallel with build.
-2. Confirm drizzle per-migration transaction behavior.
-3. Land **A + B + C** with the health-budget bump — small, high-confidence;
-   converts "permanent brick" → "self-heals on next launch."
+2. Confirm drizzle per-migration transaction behavior. *(done)*
+3. **A/B done** (delete the swallow + busy_timeout + health-budget bump) — small,
+   high-confidence; converts "permanent brick" → "self-heals on next launch."
+   **C** ships next as #4997 (reap orphan before spawn + fail-fast on child-exit).
 4. Land **D + E** as the durable follow-up that makes update-time contention
-   impossible.
+   impossible — and lets us *remove* busy_timeout and shrink the health window
+   back, since neither is needed once nothing races the migration.
 
 ## Risks / open questions
 

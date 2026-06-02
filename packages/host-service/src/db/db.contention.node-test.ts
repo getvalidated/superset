@@ -30,15 +30,14 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { createDb } from "./db.ts";
+import {
+	MIGRATION_BUSY_TIMEOUT_MS as BUSY_TIMEOUT_MS,
+	createDb,
+} from "./db.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // packages/host-service/src/db → packages/host-service/drizzle
 const MIGRATIONS_FOLDER = path.resolve(__dirname, "../../drizzle");
-
-// Mirror of MIGRATION_BUSY_TIMEOUT_MS in db.ts. Kept local so the test pins the
-// behavior even if the source constant moves.
-const BUSY_TIMEOUT_MS = 8_000;
 
 let tmpDir: string;
 let dbPath: string;
