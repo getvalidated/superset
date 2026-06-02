@@ -7,6 +7,7 @@ import {
 	AlertDialogTitle,
 } from "@superset/ui/alert-dialog";
 import { Button } from "@superset/ui/button";
+import { getBaseName } from "renderer/lib/pathBasename";
 import { useGitInitConfirmStore } from "renderer/stores/git-init-confirm";
 
 /**
@@ -19,7 +20,7 @@ export function GitInitConfirmDialog() {
 	const repoPath = useGitInitConfirmStore((s) => s.repoPath);
 	const resolve = useGitInitConfirmStore((s) => s.resolve);
 
-	const folderName = repoPath?.split("/").pop() ?? repoPath ?? "this folder";
+	const folderName = repoPath ? getBaseName(repoPath) : "this folder";
 
 	return (
 		<AlertDialog
