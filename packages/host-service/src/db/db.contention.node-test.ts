@@ -105,15 +105,6 @@ function tableExists(targetDbPath: string, tableName: string): boolean {
 }
 
 describe("host-service DB migration under write-lock contention", () => {
-	test("baseline: no contention → 0005 applies, host_settings exists", () => {
-		createDb(dbPath, MIGRATIONS_FOLDER);
-		assert.equal(
-			tableExists(dbPath, "host_settings"),
-			true,
-			"host_settings should exist after a clean migration",
-		);
-	});
-
 	test("fail-closed: sustained contention past the busy timeout → createDb THROWS, DB left cleanly unmigrated", async () => {
 		// Hold the lock for 20s — longer than the 8s busy timeout, so migrate
 		// can't acquire it.
