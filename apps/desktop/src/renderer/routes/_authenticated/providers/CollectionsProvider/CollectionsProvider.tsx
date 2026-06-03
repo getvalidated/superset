@@ -1,3 +1,4 @@
+import { Spinner } from "@superset/ui/spinner";
 import {
 	createContext,
 	type ReactNode,
@@ -11,6 +12,7 @@ import { env } from "renderer/env.renderer";
 import { authClient } from "renderer/lib/auth-client";
 import { MOCK_ORG_ID } from "shared/constants";
 import { getCollections, preloadCollections } from "./collections";
+import { resolveCollectionsView } from "./resolveCollectionsView";
 
 type CollectionsContextType = ReturnType<typeof getCollections> & {
 	switchOrganization: (organizationId: string) => Promise<void>;
@@ -66,8 +68,20 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 		[collections, switchOrganization],
 	);
 
-	if (!contextValue || isSwitching) {
-		return null;
+	const view = resolveCollectionsView({
+		hasContext: !!contextValue,
+		isSwitching,
+	});
+
+	// Never blank the whole authenticated window (see #5078). While collections
+	// are loading or an org switch is in flight, show a loading indicator
+	// instead of returning null.
+	if (view === "loading" || !contextValue) {
+		return (
+			<div className="flex h-screen w-screen items-center justify-center bg-background">
+				<Spinner className="size-8" />
+			</div>
+		);
 	}
 
 	return (
