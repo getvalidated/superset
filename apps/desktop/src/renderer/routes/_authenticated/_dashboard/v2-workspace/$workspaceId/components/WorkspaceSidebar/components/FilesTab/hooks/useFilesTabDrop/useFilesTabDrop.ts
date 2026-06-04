@@ -34,6 +34,19 @@ export interface FilesTabDrop {
 	onDrop(e: React.DragEvent<HTMLDivElement>): void;
 }
 
+/** A file to upload, keyed by its path relative to the drop destination. */
+interface DroppedFile {
+	relPath: string;
+	file: File;
+}
+
+/** Flattened drop payload: files to write + directories to (re)create. */
+interface DroppedTree {
+	files: DroppedFile[];
+	/** Directory paths relative to the drop destination (includes empty dirs). */
+	dirs: string[];
+}
+
 /** True when the drag carries OS files (vs. an internal/text drag). */
 function dragHasFiles(e: React.DragEvent): boolean {
 	return Array.from(e.dataTransfer.types).includes("Files");
@@ -63,39 +76,84 @@ function dirLabel(dirRel: string): string {
 }
 
 /**
- * Collect droppable files, skipping directories. We deliberately read the
- * `File` objects (not OS paths) because the host-service filesystem is
- * sandboxed to the worktree — an external source path would be rejected, and a
- * path means nothing for a remote workspace. Directory detection uses the entry
- * API; folders are reported separately since recursive upload isn't supported.
- *
- * Must run synchronously inside the drop handler: `getAsFile` /
- * `webkitGetAsEntry` are only valid during event dispatch.
+ * Capture the dropped entries synchronously. `webkitGetAsEntry` and the items
+ * list are only valid during event dispatch, but the returned entry handles
+ * stay usable across the later async traversal. Falls back to the flat file
+ * list when the entry API is unavailable (no folder support in that case).
  */
-function collectDroppedFiles(e: React.DragEvent): {
-	files: File[];
-	skippedDirs: number;
+function collectDroppedEntries(e: React.DragEvent): {
+	entries: FileSystemEntry[];
+	fallbackFiles: File[];
 } {
 	const items = Array.from(e.dataTransfer.items);
 	const supportsEntries =
 		items.length > 0 && typeof items[0].webkitGetAsEntry === "function";
 
 	if (!supportsEntries) {
-		return { files: Array.from(e.dataTransfer.files), skippedDirs: 0 };
+		return { entries: [], fallbackFiles: Array.from(e.dataTransfer.files) };
 	}
 
-	const files: File[] = [];
-	let skippedDirs = 0;
+	const entries: FileSystemEntry[] = [];
 	for (const item of items) {
 		if (item.kind !== "file") continue;
-		if (item.webkitGetAsEntry()?.isDirectory) {
-			skippedDirs += 1;
-			continue;
-		}
-		const file = item.getAsFile();
-		if (file) files.push(file);
+		const entry = item.webkitGetAsEntry();
+		if (entry) entries.push(entry);
 	}
-	return { files, skippedDirs };
+	return { entries, fallbackFiles: [] };
+}
+
+function getFile(entry: FileSystemFileEntry): Promise<File> {
+	return new Promise((resolve, reject) => entry.file(resolve, reject));
+}
+
+/** Drain a directory reader — `readEntries` yields entries in batches. */
+async function readAllEntries(
+	reader: FileSystemDirectoryReader,
+): Promise<FileSystemEntry[]> {
+	const all: FileSystemEntry[] = [];
+	while (true) {
+		const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+			reader.readEntries(resolve, reject),
+		);
+		if (batch.length === 0) break;
+		all.push(...batch);
+	}
+	return all;
+}
+
+/** Recursively flatten one dropped entry into files + directory paths. */
+async function flattenEntry(
+	entry: FileSystemEntry,
+	prefix: string,
+): Promise<DroppedTree> {
+	if (entry.isFile) {
+		const file = await getFile(entry as FileSystemFileEntry);
+		return { files: [{ relPath: `${prefix}${entry.name}`, file }], dirs: [] };
+	}
+
+	const dirRel = `${prefix}${entry.name}`;
+	const children = await readAllEntries(
+		(entry as FileSystemDirectoryEntry).createReader(),
+	);
+	const subtrees = await Promise.all(
+		children.map((child) => flattenEntry(child, `${dirRel}/`)),
+	);
+	return {
+		files: subtrees.flatMap((t) => t.files),
+		dirs: [dirRel, ...subtrees.flatMap((t) => t.dirs)],
+	};
+}
+
+async function flattenEntries(
+	entries: FileSystemEntry[],
+): Promise<DroppedTree> {
+	const trees = await Promise.all(
+		entries.map((entry) => flattenEntry(entry, "")),
+	);
+	return {
+		files: trees.flatMap((t) => t.files),
+		dirs: trees.flatMap((t) => t.dirs),
+	};
 }
 
 /** Read a File into base64 (handles binary + large files via the reader). */
@@ -119,14 +177,15 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * Drag-and-drop file upload for the v2 Files tab. Dropping OS files onto a
- * folder row writes them into that folder (onto a file row → its parent, onto
- * empty space → the worktree root). Each file's bytes are read in the renderer
- * and written via `filesystem.writeFile` (base64) — the host sandboxes write
- * destinations to the worktree but never sees an external source path, so this
- * works for both local and remote workspaces. New entries surface through the
- * bridge's `fs:events` reconciliation; we also expand + fetch the destination
- * so they appear without a manual refresh.
+ * Drag-and-drop file upload for the v2 Files tab. Dropping OS files/folders onto
+ * a folder row writes them into that folder (onto a file row → its parent, onto
+ * empty space → the worktree root), preserving any nested folder structure.
+ * Each file's bytes are read in the renderer and written via
+ * `filesystem.writeFile` (base64) — the host sandboxes write destinations to the
+ * worktree but never sees an external source path, so this works for both local
+ * and remote workspaces. New entries surface through the bridge's `fs:events`
+ * reconciliation; we also expand + fetch the destination so they appear without
+ * a manual refresh.
  */
 export function useFilesTabDrop({
 	model,
@@ -135,6 +194,8 @@ export function useFilesTabDrop({
 	workspaceId,
 }: UseFilesTabDropOptions): FilesTabDrop {
 	const writeFile = workspaceTrpc.filesystem.writeFile.useMutation();
+	const createDirectory =
+		workspaceTrpc.filesystem.createDirectory.useMutation();
 	const [dropTarget, setDropTarget] = useState<FilesTabDropTarget | null>(null);
 
 	// Clear the overlay if the drag ends outside our handlers (released over
@@ -149,14 +210,54 @@ export function useFilesTabDrop({
 		};
 	}, []);
 
-	const uploadFiles = useCallback(
+	const uploadDropped = useCallback(
 		async (
 			dirRel: string,
-			files: File[],
-			skippedDirs: number,
+			entries: FileSystemEntry[],
+			fallbackFiles: File[],
 		): Promise<void> => {
 			const destDirAbs = toAbs(rootPath, dirRel);
 			const versionToken = bridge.getVersion();
+
+			const tree =
+				entries.length > 0
+					? await flattenEntries(entries)
+					: {
+							files: fallbackFiles.map((file) => ({
+								relPath: file.name,
+								file,
+							})),
+							dirs: [],
+						};
+
+			if (!bridge.isCurrent(versionToken)) return;
+
+			if (tree.files.length === 0 && tree.dirs.length === 0) {
+				toast.error("Could not read the dropped files");
+				return;
+			}
+
+			// Create directories shallowest-first so parents exist before
+			// children; recursive makes the calls idempotent. Failures are left
+			// uncounted — files underneath will fail and be reported below.
+			const dirs = Array.from(new Set(tree.dirs)).sort(
+				(a, b) => a.split("/").length - b.split("/").length,
+			);
+			for (const relDir of dirs) {
+				if (!bridge.isCurrent(versionToken)) return;
+				try {
+					await createDirectory.mutateAsync({
+						workspaceId,
+						absolutePath: `${destDirAbs}/${relDir}`,
+						recursive: true,
+					});
+				} catch (error) {
+					console.error("[v2 FilesTab] createDirectory failed", {
+						relDir,
+						error,
+					});
+				}
+			}
 
 			// Upload one file at a time: encoding everything up front would hold
 			// every base64 payload (~1.33x each) in memory at once, and a per-file
@@ -164,13 +265,13 @@ export function useFilesTabDrop({
 			// instead of dribbling them into a worktree the user has left.
 			let added = 0;
 			let failed = 0;
-			for (const file of files) {
+			for (const { relPath, file } of tree.files) {
 				if (!bridge.isCurrent(versionToken)) break;
 				try {
 					const data = await fileToBase64(file);
 					const result = await writeFile.mutateAsync({
 						workspaceId,
-						absolutePath: `${destDirAbs}/${file.name}`,
+						absolutePath: `${destDirAbs}/${relPath}`,
 						content: { kind: "base64", data },
 						options: { create: true, overwrite: false },
 					});
@@ -189,21 +290,19 @@ export function useFilesTabDrop({
 			// new tree.
 			if (!bridge.isCurrent(versionToken)) return;
 
+			const where = dirLabel(dirRel);
 			if (added > 0) {
-				const where = dirLabel(dirRel);
 				toast.success(
 					added === 1
 						? `Added 1 file to ${where}`
 						: `Added ${added} files to ${where}`,
 				);
-				// Surface the new entries immediately. fs:events also reconciles,
-				// but expanding + fetching avoids waiting on the watcher and shows
-				// results inside a collapsed destination folder.
-				if (dirRel) {
-					const handle = asDirectoryHandle(model.getItem(`${dirRel}/`));
-					if (handle && !handle.isExpanded()) handle.expand();
-				}
-				void bridge.fetchDir(dirRel);
+			} else if (failed === 0 && dirs.length > 0) {
+				toast.success(
+					dirs.length === 1
+						? `Created 1 folder in ${where}`
+						: `Created ${dirs.length} folders in ${where}`,
+				);
 			}
 			if (failed > 0) {
 				toast.error(
@@ -212,15 +311,19 @@ export function useFilesTabDrop({
 						: `Failed to add ${failed} files`,
 				);
 			}
-			if (skippedDirs > 0) {
-				toast.info(
-					skippedDirs === 1
-						? "Skipped a folder — only files can be dropped"
-						: `Skipped ${skippedDirs} folders — only files can be dropped`,
-				);
+
+			// Surface the new entries immediately. fs:events also reconciles, but
+			// expanding + fetching avoids waiting on the watcher and shows results
+			// inside a collapsed destination folder.
+			if (added > 0 || dirs.length > 0) {
+				if (dirRel) {
+					const handle = asDirectoryHandle(model.getItem(`${dirRel}/`));
+					if (handle && !handle.isExpanded()) handle.expand();
+				}
+				void bridge.fetchDir(dirRel);
 			}
 		},
-		[model, bridge, writeFile, rootPath, workspaceId],
+		[model, bridge, writeFile, createDirectory, rootPath, workspaceId],
 	);
 
 	const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -261,20 +364,16 @@ export function useFilesTabDrop({
 			// Read everything off the event synchronously — composedPath() and the
 			// entry/file accessors are only valid during dispatch, before any await.
 			const dirRel = resolveDropDirRel(e);
-			const { files, skippedDirs } = collectDroppedFiles(e);
+			const { entries, fallbackFiles } = collectDroppedEntries(e);
 
-			if (files.length === 0) {
-				toast.error(
-					skippedDirs > 0
-						? "Only files can be dropped, not folders"
-						: "Could not read the dropped files",
-				);
+			if (entries.length === 0 && fallbackFiles.length === 0) {
+				toast.error("Could not read the dropped files");
 				return;
 			}
 
-			void uploadFiles(dirRel, files, skippedDirs);
+			void uploadDropped(dirRel, entries, fallbackFiles);
 		},
-		[rootPath, workspaceId, uploadFiles],
+		[rootPath, workspaceId, uploadDropped],
 	);
 
 	return { dropTarget, onDragOver, onDragLeave, onDrop };
