@@ -19,11 +19,24 @@ interface UseFilesTabDropOptions {
 	workspaceId: string;
 }
 
+/** Position of the destination folder's row, relative to the tree wrapper. */
+export interface DropRowRect {
+	top: number;
+	left: number;
+	width: number;
+	height: number;
+}
+
 export interface FilesTabDropTarget {
 	/** Relative directory the dropped files write into. "" = worktree root. */
 	dirRel: string;
 	/** Human label for the overlay — folder basename, or "workspace root". */
 	label: string;
+	/**
+	 * The destination folder row to highlight, or null when dropping into the
+	 * root (no row represents it) — the overlay then frames the whole tree.
+	 */
+	rect: DropRowRect | null;
 }
 
 export interface FilesTabDrop {
@@ -53,26 +66,90 @@ function dragHasFiles(e: React.DragEvent): boolean {
 }
 
 /**
- * Resolve which directory a drag is over by walking `composedPath()` for the
- * nearest row's `data-item-path` (stamped by `@pierre/trees`, lives in an open
- * shadow root). Directory rows carry a trailing slash → drop into that folder;
- * file rows → drop into their parent; nothing under the cursor → worktree root.
+ * The tree row under the cursor. `@pierre/trees` stamps `data-item-path` and
+ * renders rows in an open shadow root, so we walk `composedPath()` to find it.
  */
-function resolveDropDirRel(e: React.DragEvent): string {
+function findRowUnderCursor(e: React.DragEvent): HTMLElement | null {
 	for (const node of e.nativeEvent.composedPath()) {
-		if (!(node instanceof HTMLElement)) continue;
-		const itemPath = node.getAttribute("data-item-path");
-		if (itemPath) {
-			return itemPath.endsWith("/")
-				? stripTrailingSlash(itemPath)
-				: parentRel(itemPath);
+		if (node instanceof HTMLElement && node.getAttribute("data-item-path")) {
+			return node;
 		}
 	}
-	return "";
+	return null;
+}
+
+/**
+ * Destination directory for a row: directory rows carry a trailing slash → drop
+ * into that folder; file rows → their parent; no row → worktree root.
+ */
+function rowToDirRel(row: HTMLElement | null): string {
+	const itemPath = row?.getAttribute("data-item-path");
+	if (!itemPath) return "";
+	return itemPath.endsWith("/")
+		? stripTrailingSlash(itemPath)
+		: parentRel(itemPath);
+}
+
+function resolveDropDirRel(e: React.DragEvent): string {
+	return rowToDirRel(findRowUnderCursor(e));
 }
 
 function dirLabel(dirRel: string): string {
 	return dirRel === "" ? "workspace root" : basename(dirRel);
+}
+
+/** Locate the rendered row element for a directory within the same tree. */
+function findDirRow(sibling: HTMLElement, dirRel: string): HTMLElement | null {
+	const root = sibling.getRootNode();
+	if (!(root instanceof ShadowRoot || root instanceof Document)) return null;
+	return root.querySelector<HTMLElement>(
+		`[data-item-path=${CSS.escape(`${dirRel}/`)}]`,
+	);
+}
+
+/**
+ * Resolve the full drop target — destination directory + the screen rect of the
+ * folder row to highlight (relative to the tree wrapper, so the overlay can
+ * position itself). Returns a null rect for root drops.
+ */
+function resolveDropTarget(
+	e: React.DragEvent<HTMLDivElement>,
+): FilesTabDropTarget {
+	const row = findRowUnderCursor(e);
+	const dirRel = rowToDirRel(row);
+	const destRow = dirRel && row ? findDirRow(row, dirRel) : null;
+
+	let rect: DropRowRect | null = null;
+	if (destRow) {
+		const wrapper = e.currentTarget.getBoundingClientRect();
+		const r = destRow.getBoundingClientRect();
+		rect = {
+			top: r.top - wrapper.top,
+			left: r.left - wrapper.left,
+			width: r.width,
+			height: r.height,
+		};
+	}
+
+	return { dirRel, label: dirLabel(dirRel), rect };
+}
+
+function rectsEqual(a: DropRowRect | null, b: DropRowRect | null): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	return (
+		a.top === b.top &&
+		a.left === b.left &&
+		a.width === b.width &&
+		a.height === b.height
+	);
+}
+
+function targetsEqual(
+	a: FilesTabDropTarget | null,
+	b: FilesTabDropTarget,
+): boolean {
+	return a !== null && a.dirRel === b.dirRel && rectsEqual(a.rect, b.rect);
 }
 
 /**
@@ -343,8 +420,10 @@ export function useFilesTabDrop({
 		e.preventDefault();
 		e.stopPropagation();
 		e.dataTransfer.dropEffect = "copy";
-		const dirRel = resolveDropDirRel(e);
-		setDropTarget({ dirRel, label: dirLabel(dirRel) });
+		// dragover fires continuously; bail out of state updates while the
+		// destination (and its row position) is unchanged to avoid re-renders.
+		const next = resolveDropTarget(e);
+		setDropTarget((prev) => (targetsEqual(prev, next) ? prev : next));
 	}, []);
 
 	const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {

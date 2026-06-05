@@ -1,22 +1,39 @@
 import { FileUp } from "lucide-react";
+import type { FilesTabDropTarget } from "../../hooks/useFilesTabDrop";
 
 interface FilesTabDropOverlayProps {
-	/** Destination folder name shown to the user (e.g. "src" or "workspace root"). */
-	label: string;
+	/** The resolved drop destination — folder under the cursor, or root. */
+	target: FilesTabDropTarget;
 }
 
 /**
- * Drop affordance shown while OS files are dragged over the Files tab. Renders
- * as a non-interactive overlay so it never swallows the underlying drag events;
- * `label` tracks the folder currently under the cursor.
+ * Drop affordance shown while OS files are dragged over the Files tab. Highlights
+ * the exact destination folder row under the cursor (or frames the whole tree
+ * when dropping into the root), and names the target in a pinned chip. Rendered
+ * as a non-interactive overlay so it never swallows the underlying drag events.
  */
-export function FilesTabDropOverlay({ label }: FilesTabDropOverlayProps) {
+export function FilesTabDropOverlay({ target }: FilesTabDropOverlayProps) {
+	const { rect, label } = target;
 	return (
-		<div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-1.5">
-			<div className="flex h-full w-full items-center justify-center rounded-md border-2 border-dashed border-primary/60 bg-primary/5 backdrop-blur-[1px]">
-				<div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-primary">
-					<FileUp className="size-4" />
-					<span className="text-xs font-medium">Copy into {label}</span>
+		<div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+			{rect ? (
+				<div
+					className="absolute rounded-sm bg-primary/15 ring-2 ring-inset ring-primary"
+					style={{
+						top: rect.top,
+						left: rect.left,
+						width: rect.width,
+						height: rect.height,
+					}}
+				/>
+			) : (
+				<div className="absolute inset-0 m-1 rounded-md border-2 border-dashed border-primary/60 bg-primary/5" />
+			)}
+
+			<div className="absolute inset-x-0 bottom-2 flex justify-center">
+				<div className="flex max-w-[90%] items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow">
+					<FileUp className="size-3.5 shrink-0" />
+					<span className="truncate">Drop into {label}</span>
 				</div>
 			</div>
 		</div>

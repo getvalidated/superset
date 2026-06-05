@@ -313,7 +313,7 @@ export function FilesTab({
 				/>
 			</ShadowClickHint>
 
-			{drop.dropTarget && <FilesTabDropOverlay label={drop.dropTarget.label} />}
+			{drop.dropTarget && <FilesTabDropOverlay target={drop.dropTarget} />}
 		</div>
 	);
 }
