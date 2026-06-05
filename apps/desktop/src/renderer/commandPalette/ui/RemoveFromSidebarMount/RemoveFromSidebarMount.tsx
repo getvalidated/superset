@@ -20,6 +20,10 @@ export function RemoveFromSidebarMount() {
 
 	useEffect(() => {
 		if (!target) return;
+		// One-shot consumer. No cleanup/cancel guard is needed: the body is fully
+		// synchronous (no awaited continuation that could land after unmount) and
+		// the collection writes are idempotent. clear() resets the intent so each
+		// request is handled exactly once.
 		navigateAwayFromWorkspace(target.workspaceId);
 		if (target.isMain) {
 			hideWorkspaceInSidebar(target.workspaceId, target.projectId);

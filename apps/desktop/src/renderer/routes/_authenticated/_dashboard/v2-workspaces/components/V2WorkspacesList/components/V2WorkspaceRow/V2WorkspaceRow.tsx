@@ -299,7 +299,11 @@ export function V2WorkspaceRow({
 					) : null}
 				</div>
 			</div>
-			{!isMainWorkspace ? (
+			{/* Mount the dialog (and its per-workspace live-query subscription) only
+			    while it's open or a delete is in flight — not idle for every row.
+			    `|| deleting` keeps it mounted through the destroy so a
+			    teardown-failure can re-open it to offer force-delete. */}
+			{!isMainWorkspace && (isDeleteDialogOpen || deleting) ? (
 				<DashboardSidebarDeleteDialog
 					workspaceId={workspace.id}
 					workspaceName={workspace.name || workspace.branch}
