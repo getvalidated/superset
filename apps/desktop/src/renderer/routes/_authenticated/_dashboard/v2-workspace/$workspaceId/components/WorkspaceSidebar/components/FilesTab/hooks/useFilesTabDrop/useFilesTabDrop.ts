@@ -297,16 +297,26 @@ export function useFilesTabDrop({
 			const destDirAbs = toAbs(rootPath, dirRel);
 			const versionToken = bridge.getVersion();
 
-			const tree =
-				entries.length > 0
-					? await flattenEntries(entries)
-					: {
-							files: fallbackFiles.map((file) => ({
-								relPath: file.name,
-								file,
-							})),
-							dirs: [],
-						};
+			let tree: DroppedTree;
+			try {
+				tree =
+					entries.length > 0
+						? await flattenEntries(entries)
+						: {
+								files: fallbackFiles.map((file) => ({
+									relPath: file.name,
+									file,
+								})),
+								dirs: [],
+							};
+			} catch {
+				// A single unreadable entry rejects the whole traversal; surface it
+				// instead of failing silently as an unhandled rejection.
+				if (bridge.isCurrent(versionToken)) {
+					toast.error("Could not read the dropped files");
+				}
+				return;
+			}
 
 			if (!bridge.isCurrent(versionToken)) return;
 
