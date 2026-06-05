@@ -7,7 +7,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CgLaptop } from "react-icons/cg";
 import {
 	LuCircleCheck,
@@ -15,7 +15,6 @@ import {
 	LuCircleX,
 	LuGitBranch,
 	LuLaptop,
-	LuLoaderCircle,
 	LuMonitor,
 	LuTrash2,
 } from "react-icons/lu";
@@ -286,25 +285,17 @@ export function V2WorkspaceRow({
 
 				<div className="flex items-center justify-center">
 					{deleting ? (
-						<LuLoaderCircle
-							className="size-4 animate-spin text-muted-foreground"
-							aria-label="Deleting workspace"
-						/>
+						<AsciiSpinner />
 					) : !isMainWorkspace ? (
-						<Tooltip delayDuration={300}>
-							<TooltipTrigger asChild>
-								<Button
-									size="icon"
-									variant="ghost"
-									onClick={handleDeleteClick}
-									aria-label="Delete workspace"
-									className="size-7 text-muted-foreground opacity-0 transition-opacity hover:bg-transparent hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 dark:hover:bg-transparent"
-								>
-									<LuTrash2 className="size-3.5" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="left">Delete workspace</TooltipContent>
-						</Tooltip>
+						<Button
+							size="icon"
+							variant="ghost"
+							onClick={handleDeleteClick}
+							aria-label="Delete workspace"
+							className="size-7 text-muted-foreground opacity-0 transition-opacity hover:bg-transparent hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 dark:hover:bg-transparent"
+						>
+							<LuTrash2 className="size-3.5" />
+						</Button>
 					) : null}
 				</div>
 			</div>
@@ -367,4 +358,27 @@ function ChecksDot({ status }: ChecksDotProps) {
 		return <LuCircleCheck className="size-3 text-emerald-500" />;
 	}
 	return <LuCircleX className="size-3 text-red-500" />;
+}
+
+const ASCII_SPINNER_FRAMES = ["◰", "◳", "◲", "◱"];
+const ASCII_SPINNER_INTERVAL_MS = 120;
+
+function AsciiSpinner() {
+	const [frame, setFrame] = useState(0);
+
+	useEffect(() => {
+		const id = setInterval(() => {
+			setFrame((prev) => (prev + 1) % ASCII_SPINNER_FRAMES.length);
+		}, ASCII_SPINNER_INTERVAL_MS);
+		return () => clearInterval(id);
+	}, []);
+
+	return (
+		<output
+			aria-label="Deleting workspace"
+			className="select-none font-mono text-base leading-none tabular-nums text-muted-foreground"
+		>
+			{ASCII_SPINNER_FRAMES[frame]}
+		</output>
+	);
 }
