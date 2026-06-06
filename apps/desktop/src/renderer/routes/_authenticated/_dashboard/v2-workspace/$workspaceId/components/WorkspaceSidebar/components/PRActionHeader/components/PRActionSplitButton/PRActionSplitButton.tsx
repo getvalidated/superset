@@ -2,10 +2,12 @@ import type { HostAgentConfig } from "@superset/host-service/settings";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { useState } from "react";
+import { cn } from "@superset/ui/utils";
+import { useMemo, useState } from "react";
 import {
 	VscChevronDown,
 	VscEdit,
@@ -14,6 +16,14 @@ import {
 } from "react-icons/vsc";
 import type { AgentTarget } from "renderer/hooks/agents/useAgentTarget";
 import type { TerminalAgentBinding } from "renderer/hooks/host-service/useTerminalAgentBindings";
+import { computeChecksRollup } from "../../utils/computeChecksStatus";
+import type { PullRequest } from "../../utils/getPRFlowState";
+import {
+	MergePRMenuItems,
+	PRBadgeLink,
+	stateTintClasses,
+	useMergePR,
+} from "../PRStatusGroup";
 import { PRAgentPickerMenu } from "./components/PRAgentPickerMenu";
 import { PRPromptEditDialog } from "./components/PRPromptEditDialog";
 
@@ -41,6 +51,12 @@ interface PRActionSplitButtonProps {
 	 *  instead of the normal copy. Agent picker chevron stays enabled so
 	 *  the user can force-dispatch via a specific agent. */
 	disabledReason?: string;
+	/** Optional PR badge rendered inline between primary and chevron — turns
+	 *  the action pill into the unified Update + #N pill for the dirty /
+	 *  behind cases. When present, the container picks up the PR's state
+	 *  tint and the chevron menu adds the merge section (when open + not
+	 *  draft). */
+	prBadge?: { pr: PullRequest; onRefresh?: () => void };
 }
 
 /**
@@ -53,8 +69,11 @@ interface PRActionSplitButtonProps {
  * reason but the chevron stays enabled so the user can still force-
  * dispatch via a specific agent.
  *
- * For *synced* / *merged* / *closed* PRs the action slot doesn't render
- * this component at all — `PRStatusGroup` is the view affordance.
+ * When `prBadge` is set, the pill hosts the PR link badge inline
+ * (state-tinted background) and the chevron menu gains the merge
+ * options for the same PR — one unified pill instead of two adjacent
+ * ones. Synced / merged / closed PRs render `PRStatusGroup` alone,
+ * not this component.
  */
 export function PRActionSplitButton({
 	kind,
@@ -68,6 +87,7 @@ export function PRActionSplitButton({
 	onOpenPromptInEditor,
 	busy = false,
 	disabledReason,
+	prBadge,
 }: PRActionSplitButtonProps) {
 	const copy = labels(kind, busy, disabledReason);
 	const [promptDialogOpen, setPromptDialogOpen] = useState(false);
@@ -80,10 +100,27 @@ export function PRActionSplitButton({
 
 	const ActionIcon = kind === "create" ? VscGitPullRequest : VscEdit;
 
+	const pr = prBadge?.pr ?? null;
+	const linkState = pr ? toLinkState(pr) : null;
+	const tint = linkState ? stateTintClasses(linkState) : null;
+	const checks = useMemo(
+		() => (pr ? computeChecksRollup(pr.checks) : null),
+		[pr],
+	);
+	const canMerge = pr ? pr.state === "open" && !pr.isDraft : false;
+	const { handleMerge, isPending: isMerging } = useMergePR({
+		workspaceId,
+		pr,
+		onRefresh: prBadge?.onRefresh,
+	});
+
 	return (
 		<div
-			className="flex items-center overflow-hidden rounded border border-border bg-muted/40"
-			aria-busy={busy}
+			className={cn(
+				"flex items-center overflow-hidden rounded border",
+				tint?.container ?? "border-border bg-muted/40",
+			)}
+			aria-busy={busy || isMerging}
 		>
 			<Tooltip>
 				<TooltipTrigger asChild>
@@ -92,7 +129,10 @@ export function PRActionSplitButton({
 						onClick={primaryHandler}
 						disabled={isDisabled}
 						aria-label={copy.primaryAriaLabel}
-						className="flex items-center gap-1.5 px-1.5 py-0.5 text-xs text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent disabled:cursor-default disabled:opacity-70 disabled:hover:bg-transparent"
+						className={cn(
+							"flex items-center gap-1.5 px-1.5 py-0.5 text-xs text-foreground outline-none transition-colors disabled:cursor-default disabled:opacity-70 disabled:hover:bg-transparent",
+							tint?.hover ?? "hover:bg-accent focus-visible:bg-accent",
+						)}
 					>
 						{busy ? (
 							<VscLoading className="size-3.5 animate-spin text-muted-foreground" />
@@ -104,16 +144,36 @@ export function PRActionSplitButton({
 				</TooltipTrigger>
 				<TooltipContent side="bottom">{copy.primaryTooltip}</TooltipContent>
 			</Tooltip>
-			<div className="h-full w-px self-stretch bg-border" />
+			{pr && checks && linkState && tint ? (
+				<>
+					<div className={cn("h-full w-px self-stretch", tint.divider)} />
+					<PRBadgeLink
+						pr={pr}
+						checks={checks}
+						linkState={linkState}
+						hoverClassName={tint.hover}
+					/>
+				</>
+			) : null}
+			<div
+				className={cn("h-full w-px self-stretch", tint?.divider ?? "bg-border")}
+			/>
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<button
 						type="button"
 						disabled={busy}
 						aria-label={copy.chevronAriaLabel}
-						className="flex items-center px-1 py-0.5 outline-none transition-colors hover:bg-accent focus-visible:bg-accent disabled:cursor-default disabled:opacity-70"
+						className={cn(
+							"flex items-center px-1 py-0.5 outline-none transition-colors disabled:cursor-default disabled:opacity-70",
+							tint?.hover ?? "hover:bg-accent focus-visible:bg-accent",
+						)}
 					>
-						<VscChevronDown className="size-3 text-muted-foreground" />
+						{isMerging ? (
+							<VscLoading className="size-3 animate-spin text-muted-foreground" />
+						) : (
+							<VscChevronDown className="size-3 text-muted-foreground" />
+						)}
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end" className="w-56 text-xs">
@@ -124,6 +184,12 @@ export function PRActionSplitButton({
 						onPickTarget={handlePick}
 						onEditPrompt={() => setPromptDialogOpen(true)}
 					/>
+					{canMerge ? (
+						<>
+							<DropdownMenuSeparator />
+							<MergePRMenuItems onMerge={handleMerge} isPending={isMerging} />
+						</>
+					) : null}
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<PRPromptEditDialog
@@ -134,6 +200,13 @@ export function PRActionSplitButton({
 			/>
 		</div>
 	);
+}
+
+function toLinkState(pr: PullRequest) {
+	if (pr.isDraft) return "draft" as const;
+	if (pr.state === "merged") return "merged" as const;
+	if (pr.state === "closed") return "closed" as const;
+	return "open" as const;
 }
 
 function labels(

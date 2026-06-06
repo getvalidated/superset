@@ -160,11 +160,11 @@ describe("selectActionButton", () => {
 		).toEqual({ kind: "update-pr-dropdown" });
 	});
 
-	test("pr-exists + open + clean → view-pr with url", () => {
+	test("pr-exists + open + clean → hidden (PRStatusGroup is the view)", () => {
 		const p = pr({ url: "https://github.com/org/repo/pull/42" });
 		expect(
 			selectActionButton({ kind: "pr-exists", pr: p, sync: sync() }),
-		).toEqual({ kind: "view-pr", url: p.url });
+		).toEqual({ kind: "hidden" });
 	});
 
 	test("pr-exists + draft + clean stays on update-pr-dropdown", () => {

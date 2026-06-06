@@ -147,61 +147,36 @@ function ActionSlot({
 		case "create-pr-dropdown":
 			return <PRActionSplitButton kind="create" {...splitButtonProps} />;
 
-		case "update-pr-dropdown":
+		case "update-pr-dropdown": {
+			// Unified pill — Update primary + PR badge + one chevron whose
+			// menu hosts agents, edit-prompt, and (when canMerge) merge
+			// options. PRStatusGroup is no longer rendered separately for
+			// this state.
+			const pr = state.kind === "pr-exists" ? state.pr : null;
 			return (
-				<>
-					<PRActionSplitButton
-						kind="update"
-						disabledReason={variant.blockedReason}
-						{...splitButtonProps}
-					/>
-					<div className="ml-2">
-						<PRStatusGroup
-							state={state}
-							workspaceId={workspaceId}
-							onRefresh={onRetry}
-						/>
-					</div>
-				</>
-			);
-
-		case "view-pr":
-			// PRStatusGroup already renders the #N link (opens pr.url) + state-
-			// tinted icon + hover card with PR detail + merge dropdown — it IS
-			// the view affordance, so no separate pill needed when the PR is
-			// in sync. To invoke an agent here, edit pr-prompt.md or trigger
-			// via the chat command palette.
-			return (
-				<PRStatusGroup
-					state={state}
-					workspaceId={workspaceId}
-					onRefresh={onRetry}
+				<PRActionSplitButton
+					kind="update"
+					disabledReason={variant.blockedReason}
+					prBadge={pr ? { pr, onRefresh: onRetry } : undefined}
+					{...splitButtonProps}
 				/>
 			);
+		}
 
 		case "cancel-busy": {
 			// `busy` covers two cases: agent creating a PR (no pr yet) or agent
-			// editing an existing one. Mirror the resting layout — pill + PR
-			// status group — with the pill in a disabled+spinner state so the
-			// header doesn't lose its anchor while the agent runs.
-			const hasPR = state.kind === "busy" && state.pr !== null;
+			// editing an existing one. Mirror the resting layout — unified
+			// pill with the PR badge folded in when present — with the
+			// primary in a disabled+spinner state so the header doesn't lose
+			// its anchor while the agent runs.
+			const pr = state.kind === "busy" ? state.pr : null;
 			return (
-				<>
-					<PRActionSplitButton
-						kind={hasPR ? "update" : "create"}
-						busy
-						{...splitButtonProps}
-					/>
-					{hasPR && (
-						<div className="ml-2">
-							<PRStatusGroup
-								state={state}
-								workspaceId={workspaceId}
-								onRefresh={onRetry}
-							/>
-						</div>
-					)}
-				</>
+				<PRActionSplitButton
+					kind={pr ? "update" : "create"}
+					busy
+					prBadge={pr ? { pr, onRefresh: onRetry } : undefined}
+					{...splitButtonProps}
+				/>
 			);
 		}
 

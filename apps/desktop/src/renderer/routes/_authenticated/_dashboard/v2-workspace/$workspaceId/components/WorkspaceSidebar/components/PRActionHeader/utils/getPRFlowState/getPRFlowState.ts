@@ -66,7 +66,6 @@ export type ActionButtonVariant =
 	| { kind: "disabled-tooltip"; reasonKind: UnavailableReason }
 	| { kind: "create-pr-dropdown" }
 	| { kind: "update-pr-dropdown"; blockedReason?: string }
-	| { kind: "view-pr"; url: string }
 	| { kind: "cancel-busy" }
 	| { kind: "retry" };
 
@@ -89,9 +88,10 @@ export function selectActionButton(state: PRFlowState): ActionButtonVariant {
 
 /**
  * Per-state primary action when a PR already exists. Mirrors t3code's
- * `resolveQuickAction` pattern: merged/closed PRs surface no action,
- * fully-synced open PRs swap to "View PR" (no agent invocation), branches
- * behind upstream block the update with a tooltip reason.
+ * `resolveQuickAction` pattern: merged/closed PRs and fully-synced open
+ * PRs surface no agent action (the PRStatusGroup link is the only
+ * affordance left); branches behind upstream block the update with a
+ * tooltip reason.
  */
 function selectPRExistsAction(
 	pr: PullRequest,
@@ -101,7 +101,7 @@ function selectPRExistsAction(
 		return { kind: "hidden" };
 	}
 	if (pr.state === "open" && !pr.isDraft && isInSync(sync)) {
-		return { kind: "view-pr", url: pr.url };
+		return { kind: "hidden" };
 	}
 	if (sync?.hasUpstream && sync.pullCount > 0) {
 		const noun =
