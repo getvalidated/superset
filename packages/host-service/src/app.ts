@@ -17,6 +17,7 @@ import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import { startTerminalReaper } from "./terminal/reaper";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import { TerminalAgentStore } from "./terminal-agents";
 import { appRouter } from "./trpc/router";
@@ -162,6 +163,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		upgradeWebSocket,
 	});
 
+	const stopTerminalReaper = startTerminalReaper(db);
+
 	app.use(
 		"/trpc/*",
 		trpcServer({
@@ -189,6 +192,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		// Each step is best-effort and isolated: a throw in one cleanup must
 		// not skip the others, otherwise a flaky `.stop()` could leak the
 		// open SQLite handle for the rest of the process lifetime.
+		try {
+			stopTerminalReaper();
+		} catch (err) {
+			console.warn("[host-service] stopTerminalReaper failed:", err);
+		}
 		try {
 			pullRequestRuntime.stop();
 		} catch (err) {
