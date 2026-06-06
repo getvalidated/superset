@@ -136,4 +136,6 @@ In any macOS file dialog, press **⌘⇧.** to reveal hidden dot-folders, or
 - **Multiple repos.** The project ID is fixed in the script. To route different
   Linear teams or projects to different Superset projects, branch on a
   `LINEAR_*` variable (for example `LINEAR_PROJECT_NAME`) and set `PROJECT`
-  accordingly.
+  accordingly. The `env` array in `coding-tools.json` is an allowlist — any
+  `LINEAR_*` variable you read in the script must also be added there, or it
+  won't be present in the script's environment.
