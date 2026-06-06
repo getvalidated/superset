@@ -1,3 +1,4 @@
+import { settings } from "@superset/local-db";
 import { COMPANY } from "@superset/shared/constants";
 import { app, BrowserWindow, Menu, shell } from "electron";
 import { env } from "main/env.main";
@@ -8,7 +9,32 @@ import {
 	simulateError,
 	simulateUpdateReady,
 } from "./auto-updater";
+import { localDb } from "./local-db";
 import { menuEmitter } from "./menu-events";
+
+function getNotificationSoundsMuted(): boolean {
+	try {
+		const settingsRow = localDb.select().from(settings).get();
+		return settingsRow?.notificationSoundsMuted ?? false;
+	} catch {
+		return false;
+	}
+}
+
+function setNotificationSoundsMuted(muted: boolean): void {
+	try {
+		localDb
+			.insert(settings)
+			.values({ id: 1, notificationSoundsMuted: muted })
+			.onConflictDoUpdate({
+				target: settings.id,
+				set: { notificationSoundsMuted: muted },
+			})
+			.run();
+	} catch (error) {
+		console.error("[menu] Failed to persist notification mute state:", error);
+	}
+}
 
 export function createApplicationMenu() {
 	const reloadAccelerator = "CmdOrCtrl+R";
@@ -79,6 +105,23 @@ export function createApplicationMenu() {
 				{ role: "zoom" },
 				{ type: "separator" },
 				{ role: "close", accelerator: closeAccelerator },
+			],
+		},
+		{
+			label: "Notifications",
+			submenu: [
+				{
+					label: "Mute Notification Sounds",
+					type: "checkbox",
+					checked: getNotificationSoundsMuted(),
+					click: (menuItem) => {
+						setNotificationSoundsMuted(menuItem.checked);
+						menuEmitter.emit("notifications-muted-changed", menuItem.checked);
+						// Rebuild so the checkbox reflects the persisted state if other
+						// surfaces (command palette, settings) change it later.
+						createApplicationMenu();
+					},
+				},
 			],
 		},
 		{
