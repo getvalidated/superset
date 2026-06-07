@@ -291,7 +291,9 @@ async function runDestroy(
 			.run();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		warnings.push(`Failed to clear terminal session rows: ${message}`);
+		warnings.push(
+			`Failed to clear terminal session rows for ${input.workspaceId}: ${message}`,
+		);
 	}
 
 	// 2b. Worktree. Double-force unlocks the rare locked-worktree case and
