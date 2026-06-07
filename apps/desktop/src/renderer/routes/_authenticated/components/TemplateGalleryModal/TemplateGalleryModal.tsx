@@ -56,8 +56,14 @@ export function TemplateGalleryModal({
 			});
 			return;
 		}
-		if (!parentDir) return;
+		if (!parentDir) {
+			const message = "Projects directory not ready yet.";
+			if (onError) onError(message);
+			else toast.error("Could not create project", { description: message });
+			return;
+		}
 		setCloningId(template.id);
+		let created: ProjectSetupResult | null = null;
 		try {
 			const client = getHostServiceClientByUrl(activeHostUrl);
 			const result = await client.project.create.mutate({
@@ -65,7 +71,7 @@ export function TemplateGalleryModal({
 				mode: { kind: "template", parentDir, url: template.repo },
 			});
 			finalizeSetup(activeHostUrl, result);
-			onCreated(result);
+			created = result;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			if (onError) onError(message);
@@ -73,6 +79,7 @@ export function TemplateGalleryModal({
 		} finally {
 			setCloningId(null);
 		}
+		if (created) onCreated(created);
 	};
 
 	const handleOpenChange = (next: boolean) => {
@@ -82,7 +89,10 @@ export function TemplateGalleryModal({
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent className="sm:max-w-5xl">
+			<DialogContent
+				className="sm:max-w-5xl"
+				onOpenAutoFocus={(event) => event.preventDefault()}
+			>
 				<DialogHeader>
 					<DialogTitle>Start from a template</DialogTitle>
 					<DialogDescription>
@@ -96,7 +106,7 @@ export function TemplateGalleryModal({
 							key={template.id}
 							template={template}
 							cloning={cloningId === template.id}
-							disabled={cloningId !== null}
+							disabled={cloningId !== null || !parentDir}
 							onSelect={handleSelect}
 						/>
 					))}

@@ -27,7 +27,7 @@ export function TemplateCard({
 			disabled={!available || disabled}
 			onClick={() => onSelect(template)}
 			className={cn(
-				"flex flex-col overflow-hidden border border-border/50 text-left transition-colors outline-none focus-visible:outline-none",
+				"flex flex-col overflow-hidden border border-border/50 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
 				available && !disabled
 					? "cursor-pointer hover:border-border"
 					: "cursor-not-allowed opacity-60",

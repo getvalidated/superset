@@ -416,7 +416,12 @@ export const projectRouter = router({
 					z.object({
 						kind: z.literal("template"),
 						parentDir: z.string().min(1),
-						url: z.string().min(1),
+						url: z
+							.string()
+							.min(1)
+							.refine((value) => /^https?:\/\//i.test(value), {
+								message: "Template URL must be http(s)",
+							}),
 					}),
 				]),
 			}),
