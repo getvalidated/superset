@@ -71,7 +71,10 @@ export function buildDashboardSidebarProjects({
 				tabOrder: number;
 				child: DashboardSidebarProjectChild;
 			}>;
-			orphanedWorkspaces: DashboardSidebarWorkspace[];
+			orphanedWorkspaces: Array<{
+				tabOrder: number;
+				workspace: DashboardSidebarWorkspace;
+			}>;
 		}
 	>();
 
@@ -147,7 +150,10 @@ export function buildDashboardSidebarProjects({
 				});
 				continue;
 			}
-			project.orphanedWorkspaces.push(sidebarWorkspace);
+			project.orphanedWorkspaces.push({
+				tabOrder: workspace.tabOrder,
+				workspace: sidebarWorkspace,
+			});
 			continue;
 		}
 
@@ -170,15 +176,29 @@ export function buildDashboardSidebarProjects({
 			...sidebarProject
 		} = resolvedProject;
 
-		const isLocalMain = (entry: (typeof childEntries)[number]) =>
-			entry.child.type === "workspace" &&
-			entry.child.workspace.type === "main" &&
-			entry.child.workspace.hostType === "local-device";
+		const isLocalMainWorkspace = (workspace: DashboardSidebarWorkspace) =>
+			workspace.type === "main" && workspace.hostType === "local-device";
+
+		const compareByLocalMainThenTabOrder = (
+			left: { tabOrder: number; workspace: DashboardSidebarWorkspace },
+			right: { tabOrder: number; workspace: DashboardSidebarWorkspace },
+		) => {
+			const leftLocalMain = isLocalMainWorkspace(left.workspace);
+			const rightLocalMain = isLocalMainWorkspace(right.workspace);
+			if (leftLocalMain !== rightLocalMain) {
+				return leftLocalMain ? -1 : 1;
+			}
+			return left.tabOrder - right.tabOrder;
+		};
 
 		const sortedChildren = childEntries
 			.sort((left, right) => {
-				const leftLocalMain = isLocalMain(left);
-				const rightLocalMain = isLocalMain(right);
+				const leftLocalMain =
+					left.child.type === "workspace" &&
+					isLocalMainWorkspace(left.child.workspace);
+				const rightLocalMain =
+					right.child.type === "workspace" &&
+					isLocalMainWorkspace(right.child.workspace);
 				if (leftLocalMain !== rightLocalMain) {
 					return leftLocalMain ? -1 : 1;
 				}
@@ -215,10 +235,12 @@ export function buildDashboardSidebarProjects({
 			children.splice(
 				insertIndex,
 				0,
-				...orphanedWorkspaces.map((workspace) => ({
-					type: "workspace" as const,
-					workspace,
-				})),
+				...orphanedWorkspaces
+					.sort(compareByLocalMainThenTabOrder)
+					.map(({ workspace }) => ({
+						type: "workspace" as const,
+						workspace,
+					})),
 			);
 		}
 

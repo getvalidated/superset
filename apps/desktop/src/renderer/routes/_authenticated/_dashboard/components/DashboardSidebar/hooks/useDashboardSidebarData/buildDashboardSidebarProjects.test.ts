@@ -120,7 +120,7 @@ describe("buildDashboardSidebarProjects", () => {
 		expect(allRenderedIds).toContain("orphan");
 	});
 
-	it("keeps a workspace visible after its section is moved across the project", () => {
+	it("orders sections by tabOrder and places each workspace in its section", () => {
 		const sections = [
 			makeSection({ id: "section-a", name: "A", tabOrder: 2 }),
 			makeSection({ id: "section-b", name: "B", tabOrder: 1 }),
@@ -140,11 +140,31 @@ describe("buildDashboardSidebarProjects", () => {
 		expect(
 			sectionB.section.workspaces.map((workspace) => workspace.id),
 		).toEqual(["ws-in-b"]);
-		// section-b has a lower tabOrder, so it renders before section-a
 		expect(
 			project.children
 				.filter((child) => child.type === "section")
 				.map((child) => (child.type === "section" ? child.section.id : null)),
 		).toEqual(["section-b", "section-a"]);
+	});
+
+	it("orders multiple orphaned workspaces by tabOrder above the sections", () => {
+		const [project] = build({
+			sidebarSections: [makeSection({ id: "section-1", tabOrder: 5 })],
+			visibleSidebarWorkspaces: [
+				makeWorkspace({ id: "orphan-late", sectionId: "gone", tabOrder: 3 }),
+				makeWorkspace({ id: "orphan-early", sectionId: "gone", tabOrder: 1 }),
+			],
+		});
+
+		const renderedTopLevel = project.children.map((child) =>
+			child.type === "section"
+				? `section:${child.section.id}`
+				: child.workspace.id,
+		);
+		expect(renderedTopLevel).toEqual([
+			"orphan-early",
+			"orphan-late",
+			"section:section-1",
+		]);
 	});
 });
