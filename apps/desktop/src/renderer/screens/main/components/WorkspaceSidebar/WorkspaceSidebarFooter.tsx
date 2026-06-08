@@ -57,6 +57,27 @@ export function WorkspaceSidebarFooter({
 		}
 	};
 
+	const openMainWorkspaceForProject = async (projectId: string) => {
+		try {
+			await openMainRepoWorkspace.mutateAsync({ projectId });
+		} catch (err) {
+			toast.error("Failed to open project", {
+				description:
+					err instanceof Error ? err.message : "Failed to create workspace",
+			});
+		}
+	};
+
+	const handleCloneProject = async () => {
+		const result = await openNewProject();
+		if (result) await openMainWorkspaceForProject(result.projectId);
+	};
+
+	const handleTemplateProject = async () => {
+		const result = await openTemplateGallery();
+		if (result) await openMainWorkspaceForProject(result.projectId);
+	};
+
 	const isLoading = isOpenPending || openMainRepoWorkspace.isPending;
 
 	if (isCollapsed) {
@@ -83,11 +104,11 @@ export function WorkspaceSidebarFooter({
 							<LuFolderOpen className="size-4" strokeWidth={STROKE_WIDTH} />
 							Open project
 						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => openNewProject()}>
+						<DropdownMenuItem onClick={handleCloneProject}>
 							<LuGitBranch className="size-4" strokeWidth={STROKE_WIDTH} />
 							Clone from URL
 						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => openTemplateGallery()}>
+						<DropdownMenuItem onClick={handleTemplateProject}>
 							<LuLayoutTemplate className="size-4" strokeWidth={STROKE_WIDTH} />
 							Start from a template
 						</DropdownMenuItem>
@@ -116,11 +137,11 @@ export function WorkspaceSidebarFooter({
 						<LuFolderOpen className="size-4" strokeWidth={STROKE_WIDTH} />
 						Open project
 					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => openNewProject()}>
+					<DropdownMenuItem onClick={handleCloneProject}>
 						<LuGitBranch className="size-4" strokeWidth={STROKE_WIDTH} />
 						Clone from URL
 					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => openTemplateGallery()}>
+					<DropdownMenuItem onClick={handleTemplateProject}>
 						<LuLayoutTemplate className="size-4" strokeWidth={STROKE_WIDTH} />
 						Start from a template
 					</DropdownMenuItem>

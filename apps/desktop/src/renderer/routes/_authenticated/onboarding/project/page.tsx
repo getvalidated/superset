@@ -16,6 +16,7 @@ import {
 	useFinalizeProjectSetup,
 	useOpenProject,
 } from "renderer/react-query/projects";
+import { useOpenMainRepoWorkspace } from "renderer/react-query/workspaces";
 import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
 import { TemplateGalleryModal } from "renderer/routes/_authenticated/components/TemplateGalleryModal";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
@@ -44,6 +45,7 @@ function OnboardingProjectPage() {
 	const finalizeSetup = useFinalizeProjectSetup();
 	const openProject = useOpenProject();
 	const createV1Project = useCreateV1Project();
+	const openMainRepoWorkspace = useOpenMainRepoWorkspace();
 	const selectDirectory = electronTrpc.window.selectDirectory.useMutation();
 
 	// Adding a project finishes onboarding: mark onboarded, then hand off to the
@@ -61,14 +63,20 @@ function OnboardingProjectPage() {
 			toast.error("Could not finish onboarding. Please try again.");
 			return;
 		}
-		// Land on the dashboard first, then open the modal. Opening it in the same
-		// tick as navigate mounts the Dialog mid-route-transition, which thrashes
-		// Radix's ref composition into a "Maximum update depth" loop.
-		await navigate({
-			to: isV2CloudEnabled ? "/v2-workspaces" : "/workspaces",
-			replace: true,
-		});
-		openNewWorkspaceModal(projectId);
+		if (isV2CloudEnabled) {
+			// Land on the dashboard first, then open the modal. Opening it in the
+			// same tick as navigate mounts the Dialog mid-route-transition, which
+			// thrashes Radix's ref composition into a "Maximum update depth" loop.
+			await navigate({ to: "/v2-workspaces", replace: true });
+			openNewWorkspaceModal(projectId);
+			return;
+		}
+		try {
+			await openMainRepoWorkspace.mutateAsync({ projectId });
+		} catch (error) {
+			console.error("[onboarding] open main workspace failed", error);
+			await navigate({ to: "/workspaces", replace: true });
+		}
 	};
 
 	const handleOpenFolder = async () => {
