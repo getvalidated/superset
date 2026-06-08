@@ -107,11 +107,6 @@ export function NewProjectModal({
 			toast.error("Please select a project location");
 			return;
 		}
-		const trimmedName = name.trim() || deriveProjectNameFromUrl(trimmedUrl);
-		if (!trimmedName) {
-			toast.error("Please enter a project name");
-			return;
-		}
 
 		setWorking(true);
 		try {
@@ -130,6 +125,11 @@ export function NewProjectModal({
 				showHostServiceUnavailableToast(hostService, {
 					action: "clone the repository",
 				});
+				return;
+			}
+			const trimmedName = name.trim() || deriveProjectNameFromUrl(trimmedUrl);
+			if (!trimmedName) {
+				toast.error("Please enter a project name");
 				return;
 			}
 			const client = getHostServiceClientByUrl(activeHostUrl);
@@ -188,21 +188,23 @@ export function NewProjectModal({
 						/>
 					</div>
 
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="project-name" className="text-xs">
-							Project name
-						</Label>
-						<Input
-							id="project-name"
-							value={name}
-							onChange={(e) => {
-								setName(e.target.value);
-								setNameTouched(true);
-							}}
-							placeholder="my-project"
-							disabled={working}
-						/>
-					</div>
+					{isV2CloudEnabled && (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="project-name" className="text-xs">
+								Project name
+							</Label>
+							<Input
+								id="project-name"
+								value={name}
+								onChange={(e) => {
+									setName(e.target.value);
+									setNameTouched(true);
+								}}
+								placeholder="my-project"
+								disabled={working}
+							/>
+						</div>
+					)}
 
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="project-path" className="text-xs">

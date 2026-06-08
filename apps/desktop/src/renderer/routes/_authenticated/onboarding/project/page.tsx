@@ -81,10 +81,11 @@ function OnboardingProjectPage() {
 
 	const handleOpenFolder = async () => {
 		if (isV2CloudEnabled) {
-			const result = await folderImport.start();
-			if (result) {
-				setBusy(true);
-				await finish(result.projectId);
+			setBusy(true);
+			try {
+				const result = await folderImport.start();
+				if (result) await finish(result.projectId);
+			} finally {
 				setBusy(false);
 			}
 			return;
