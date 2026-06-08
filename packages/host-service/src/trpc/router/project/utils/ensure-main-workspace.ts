@@ -82,7 +82,7 @@ export async function ensureMainWorkspaceStrict(
 		branch,
 		hostId: host.machineId,
 		type: "main",
-		clientMachineId: ctx.clientMachineId,
+		clientMachineId: ctx.clientMachineId ?? getHostId(),
 	});
 
 	ctx.db

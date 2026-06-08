@@ -123,7 +123,12 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		"*",
 		cors({
 			origin: config.allowedOrigins,
-			allowHeaders: ["Content-Type", "Authorization", "trpc-accept"],
+			allowHeaders: [
+				"Content-Type",
+				"Authorization",
+				"trpc-accept",
+				"x-superset-client-machine-id",
+			],
 		}),
 	);
 
