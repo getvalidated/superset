@@ -180,6 +180,8 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 					terminalAgentStore,
 					organizationId: config.organizationId,
 					isAuthenticated,
+					clientMachineId:
+						c.req.header("x-superset-client-machine-id") ?? undefined,
 				} as Record<string, unknown>;
 			},
 		}),
