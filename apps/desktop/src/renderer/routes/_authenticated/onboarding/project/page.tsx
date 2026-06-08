@@ -11,7 +11,11 @@ import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
-import { useFinalizeProjectSetup } from "renderer/react-query/projects";
+import {
+	useCreateV1Project,
+	useFinalizeProjectSetup,
+	useOpenProject,
+} from "renderer/react-query/projects";
 import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
 import { TemplateGalleryModal } from "renderer/routes/_authenticated/components/TemplateGalleryModal";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
@@ -26,7 +30,7 @@ function OnboardingProjectPage() {
 	const isV2CloudEnabled = useIsV2CloudEnabled();
 	const { refetch: refetchSession } = authClient.useSession();
 	const { activeHostUrl } = useLocalHostService();
-	const hostReady = activeHostUrl !== null;
+	const hostReady = !isV2CloudEnabled || activeHostUrl !== null;
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
 	const { data: homeDir } = electronTrpc.window.getHomeDir.useQuery();
 	const cloneTargetDir = homeDir ? `${homeDir}/.superset/projects` : null;
@@ -38,6 +42,9 @@ function OnboardingProjectPage() {
 		onError: (message) => toast.error(message),
 	});
 	const finalizeSetup = useFinalizeProjectSetup();
+	const openProject = useOpenProject();
+	const createV1Project = useCreateV1Project();
+	const selectDirectory = electronTrpc.window.selectDirectory.useMutation();
 
 	// Adding a project finishes onboarding: mark onboarded, then hand off to the
 	// dashboard's new-workspace modal pre-selected to the project just added.
@@ -65,10 +72,26 @@ function OnboardingProjectPage() {
 	};
 
 	const handleOpenFolder = async () => {
-		const result = await folderImport.start();
-		if (result) {
-			setBusy(true);
-			await finish(result.projectId);
+		if (isV2CloudEnabled) {
+			const result = await folderImport.start();
+			if (result) {
+				setBusy(true);
+				await finish(result.projectId);
+				setBusy(false);
+			}
+			return;
+		}
+		setBusy(true);
+		try {
+			const picked = await selectDirectory.mutateAsync({
+				title: "Open a folder",
+			});
+			if (picked.canceled || !picked.path) return;
+			const project = await openProject.openFromPath(picked.path);
+			if (project) await finish(project.id);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Failed to open folder");
+		} finally {
 			setBusy(false);
 		}
 	};
@@ -76,16 +99,25 @@ function OnboardingProjectPage() {
 	const handleClone = async (e: FormEvent) => {
 		e.preventDefault();
 		const trimmed = url.trim();
-		if (!trimmed || !cloneTargetDir || !activeHostUrl) return;
+		if (!trimmed || !cloneTargetDir) return;
+		if (isV2CloudEnabled && !activeHostUrl) return;
 		setBusy(true);
 		try {
-			const hostService = getHostServiceClientByUrl(activeHostUrl);
-			const created = await hostService.project.create.mutate({
-				name: repoNameFromUrl(trimmed),
-				mode: { kind: "clone", parentDir: cloneTargetDir, url: trimmed },
-			});
-			finalizeSetup(activeHostUrl, created);
-			await finish(created.projectId);
+			if (isV2CloudEnabled && activeHostUrl) {
+				const hostService = getHostServiceClientByUrl(activeHostUrl);
+				const created = await hostService.project.create.mutate({
+					name: repoNameFromUrl(trimmed),
+					mode: { kind: "clone", parentDir: cloneTargetDir, url: trimmed },
+				});
+				finalizeSetup(activeHostUrl, created);
+				await finish(created.projectId);
+			} else {
+				const projectId = await createV1Project.cloneFromUrl({
+					url: trimmed,
+					parentDir: cloneTargetDir,
+				});
+				if (projectId) await finish(projectId);
+			}
 		} catch (err) {
 			toast.error(
 				err instanceof Error ? err.message : "Failed to clone repository",
