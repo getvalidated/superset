@@ -14,6 +14,11 @@ export const DEV_CHAT_MODELS: ModelOption[] = [
 		provider: "Anthropic",
 	},
 	{
+		id: "anthropic/claude-fable-5",
+		name: "Fable 5",
+		provider: "Anthropic",
+	},
+	{
 		id: "anthropic/claude-sonnet-4-6",
 		name: "Sonnet 4.6",
 		provider: "Anthropic",
