@@ -7,8 +7,11 @@ const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export class LocalGitCredentialProvider implements GitCredentialProvider {
 	private envResolver: () => Promise<Record<string, string>>;
-	private cachedToken: { token: string; expiresAt: number } | null = null;
-	private inflight: Promise<string | null> | null = null;
+	private cachedTokenByHost = new Map<
+		string,
+		{ token: string; expiresAt: number }
+	>();
+	private inflightByHost = new Map<string, Promise<string | null>>();
 	private cachedAskpass: { token: string; path: string } | null = null;
 
 	constructor(
@@ -35,19 +38,22 @@ export class LocalGitCredentialProvider implements GitCredentialProvider {
 	}
 
 	async getToken(host: string): Promise<string | null> {
-		const envToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-		if (envToken) return envToken;
-
-		if (this.cachedToken && this.cachedToken.expiresAt > Date.now()) {
-			return this.cachedToken.token;
+		// GITHUB_TOKEN/GH_TOKEN are GitHub-specific; never replay them to another host.
+		if (host === "github.com") {
+			const envToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+			if (envToken) return envToken;
 		}
 
-		if (this.inflight) return this.inflight;
+		const cached = this.cachedTokenByHost.get(host);
+		if (cached && cached.expiresAt > Date.now()) return cached.token;
+
+		const inflight = this.inflightByHost.get(host);
+		if (inflight) return inflight;
 
 		const promise = this.fetchToken(host).finally(() => {
-			this.inflight = null;
+			this.inflightByHost.delete(host);
 		});
-		this.inflight = promise;
+		this.inflightByHost.set(host, promise);
 		return promise;
 	}
 
@@ -56,10 +62,10 @@ export class LocalGitCredentialProvider implements GitCredentialProvider {
 			(await this.fetchTokenViaGitCredential(host)) ??
 			(host === "github.com" ? await this.fetchTokenViaGhCli() : null);
 		if (token) {
-			this.cachedToken = {
+			this.cachedTokenByHost.set(host, {
 				token,
 				expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
-			};
+			});
 		}
 		return token;
 	}
@@ -116,7 +122,7 @@ function httpsHost(remoteUrl: string | null): string | null {
 	if (!remoteUrl) return null;
 	try {
 		const url = new URL(remoteUrl);
-		return url.protocol === "https:" ? url.hostname : null;
+		return url.protocol === "https:" ? url.host : null;
 	} catch {
 		return null;
 	}
