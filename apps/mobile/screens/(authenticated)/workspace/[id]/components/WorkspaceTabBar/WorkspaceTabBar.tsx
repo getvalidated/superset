@@ -1,52 +1,64 @@
 import type { TabItem } from "@superset/tab-bar";
 import { TabBarView } from "@superset/tab-bar";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useRouter } from "expo-router";
 import { useTabTrigger } from "expo-router/ui";
 import { useCallback, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizations";
+import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
 
 const TABS: TabItem[] = [
-	{ name: "(home)", icon: "house.fill", label: "Home" },
-	{ name: "(tasks)", icon: "checkmark.square.fill", label: "Tasks" },
+	{ name: "chat", icon: "bubble.left.and.bubble.right.fill", label: "Chat" },
+	{ name: "changes", icon: "plus.forwardslash.minus", label: "Changes" },
 	{ name: "__menu__", icon: "ellipsis", label: "More", isMenuTrigger: true },
 ];
 
-const NAVIGABLE_TAB_NAMES = ["(home)", "(tasks)"];
+const NAVIGABLE_TAB_NAMES = ["chat", "changes"];
 
 const MENU_ACTIONS = [
-	{ name: "views", icon: "square.stack", label: "Views" },
-	{ name: "customize", icon: "ellipsis", label: "Customize" },
+	{ name: "home", icon: "house.fill", label: "Back to Home" },
 ];
 
 const COLLAPSE_ANIMATION_MS = 400;
 
-export function AuthenticatedTabBar() {
+export function WorkspaceTabBar({ workspaceId }: { workspaceId: string }) {
 	const router = useRouter();
-	const { activeOrganization } = useOrganizations();
-	const { switchTab, getTrigger } = useTabTrigger({ name: "(home)" });
+	const collections = useCollections();
+	const { switchTab, getTrigger } = useTabTrigger({ name: "chat" });
 	const [isExpanded, setIsExpanded] = useState(false);
 	const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	const { data: workspaces } = useLiveQuery(
+		(q) => q.from({ v2Workspaces: collections.v2Workspaces }),
+		[collections],
+	);
+	const workspace = workspaces?.find((item) => item.id === workspaceId);
+
 	const activeTab =
-		NAVIGABLE_TAB_NAMES.find((name) => getTrigger(name)?.isFocused) ?? "(home)";
+		NAVIGABLE_TAB_NAMES.find((name) => getTrigger(name)?.isFocused) ?? "chat";
 
 	const handleExpandedChange = useCallback((expanded: boolean) => {
 		if (expanded) {
-			// Expand container immediately so SwiftUI has room to animate into
 			if (collapseTimer.current) {
 				clearTimeout(collapseTimer.current);
 				collapseTimer.current = null;
 			}
 			setIsExpanded(true);
 		} else {
-			// Delay container shrink so the SwiftUI close animation isn't clipped
 			collapseTimer.current = setTimeout(() => {
 				setIsExpanded(false);
 				collapseTimer.current = null;
 			}, COLLAPSE_ANIMATION_MS);
 		}
 	}, []);
+
+	const exitWorkspace = useCallback(() => {
+		if (router.canGoBack()) {
+			router.back();
+			return;
+		}
+		router.replace("/(authenticated)/(tabs)/(home)");
+	}, [router]);
 
 	return (
 		<View
@@ -58,22 +70,20 @@ export function AuthenticatedTabBar() {
 				tabs={TABS}
 				menuActions={MENU_ACTIONS}
 				selectedTab={activeTab}
-				organizationName={activeOrganization?.name ?? "Organization"}
+				organizationName={workspace?.name ?? "Workspace"}
 				onTabSelect={(tab: string) => {
 					switchTab(tab, { resetOnFocus: false });
 				}}
-				onMenuActionPress={() => {
-					// placeholder — future navigation
+				onMenuActionPress={(action: string) => {
+					if (action === "home") {
+						exitWorkspace();
+					}
 				}}
-				onSettingsPress={() => {
-					router.push("/(authenticated)/(tabs)/(more)/settings");
-				}}
+				onSettingsPress={exitWorkspace}
 				onSearchPress={() => {
 					// future
 				}}
-				onOrgPress={() => {
-					switchTab("(more)", { resetOnFocus: false });
-				}}
+				onOrgPress={exitWorkspace}
 				onExpandedChange={handleExpandedChange}
 			/>
 		</View>

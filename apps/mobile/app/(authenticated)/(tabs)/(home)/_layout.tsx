@@ -9,7 +9,6 @@ export default function HomeLayout() {
 			}}
 		>
 			<Stack.Screen name="index" options={{ title: "" }} />
-			<Stack.Screen name="workspaces/[id]" options={{ title: "Workspace" }} />
 		</Stack>
 	);
 }

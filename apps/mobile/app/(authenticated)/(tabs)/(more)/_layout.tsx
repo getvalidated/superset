@@ -4,7 +4,7 @@ export default function MoreLayout() {
 	return (
 		<Stack>
 			<Stack.Screen name="index" options={{ headerShown: false }} />
-			<Stack.Screen name="settings" options={{ title: "Settings" }} />
+			<Stack.Screen name="settings/index" options={{ title: "Settings" }} />
 		</Stack>
 	);
 }

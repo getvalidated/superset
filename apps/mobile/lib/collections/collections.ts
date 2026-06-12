@@ -1,5 +1,6 @@
 import { snakeCamelMapper } from "@electric-sql/client";
 import type {
+	SelectChatSession,
 	SelectInvitation,
 	SelectMember,
 	SelectOrganization,
@@ -7,6 +8,8 @@ import type {
 	SelectTask,
 	SelectTaskStatus,
 	SelectUser,
+	SelectV2Project,
+	SelectV2Workspace,
 } from "@superset/db/schema";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import type { Collection } from "@tanstack/react-db";
@@ -25,6 +28,9 @@ interface OrgCollections {
 	members: Collection<SelectMember>;
 	users: Collection<SelectUser>;
 	invitations: Collection<SelectInvitation>;
+	v2Projects: Collection<SelectV2Project>;
+	v2Workspaces: Collection<SelectV2Workspace>;
+	chatSessions: Collection<SelectChatSession>;
 }
 
 const collectionsCache = new Map<string, OrgCollections>();
@@ -141,7 +147,56 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		}),
 	);
 
-	return { tasks, taskStatuses, projects, members, users, invitations };
+	const v2Projects = createCollection(
+		electricCollectionOptions<SelectV2Project>({
+			id: `v2-projects-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: { table: "v2_projects", organizationId },
+				headers,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const v2Workspaces = createCollection(
+		electricCollectionOptions<SelectV2Workspace>({
+			id: `v2-workspaces-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: { table: "v2_workspaces", organizationId },
+				headers,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const chatSessions = createCollection(
+		electricCollectionOptions<SelectChatSession>({
+			id: `chat-sessions-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: { table: "chat_sessions", organizationId },
+				headers,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	return {
+		tasks,
+		taskStatuses,
+		projects,
+		members,
+		users,
+		invitations,
+		v2Projects,
+		v2Workspaces,
+		chatSessions,
+	};
 }
 
 export function getCollections(organizationId: string) {
