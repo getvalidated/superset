@@ -6,6 +6,8 @@ export default function WorkspaceLayout() {
 		<NativeTabs
 			tintColor={THEME.dark.foreground}
 			iconColor={THEME.dark.mutedForeground}
+			blurEffect="systemThickMaterialDark"
+			minimizeBehavior="never"
 		>
 			<NativeTabs.Trigger name="chat">
 				<NativeTabs.Trigger.Icon

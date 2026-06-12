@@ -6,6 +6,8 @@ export default function TabsLayout() {
 		<NativeTabs
 			tintColor={THEME.dark.foreground}
 			iconColor={THEME.dark.mutedForeground}
+			blurEffect="systemThickMaterialDark"
+			minimizeBehavior="never"
 		>
 			<NativeTabs.Trigger name="(home)">
 				<NativeTabs.Trigger.Icon
@@ -18,6 +20,10 @@ export default function TabsLayout() {
 					sf={{ default: "list.clipboard", selected: "list.clipboard.fill" }}
 				/>
 				<NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
+			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="(search)" role="search">
+				<NativeTabs.Trigger.Icon sf="magnifyingglass" />
+				<NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="(more)">
 				<NativeTabs.Trigger.Icon sf="ellipsis" />
