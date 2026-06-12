@@ -20,7 +20,6 @@ export default command({
 			data as Record<string, unknown>[],
 			["name", "branch", "projectName", "hostName", "id"],
 			["NAME", "BRANCH", "PROJECT", "HOST", "ID"],
-			30,
 		),
 	run: async ({ ctx, options }) => {
 		const organizationId = ctx.config.organizationId;
