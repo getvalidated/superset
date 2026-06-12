@@ -1,6 +1,6 @@
 import type { SelectV2Workspace } from "@superset/db/schema";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { Text } from "@/components/ui/text";
@@ -18,6 +18,7 @@ type ProjectGroup = {
 export function WorkspacesScreen() {
 	const router = useRouter();
 	const [sheetOpen, setSheetOpen] = useState(false);
+	const [projectFilter, setProjectFilter] = useState<string | null>(null);
 	const { width } = useWindowDimensions();
 	const collections = useCollections();
 	const {
@@ -41,7 +42,10 @@ export function WorkspacesScreen() {
 			(projects ?? []).map((project) => [project.id, project.name]),
 		);
 		const byProject = new Map<string, SelectV2Workspace[]>();
-		for (const workspace of workspaces ?? []) {
+		const visible = (workspaces ?? []).filter(
+			(workspace) => !projectFilter || workspace.projectId === projectFilter,
+		);
+		for (const workspace of visible) {
 			const list = byProject.get(workspace.projectId) ?? [];
 			list.push(workspace);
 			byProject.set(workspace.projectId, list);
@@ -56,7 +60,11 @@ export function WorkspacesScreen() {
 				),
 			}))
 			.sort((a, b) => a.projectName.localeCompare(b.projectName));
-	}, [workspaces, projects]);
+	}, [workspaces, projects, projectFilter]);
+
+	const menuProjects = [...(projects ?? [])].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
 
 	const handleSwitchOrganization = (organizationId: string) => {
 		setSheetOpen(false);
@@ -70,6 +78,30 @@ export function WorkspacesScreen() {
 				logo={activeOrganization?.logo}
 				onPress={() => setSheetOpen(true)}
 			/>
+			<Stack.Toolbar placement="right">
+				<Stack.Toolbar.Menu
+					icon={
+						projectFilter
+							? "line.3.horizontal.decrease.circle.fill"
+							: "line.3.horizontal.decrease.circle"
+					}
+				>
+					<Stack.Toolbar.MenuAction onPress={() => setProjectFilter(null)}>
+						All projects
+					</Stack.Toolbar.MenuAction>
+					{menuProjects.map((project) => (
+						<Stack.Toolbar.MenuAction
+							key={project.id}
+							onPress={() => setProjectFilter(project.id)}
+						>
+							{projectFilter === project.id
+								? `✓ ${project.name}`
+								: project.name}
+						</Stack.Toolbar.MenuAction>
+					))}
+				</Stack.Toolbar.Menu>
+				<Stack.Toolbar.Button icon="square.and.pencil" onPress={() => {}} />
+			</Stack.Toolbar>
 			<ScrollView
 				className="flex-1 bg-background"
 				contentInsetAdjustmentBehavior="automatic"
