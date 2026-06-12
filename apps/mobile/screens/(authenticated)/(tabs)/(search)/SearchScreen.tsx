@@ -47,6 +47,7 @@ export function SearchScreen() {
 		<>
 			<Stack.SearchBar
 				autoFocus
+				hideNavigationBar={false}
 				placeholder="Search workspaces"
 				placement="integrated"
 				allowToolbarIntegration
