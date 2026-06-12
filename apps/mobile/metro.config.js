@@ -36,19 +36,9 @@ config.resolver.extraNodeModules = {
 	"@superset/tab-bar": path.resolve(projectRoot, "modules/tab-bar"),
 };
 
-// Resolve react-native-worklets/.worklets/* via the Bundle Mode resolver
-const defaultResolver = config.resolver.resolveRequest;
+// Worklets Bundle Mode (react-native-streamdown): resolves the generated
+// react-native-worklets/.worklets/* modules and injects their entry points.
 config = getBundleModeMetroConfig(config);
-const bundleModeResolver = config.resolver.resolveRequest;
-config.resolver.resolveRequest = (context, moduleName, platform) => {
-	if (moduleName.startsWith("react-native-worklets/.worklets/")) {
-		return bundleModeResolver(context, moduleName, platform);
-	}
-	if (defaultResolver) {
-		return defaultResolver(context, moduleName, platform);
-	}
-	return context.resolveRequest(context, moduleName, platform);
-};
 
 module.exports = withStorybook(
 	withUniwindConfig(config, {
