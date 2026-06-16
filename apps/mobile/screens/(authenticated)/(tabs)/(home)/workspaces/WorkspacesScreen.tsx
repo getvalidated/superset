@@ -13,6 +13,7 @@ import { useCollections } from "@/screens/(authenticated)/providers/CollectionsP
 import { OrganizationHeaderButton } from "./components/OrganizationHeaderButton";
 import { OrganizationSwitcherSheet } from "./components/OrganizationSwitcherSheet";
 import { ProjectAvatar } from "./components/ProjectAvatar";
+import { WorkspaceActionsSheet } from "./components/WorkspaceActionsSheet";
 import {
 	type FilterableProject,
 	WorkspaceFilterSheet,
@@ -26,6 +27,8 @@ export function WorkspacesScreen() {
 	const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 	const [projectFilter, setProjectFilter] = useState<string | null>(null);
 	const [sort, setSort] = useState<WorkspaceSort>("updatedAt");
+	const [actionsWorkspace, setActionsWorkspace] =
+		useState<SelectV2Workspace | null>(null);
 	const { width } = useWindowDimensions();
 	const collections = useCollections();
 	const {
@@ -115,6 +118,7 @@ export function WorkspacesScreen() {
 				onPress={() =>
 					router.push(`/(authenticated)/workspace/${item.id}/chat`)
 				}
+				onLongPress={() => setActionsWorkspace(item)}
 			/>
 		),
 		[pullRequestsByBranch, usersById, router],
@@ -183,6 +187,14 @@ export function WorkspacesScreen() {
 				}}
 				sort={sort}
 				onChangeSort={setSort}
+				width={width}
+			/>
+			<WorkspaceActionsSheet
+				workspace={actionsWorkspace}
+				isPresented={actionsWorkspace !== null}
+				onIsPresentedChange={(value) => {
+					if (!value) setActionsWorkspace(null);
+				}}
 				width={width}
 			/>
 		</>

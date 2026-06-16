@@ -3,11 +3,10 @@ import type {
 	SelectV2Workspace,
 } from "@superset/db/schema";
 import { CircleDot, GitMerge, GitPullRequest } from "lucide-react-native";
-import { ActionSheetIOS, Alert, Linking, Pressable, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { parseDate } from "@/lib/dates";
-import { apiClient } from "@/lib/trpc/client";
 import { OrganizationAvatar } from "../OrganizationSwitcherSheet/components/OrganizationAvatar";
 
 const PR_BADGE_CONFIG = {
@@ -57,11 +56,13 @@ export function WorkspaceRow({
 	pullRequest,
 	creator,
 	onPress,
+	onLongPress,
 }: {
 	workspace: SelectV2Workspace;
 	pullRequest?: SelectGithubPullRequest;
 	creator?: { name?: string | null; image?: string | null };
 	onPress: () => void;
+	onLongPress: () => void;
 }) {
 	const prState: PrBadgeState | null = pullRequest
 		? pullRequest.isDraft && pullRequest.state === "open"
@@ -74,70 +75,11 @@ export function WorkspaceRow({
 		: null;
 	const prBadge = prState ? PR_BADGE_CONFIG[prState] : null;
 
-	const handleRename = () => {
-		Alert.prompt(
-			"Rename workspace",
-			undefined,
-			[
-				{ style: "cancel", text: "Cancel" },
-				{
-					onPress: async (name?: string) => {
-						const trimmed = name?.trim();
-						if (!trimmed || trimmed === workspace.name) return;
-						try {
-							await apiClient.v2Workspace.update.mutate({
-								id: workspace.id,
-								name: trimmed,
-							});
-						} catch {
-							Alert.alert("Rename failed");
-						}
-					},
-					text: "Rename",
-				},
-			],
-			"plain-text",
-			workspace.name,
-		);
-	};
-
-	const handleDelete = () => {
-		Alert.alert("Delete workspace", `Delete "${workspace.name}"?`, [
-			{ style: "cancel", text: "Cancel" },
-			{
-				onPress: async () => {
-					try {
-						await apiClient.v2Workspace.delete.mutate({ id: workspace.id });
-					} catch {
-						Alert.alert("Delete failed");
-					}
-				},
-				style: "destructive",
-				text: "Delete",
-			},
-		]);
-	};
-
-	const handleLongPress = () => {
-		ActionSheetIOS.showActionSheetWithOptions(
-			{
-				cancelButtonIndex: 2,
-				destructiveButtonIndex: 1,
-				options: ["Rename", "Delete", "Cancel"],
-				title: workspace.name,
-			},
-			(buttonIndex) => {
-				if (buttonIndex === 0) handleRename();
-				if (buttonIndex === 1) handleDelete();
-			},
-		);
-	};
-
 	return (
 		<Pressable
 			className="flex-row items-center gap-3 px-4 py-3"
 			onPress={onPress}
-			onLongPress={handleLongPress}
+			onLongPress={onLongPress}
 		>
 			<OrganizationAvatar
 				name={creator?.name ?? workspace.name}
