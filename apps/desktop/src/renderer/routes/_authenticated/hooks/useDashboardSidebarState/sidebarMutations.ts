@@ -61,6 +61,12 @@ export function tombstoneSidebarWorkspaceRecord(
  * via `ensureWorkspaceInSidebar`, recreate the project record). The union below
  * covers both explicitly-placed workspaces and this machine's workspaces that
  * have no local-state row yet (auto-included main/CLI workspaces).
+ *
+ * `machineId` is required (not nullable): `LocalHostServiceProvider` doesn't
+ * render the authenticated tree until it resolves, so any caller has a real id.
+ * Keeping it non-null guarantees the `hostId === machineId` filter below can't
+ * silently skip row-less workspaces (which would let the auto-add hook re-pin
+ * them once an id arrived).
  */
 export function removeProjectFromSidebarState(
 	collections: Pick<
@@ -71,7 +77,7 @@ export function removeProjectFromSidebarState(
 		| "v2SidebarProjects"
 	>,
 	projectId: string,
-	machineId: string | null,
+	machineId: string,
 	cleanupPaneRuntimes: CleanupPaneRuntimes,
 ): void {
 	const workspaceIds = new Set<string>();
