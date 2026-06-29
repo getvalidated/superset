@@ -54,7 +54,7 @@ import {
 } from "renderer/lib/auth-client";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import superjson from "superjson";
-import { z } from "zod";
+import type { z } from "zod";
 import {
 	type DashboardSidebarProjectRow,
 	type DashboardSidebarSectionRow,
@@ -125,16 +125,6 @@ const createPersistedElectricCollection = ((config: ElectricSyncConfig) => {
 	} as any);
 }) as unknown as typeof createCollection;
 
-const apiKeyDisplaySchema = z.object({
-	id: z.string(),
-	name: z.string().nullable(),
-	start: z.string().nullable(),
-	createdAt: z.coerce.date(),
-	lastRequest: z.coerce.date().nullable(),
-});
-
-type ApiKeyDisplay = z.infer<typeof apiKeyDisplaySchema>;
-
 export interface OrgCollections {
 	tasks: Collection<SelectTask>;
 	taskStatuses: Collection<SelectTaskStatus>;
@@ -152,7 +142,6 @@ export interface OrgCollections {
 	teamMembers: Collection<SelectTeamMember>;
 	agentCommands: Collection<SelectAgentCommand>;
 	subscriptions: Collection<SelectSubscription>;
-	apiKeys: Collection<ApiKeyDisplay>;
 	chatSessions: Collection<SelectChatSession>;
 	githubRepositories: Collection<SelectGithubRepository>;
 	githubPullRequests: Collection<SelectGithubPullRequest>;
@@ -649,23 +638,6 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		}),
 	);
 
-	const apiKeys = createPersistedElectricCollection(
-		electricCollectionOptions<ApiKeyDisplay>({
-			id: `apikeys-${organizationId}`,
-			shapeOptions: {
-				url: electricUrl,
-				params: {
-					table: "auth.apikeys",
-					organizationId,
-				},
-				headers: electricHeaders,
-				columnMapper,
-				onError: handleElectricSyncError,
-			},
-			getKey: (item) => item.id,
-		}),
-	);
-
 	const chatSessions = createPersistedElectricCollection(
 		electricCollectionOptions<SelectChatSession>({
 			id: `chat_sessions-${organizationId}`,
@@ -872,7 +844,6 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		teamMembers,
 		agentCommands,
 		subscriptions,
-		apiKeys,
 		chatSessions,
 		githubRepositories,
 		githubPullRequests,

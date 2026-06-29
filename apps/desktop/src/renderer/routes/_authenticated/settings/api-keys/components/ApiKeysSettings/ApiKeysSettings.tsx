@@ -13,7 +13,7 @@ import { Input } from "@superset/ui/input";
 import { Label } from "@superset/ui/label";
 import { Skeleton } from "@superset/ui/skeleton";
 import { toast } from "@superset/ui/sonner";
-import { useLiveQuery } from "@tanstack/react-db";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
 	HiArrowTopRightOnSquare,
@@ -25,7 +25,10 @@ import {
 import { useCopyToClipboard } from "renderer/hooks/useCopyToClipboard";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { authClient } from "renderer/lib/auth-client";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import {
+	apiKeysQueryKey,
+	useApiKeys,
+} from "renderer/react-query/api-keys/useApiKeys";
 import {
 	isItemVisible,
 	SETTING_ITEM_ID,
@@ -37,17 +40,20 @@ interface ApiKeysSettingsProps {
 }
 
 export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
-	const collections = useCollections();
+	const { data: session } = authClient.useSession();
+	const activeOrganizationId = session?.session?.activeOrganizationId;
+	const queryClient = useQueryClient();
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [showGenerateDialog, setShowGenerateDialog] = useState(false);
 	const [showNewKeyDialog, setShowNewKeyDialog] = useState(false);
 	const [newKeyName, setNewKeyName] = useState("");
 	const [newKeyValue, setNewKeyValue] = useState("");
-	const { data: apiKeysData, isReady } = useLiveQuery(
-		(q) => q.from({ apiKeys: collections.apiKeys }),
-		[collections],
-	);
-	const apiKeys = apiKeysData ?? [];
+	const { keys: apiKeys, isLoading } = useApiKeys(activeOrganizationId);
+
+	const invalidateApiKeys = () =>
+		queryClient.invalidateQueries({
+			queryKey: apiKeysQueryKey(activeOrganizationId),
+		});
 
 	const showApiKeysList = isItemVisible(
 		SETTING_ITEM_ID.API_KEYS_LIST,
@@ -71,6 +77,7 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 				setShowGenerateDialog(false);
 				setShowNewKeyDialog(true);
 				setNewKeyName("");
+				await invalidateApiKeys();
 			}
 		} catch (error) {
 			console.error("[api-keys] Failed to generate API key:", error);
@@ -90,6 +97,7 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 					variant: "destructive",
 					onClick: async () => {
 						await authClient.apiKey.delete({ keyId: id });
+						await invalidateApiKeys();
 						toast.success("API key revoked");
 					},
 				},
@@ -144,7 +152,7 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 			</div>
 
 			{showApiKeysList &&
-				(!isReady && apiKeys.length === 0 ? (
+				(isLoading && apiKeys.length === 0 ? (
 					<div className="divide-y divide-border">
 						{[1, 2, 3].map((i) => (
 							<div key={i} className="flex items-center gap-4 py-3">
