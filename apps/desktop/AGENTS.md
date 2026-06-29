@@ -45,28 +45,12 @@ export const createMyRouter = () => {
 };
 ```
 
-## Verifying renderer changes via CDP (Chrome DevTools Protocol)
+## Verifying renderer changes via CDP
 
-The renderer is Chromium, so you can drive and inspect the **running dev app** over CDP to confirm a change works end-to-end against the real API/DB — no manual clicking.
+To check a change end-to-end against the real API/DB, drive the running dev app over CDP. Launch with `RENDERER_REMOTE_DEBUG_PORT=9222 bun dev` (full stack; the app restores a signed-in session), attach via the page target's `webSocketDebuggerUrl` from `localhost:9222/json` over a WebSocket (Bun built-in, no deps). Example: `scripts/cdp-smoke-integrations.ts`.
 
-**Enable it.** The main process opens a debug port only when `RENDERER_REMOTE_DEBUG_PORT` is set in dev (see `src/lib/electron-app/factories/app/setup.ts`):
+**Use `Runtime.evaluate` (`awaitPromise`, `returnByValue`), not `Network.*` interception** — sniffing misses React-Query-cached responses, and `refetchInterval` is paused while the window is backgrounded. Run an in-renderer `fetch(url, { credentials: "include" })` (the bearer token is in a closure, but the session cookie works):
 
-```bash
-RENDERER_REMOTE_DEBUG_PORT=9222 bun dev   # full stack: needs Docker (postgres/electric) + API/web up
-```
-
-The app restores a persisted session, so a fresh launch usually lands signed-in. Attach by reading the page target's `webSocketDebuggerUrl` from `http://localhost:9222/json`, then speak CDP over a WebSocket (Bun has a built-in `WebSocket` — no deps). Canonical example: `scripts/cdp-smoke-integrations.ts`.
-
-**Prefer `Runtime.evaluate` over `Network.*` interception.** Running code *inside the renderer* and returning the value (`awaitPromise: true, returnByValue: true`) is far more reliable than sniffing network traffic, because:
-
-- **React Query caches responses** — a query you want to observe often never re-fires on the wire.
-- **`refetchInterval` is paused while the window is hidden/blurred** (React Query default `refetchIntervalInBackground: false`). An automated/unfocused window won't poll. (This also matters for any "view-time polling" feature — a backgrounded desktop window stops polling.)
-- The **bearer token lives in a module closure** (`renderer/lib/auth-client`), so you can't replay an authed request from outside. But an in-renderer `fetch(url, { credentials: "include" })` carries the session cookie and authenticates.
-
-**Recipes** (run as the `expression` of a `Runtime.evaluate`):
-
-- Active org / prove auth: `await fetch(API + "/api/auth/get-session", { credentials: "include" })` → `.session.activeOrganizationId`.
-- Call a tRPC query directly (bypasses the React Query cache): GET `API + "/api/trpc/<proc>?batch=1&input=" + encodeURIComponent(JSON.stringify({ "0": { json: <input> } }))`. superjson wraps input in `{ json: ... }`; the response is `[{ "result": { "data": { "json": ... } } }]`.
-- Navigate: `window.location.hash = "#/route"`. Caveat: this changes the URL but may **not** remount the route component, so don't rely on it to force a refetch — call the endpoint directly instead.
-
-Use this to assert real behavior, e.g. that a tRPC response is column-masked (no `accessToken`/`refreshToken`) or that a table is no longer synced via an Electric `/v1/shape` request.
+- Active org: `fetch(API + "/api/auth/get-session", {credentials:"include"})` → `.session.activeOrganizationId`.
+- A tRPC query (bypasses the cache): GET `API + "/api/trpc/<proc>?batch=1&input=" + encodeURIComponent(JSON.stringify({"0":{json:<input>}}))`; response is `[{result:{data:{json:...}}}]`.
+- `window.location.hash` nav may not remount the route — call the endpoint directly instead.
