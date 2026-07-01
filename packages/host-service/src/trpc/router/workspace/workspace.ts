@@ -28,16 +28,29 @@ export const workspaceRouter = router({
 			};
 		}),
 
+	// All org workspaces from cloud, shaped like a v2_workspaces row. Used as
+	// cross-host *presence* — the renderer merges this (for other hosts) with the
+	// local list, so remote-machine workspaces stay visible without Electric.
 	cloudList: protectedProcedure.query(async ({ ctx }) => {
 		const rows = await ctx.api.v2Workspace.list.query({
 			organizationId: ctx.organizationId,
 		});
-		return rows.map((row) => ({
-			id: row.id,
-			projectId: row.projectId,
-			branch: row.branch,
-			hostId: row.hostId,
-		}));
+		return rows.map((row) => {
+			const createdAt = new Date(row.createdAt);
+			return {
+				id: row.id,
+				organizationId: ctx.organizationId,
+				projectId: row.projectId,
+				hostId: row.hostId,
+				name: row.name,
+				branch: row.branch,
+				type: row.type,
+				createdByUserId: null,
+				taskId: null,
+				createdAt,
+				updatedAt: createdAt,
+			};
+		});
 	}),
 
 	// Persist an identity edit (rename / task link) to the local row so the

@@ -57,6 +57,7 @@ import {
 } from "renderer/lib/auth-client";
 import {
 	getActiveLocalHostUrl,
+	getActiveLocalMachineId,
 	getHostServiceClientByUrl,
 } from "renderer/lib/host-service-client";
 import superjson from "superjson";
@@ -153,12 +154,29 @@ const createPersistedQueryCollection = ((config: QuerySyncConfig) => {
 	} as any);
 }) as unknown as typeof createCollection;
 
-// This host's workspaces from the local host-service. Empty until it boots.
-async function fetchLocalWorkspaces(): Promise<SelectV2Workspace[]> {
+// Workspaces for the renderer: this machine's from the local host-service
+// (authoritative), merged with other machines' from cloud presence. Cloud is
+// best-effort so the app still lists local workspaces offline. Empty until the
+// local host boots.
+async function fetchWorkspaces(): Promise<SelectV2Workspace[]> {
 	const url = getActiveLocalHostUrl();
 	if (!url) return [];
-	const rows = await getHostServiceClientByUrl(url).workspace.localList.query();
-	return rows as unknown as SelectV2Workspace[];
+	const client = getHostServiceClientByUrl(url);
+	const localMachineId = getActiveLocalMachineId();
+
+	const [local, cloud] = await Promise.all([
+		client.workspace.localList.query() as Promise<SelectV2Workspace[]>,
+		client.workspace.cloudList.query().catch(() => [] as unknown[]) as Promise<
+			SelectV2Workspace[]
+		>,
+	]);
+
+	// Local rows win; cloud only contributes other hosts' presence.
+	const localIds = new Set(local.map((w) => w.id));
+	const remote = cloud.filter(
+		(w) => w.hostId !== localMachineId && !localIds.has(w.id),
+	);
+	return [...local, ...remote];
 }
 
 const apiKeyDisplaySchema = z.object({
@@ -509,7 +527,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 			id: `v2_workspaces-${organizationId}`,
 			queryClient,
 			queryKey: ["local-workspaces", organizationId],
-			queryFn: fetchLocalWorkspaces,
+			queryFn: fetchWorkspaces,
 			refetchInterval: LOCAL_WORKSPACES_POLL_MS,
 			getKey: (item) => item.id,
 			onInsert: async ({ transaction }) => {

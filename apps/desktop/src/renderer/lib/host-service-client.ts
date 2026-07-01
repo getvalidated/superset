@@ -25,6 +25,16 @@ export function getActiveLocalHostUrl(): string | null {
 	return activeLocalHostUrl;
 }
 
+// This machine's host id, so the workspace collection can tell its own
+// (local-authoritative) workspaces apart from other hosts' cloud presence.
+let activeLocalMachineId: string | null = null;
+export function setActiveLocalMachineId(machineId: string | null) {
+	activeLocalMachineId = machineId;
+}
+export function getActiveLocalMachineId(): string | null {
+	return activeLocalMachineId;
+}
+
 export function getHostServiceClientByUrl(hostUrl: string): HostServiceClient {
 	const cached = clientCache.get(hostUrl);
 	if (cached) return cached;

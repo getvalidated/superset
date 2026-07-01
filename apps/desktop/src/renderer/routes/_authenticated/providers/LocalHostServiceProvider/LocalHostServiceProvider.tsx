@@ -13,7 +13,10 @@ import {
 	setClientMachineId,
 	setHostServiceSecret,
 } from "renderer/lib/host-service-auth";
-import { setActiveLocalHostUrl } from "renderer/lib/host-service-client";
+import {
+	setActiveLocalHostUrl,
+	setActiveLocalMachineId,
+} from "renderer/lib/host-service-client";
 import type { HostServiceAvailabilityStatus } from "renderer/lib/host-service-unavailable";
 import { MOCK_ORG_ID } from "shared/constants";
 import { useCollections } from "../CollectionsProvider";
@@ -131,11 +134,13 @@ export function LocalHostServiceProvider({
 		processStatus?.status,
 	]);
 
-	// Mirror the local host URL to a module global so the (non-React) workspace
-	// collection can list workspaces from the local host-service.
+	// Mirror the local host URL + machine id to module globals so the (non-React)
+	// workspace collection can reach the local host-service and distinguish this
+	// machine's workspaces from other hosts' presence.
 	useEffect(() => {
 		setActiveLocalHostUrl(value?.activeHostUrl ?? null);
-	}, [value?.activeHostUrl]);
+		setActiveLocalMachineId(value?.machineId ?? null);
+	}, [value?.activeHostUrl, value?.machineId]);
 
 	if (!value) return null;
 
