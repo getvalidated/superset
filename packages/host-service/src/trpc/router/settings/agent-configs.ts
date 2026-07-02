@@ -19,6 +19,8 @@ const envSchema = z.record(z.string(), z.string());
 export interface HostAgentConfig {
 	id: string;
 	presetId: string;
+	/** Built-in icon key to render, or null to fall back to `presetId`. */
+	iconId: string | null;
 	label: string;
 	command: string;
 	args: string[];
@@ -31,6 +33,7 @@ export interface HostAgentConfig {
 interface HostAgentConfigRow {
 	id: string;
 	presetId: string;
+	iconId: string | null;
 	label: string;
 	command: string;
 	argsJson: string;
@@ -78,6 +81,7 @@ function toOutput(row: HostAgentConfigRow): HostAgentConfig {
 	return {
 		id: row.id,
 		presetId: row.presetId,
+		iconId: row.iconId ?? null,
 		label: row.label,
 		command: row.command,
 		args: parseArgv(row.argsJson),
@@ -95,6 +99,7 @@ function rowFromPreset(
 	return {
 		id: randomUUID(),
 		presetId: preset.presetId,
+		iconId: null,
 		label: preset.label,
 		command: preset.command,
 		argsJson: JSON.stringify(preset.args),
@@ -124,6 +129,9 @@ function seedDefaultsIfEmpty(db: HostDb): HostAgentConfigRow[] {
 	return listOrdered(db);
 }
 
+// `null` clears the icon override (fall back to `presetId`); a string sets it.
+const iconIdPatchSchema = z.string().trim().min(1).nullable();
+
 const updatePatchSchema = z
 	.object({
 		label: z.string().trim().min(1).optional(),
@@ -132,6 +140,7 @@ const updatePatchSchema = z
 		promptTransport: promptTransportSchema.optional(),
 		promptArgs: argvSchema.optional(),
 		env: envSchema.optional(),
+		iconId: iconIdPatchSchema.optional(),
 	})
 	.refine(
 		(patch) =>
@@ -140,7 +149,8 @@ const updatePatchSchema = z
 			patch.args !== undefined ||
 			patch.promptTransport !== undefined ||
 			patch.promptArgs !== undefined ||
-			patch.env !== undefined,
+			patch.env !== undefined ||
+			patch.iconId !== undefined,
 		{ message: "Patch must update at least one field" },
 	);
 
@@ -152,6 +162,7 @@ const addInputSchema = z.object({
 	promptArgs: argvSchema,
 	env: envSchema,
 	presetId: z.string().trim().min(1).optional(),
+	iconId: z.string().trim().min(1).optional(),
 });
 
 export const agentConfigsRouter = router({
@@ -166,8 +177,10 @@ export const agentConfigsRouter = router({
 
 	/**
 	 * Insert a configured host-agent row. Callers pass the full launch shape;
-	 * `presetId` is a free-form metadata tag the client uses for icon and
-	 * description lookup, defaulting to `"custom"` when omitted. Duplicate
+	 * `presetId` is a free-form metadata tag the client uses for description
+	 * lookup (and as the icon fallback), defaulting to `"custom"` when omitted.
+	 * `iconId` optionally overrides the rendered icon with a built-in icon key
+	 * (used by user-authored agents, whose `presetId` is `"custom"`). Duplicate
 	 * `presetId` values are allowed — each row gets a fresh `id`.
 	 */
 	add: protectedProcedure.input(addInputSchema).mutation(({ ctx, input }) => {
@@ -182,6 +195,7 @@ export const agentConfigsRouter = router({
 			.values({
 				id,
 				presetId: input.presetId ?? "custom",
+				iconId: input.iconId ?? null,
 				label: input.label,
 				command: input.command,
 				argsJson: JSON.stringify(input.args),
@@ -242,6 +256,7 @@ export const agentConfigsRouter = router({
 				update.promptArgsJson = JSON.stringify(input.patch.promptArgs);
 			if (input.patch.env !== undefined)
 				update.envJson = JSON.stringify(input.patch.env);
+			if (input.patch.iconId !== undefined) update.iconId = input.patch.iconId;
 			ctx.db
 				.update(hostAgentConfigs)
 				.set(update)

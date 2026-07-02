@@ -8,10 +8,7 @@ import { cn } from "@superset/ui/utils";
 import { useMutation } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-	getPresetIcon,
-	useIsDarkTheme,
-} from "renderer/assets/app-icons/preset-icons";
+import { useIsDarkTheme } from "renderer/assets/app-icons/preset-icons";
 import {
 	getAgentCommandText,
 	isAgentCommandPatchChanged,
@@ -21,6 +18,8 @@ import { joinArgs, parseArgs } from "renderer/lib/argv";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { getHostServiceUnavailableMessage } from "renderer/lib/host-service-unavailable";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { AgentIcon } from "../AgentIcon";
+import { AgentIconPicker } from "../AgentIconPicker";
 
 interface AgentDetailProps {
 	config: HostAgentConfig;
@@ -38,7 +37,7 @@ export function AgentDetail({
 	const hostService = useLocalHostService();
 	const { activeHostUrl } = hostService;
 	const isDark = useIsDarkTheme();
-	const icon = getPresetIcon(config.presetId, isDark);
+	const isCustom = config.presetId === "custom";
 
 	const [label, setLabel] = useState(config.label);
 	const [commandText, setCommandText] = useState(getAgentCommandText(config));
@@ -151,9 +150,12 @@ export function AgentDetail({
 	return (
 		<div className="p-6 max-w-3xl w-full mx-auto">
 			<div className="mb-8 flex items-center gap-3">
-				{icon ? (
-					<img src={icon} alt="" className="size-8 object-contain shrink-0" />
-				) : null}
+				<AgentIcon
+					iconId={config.iconId}
+					presetId={config.presetId}
+					isDark={isDark}
+					className="size-8"
+				/>
 				<div className="min-w-0 flex-1">
 					<h2 className="text-xl font-semibold truncate">{config.label}</h2>
 					<p className="text-sm text-muted-foreground mt-0.5 truncate">
@@ -171,6 +173,16 @@ export function AgentDetail({
 						onBlur={handleLabelBlur}
 					/>
 				</Section>
+
+				{isCustom ? (
+					<Section title="Icon">
+						<AgentIconPicker
+							value={config.iconId}
+							onChange={(iconId) => updateMutation.mutate({ iconId })}
+							disabled={updateMutation.isPending}
+						/>
+					</Section>
+				) : null}
 
 				<Section title="Launch">
 					<StackedField

@@ -25,7 +25,7 @@ import {
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
 import { cn } from "@superset/ui/utils";
-import { Plus } from "lucide-react";
+import { Plus, Wrench } from "lucide-react";
 import { useMemo } from "react";
 import { LuGripVertical } from "react-icons/lu";
 import {
@@ -36,6 +36,7 @@ import {
 	SettingsListSidebar,
 	settingsListItemClass,
 } from "../../../../../components/SettingsListSidebar";
+import { AgentIcon } from "../AgentIcon";
 
 interface AgentsSettingsSidebarProps {
 	configs: HostAgentConfig[];
@@ -43,6 +44,7 @@ interface AgentsSettingsSidebarProps {
 	selectedAgentId: string | null;
 	onSelectAgent: (id: string) => void;
 	onAddAgent: (preset: HostAgentPreset) => void;
+	onCreateCustomAgent: () => void;
 	onReorder: (orderedIds: string[]) => void;
 	onResetToDefaults: () => void;
 	isAdding: boolean;
@@ -55,6 +57,7 @@ export function AgentsSettingsSidebar({
 	selectedAgentId,
 	onSelectAgent,
 	onAddAgent,
+	onCreateCustomAgent,
 	onReorder,
 	onResetToDefaults,
 	isAdding,
@@ -93,6 +96,11 @@ export function AgentsSettingsSidebar({
 				</button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-56">
+				<DropdownMenuItem className="gap-2" onSelect={onCreateCustomAgent}>
+					<Wrench className="size-4 shrink-0 text-muted-foreground" />
+					Custom agent…
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
 				{presets.map((preset) => {
 					const icon = getPresetIcon(preset.presetId, isDark);
 					return (
@@ -171,7 +179,6 @@ function AgentSidebarRow({
 	onSelect,
 	isDark,
 }: AgentSidebarRowProps) {
-	const icon = getPresetIcon(row.presetId, isDark);
 	const {
 		setNodeRef,
 		setActivatorNodeRef,
@@ -197,9 +204,12 @@ function AgentSidebarRow({
 				onClick={onSelect}
 				className={settingsListItemClass(isActive, "gap-2 w-full text-left")}
 			>
-				{icon ? (
-					<img src={icon} alt="" className="size-4 object-contain shrink-0" />
-				) : null}
+				<AgentIcon
+					iconId={row.iconId}
+					presetId={row.presetId}
+					isDark={isDark}
+					className="size-4"
+				/>
 				<span className="truncate flex-1">{row.label}</span>
 			</button>
 			<button
