@@ -39,4 +39,33 @@ describe("translateLineEditChord", () => {
 			}),
 		).toBeNull();
 	});
+
+	// Regression guard for #5412: Cmd+Backspace must clear the line (Ctrl+U,
+	// \x15) WITHOUT appending a cursor-left (\x1b[D). The trailing left-arrow
+	// leaked into full-screen TUIs (e.g. Claude Code) as a real navigation
+	// keystroke, making Cmd+Backspace behave like pressing Left.
+	it("maps Mac Cmd+Backspace to Ctrl+U only (no stray Left-arrow)", () => {
+		const result = translateLineEditChord(
+			event({ key: "Backspace", metaKey: true }),
+			{ isMac: true, isWindows: false },
+		);
+		expect(result).toBe("\x15");
+		// The stray cursor-left byte sequence must never be appended.
+		expect(result).not.toContain("\x1b[D");
+	});
+
+	it("maps Mac Cmd+ArrowLeft/Right to line start/end (not raw arrows)", () => {
+		expect(
+			translateLineEditChord(event({ key: "ArrowLeft", metaKey: true }), {
+				isMac: true,
+				isWindows: false,
+			}),
+		).toBe("\x01");
+		expect(
+			translateLineEditChord(event({ key: "ArrowRight", metaKey: true }), {
+				isMac: true,
+				isWindows: false,
+			}),
+		).toBe("\x05");
+	});
 });
