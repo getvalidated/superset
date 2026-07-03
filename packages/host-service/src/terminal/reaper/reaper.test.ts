@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
 	PORT_SCAN_WARMUP_DELAYS_MS,
-	planAgentBindingPrune,
 	planPortScanSync,
 	REAP_INTERVAL_MS,
 } from "./reaper.ts";
@@ -113,27 +112,5 @@ describe("planPortScanSync", () => {
 		});
 
 		expect(plan.unregister).toEqual([]);
-	});
-});
-
-describe("planAgentBindingPrune", () => {
-	it("prunes bindings whose terminal is alive neither in-process nor in the daemon", () => {
-		const prune = planAgentBindingPrune({
-			boundTerminalIds: ["dead-term", "daemon-term", "attached-term"],
-			aliveTerminalIds: new Set(["daemon-term"]),
-			isLive: (id) => id === "attached-term",
-		});
-
-		expect(prune).toEqual(["dead-term"]);
-	});
-
-	it("keeps every binding when all terminals are alive somewhere", () => {
-		const prune = planAgentBindingPrune({
-			boundTerminalIds: ["daemon-term", "attached-term"],
-			aliveTerminalIds: new Set(["daemon-term"]),
-			isLive: (id) => id === "attached-term",
-		});
-
-		expect(prune).toEqual([]);
 	});
 });

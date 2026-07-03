@@ -105,11 +105,6 @@ export class TerminalAgentStore extends EventEmitter {
 		return this.byTerminal.get(terminalId);
 	}
 
-	/** Every binding across all workspaces — used by reap-pass pruning. */
-	listAll(): TerminalAgentBinding[] {
-		return [...this.byTerminal.values()];
-	}
-
 	listByWorkspace(
 		workspaceId: string,
 		filter?: ListFilter,

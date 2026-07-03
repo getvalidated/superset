@@ -11,9 +11,9 @@ import type { TerminalAgentBinding } from "./types";
  * Prune bindings whose terminal can no longer be hosting an agent: the
  * session row is missing, `exited`/`disposed`, or workspace-less (the same
  * orphan criteria the terminal reaper uses). Exit-event pruning only covers
- * terminals that die while the host-service is up, so the reaper runs this
- * each pass — immediately at startup (draining bindings persisted for
- * terminals that died in between) and then on the reap cadence.
+ * terminals that die while the host-service is up, so run this once at
+ * startup, after hydrating the store, to drain bindings persisted for
+ * terminals that died in between.
  */
 export function reconcileTerminalAgentBindings({
 	db,
