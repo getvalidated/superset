@@ -117,8 +117,8 @@ async function main(): Promise<void> {
 
 			// Orphan reaping + port-scan registration for daemon sessions no
 			// renderer has attached (e.g. adopted across a restart). Every
-			// serving entry must start this alongside installProcessSafetyNet —
-			// shipping without it is how desktop lost port detection (#5438).
+			// serving entry must start this — desktop shipped without it and
+			// lost port detection for restored sessions (#5438).
 			startTerminalReaper(db);
 
 			if (env.ORGANIZATION_ID) {
