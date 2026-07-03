@@ -91,6 +91,9 @@ describe("buildAgentModelArgs", () => {
 		expect(
 			buildAgentModelArgs("cursor-agent", "claude-fable-5-thinking-high"),
 		).toEqual(["--model", "claude-fable-5-thinking-high"]);
+		expect(
+			buildAgentModelArgs("cursor-agent", "claude-fable-5-thinking-xhigh"),
+		).toEqual(["--model", "claude-fable-5-thinking-xhigh"]);
 		expect(buildAgentModelArgs("opencode", "anthropic/claude-fable-5")).toEqual(
 			["--model", "anthropic/claude-fable-5"],
 		);
