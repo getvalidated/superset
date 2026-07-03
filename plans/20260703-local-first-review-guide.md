@@ -39,7 +39,7 @@ All collections rebuilt on `queryCollectionOptions` + `refetchInterval`. Mutatio
 ```bash
 # Unit
 bun test apps/desktop/src/.../CollectionsProvider/mergeWorkspacePresence.test.ts   # 7 pass
-bun test packages/host-service/src/runtime/cloud-delete-outbox/                    # 4 pass
+bun test packages/host-service/src/runtime/cloud-presence-outbox/                  # 7 pass
 bun test packages/host-service/src/db/workspace-identity.test.ts                   # 2 pass
 bun run --filter=@superset/trpc test                                               # incl. masking
 
