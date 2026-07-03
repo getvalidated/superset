@@ -22,9 +22,9 @@ type MermaidConfig = NonNullable<MermaidProp["config"]>;
 export function mermaidConfig(config: MermaidConfig): MermaidProp {
 	return {
 		config: {
-			htmlLabels: false,
 			...config,
-			flowchart: { htmlLabels: false, ...config.flowchart },
+			htmlLabels: false,
+			flowchart: { ...config.flowchart, htmlLabels: false },
 		},
 	};
 }
