@@ -13,7 +13,7 @@ import {
 	LocalGitCredentialProvider,
 	LocalModelProvider,
 	PskHostAuthProvider,
-	startHostRuntime,
+	startTerminalReaper,
 } from "@superset/host-service";
 import {
 	initTerminalBaseEnv,
@@ -115,7 +115,11 @@ async function main(): Promise<void> {
 			// reach `main().catch(...)` and exit with a non-zero code.
 			installProcessSafetyNet();
 
-			startHostRuntime(db);
+			// Orphan reaping + port-scan registration for daemon sessions no
+			// renderer has attached (e.g. adopted across a restart). Every
+			// serving entry must start this alongside installProcessSafetyNet —
+			// shipping without it is how desktop lost port detection (#5438).
+			startTerminalReaper(db);
 
 			if (env.ORGANIZATION_ID) {
 				try {

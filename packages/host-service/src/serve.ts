@@ -9,9 +9,9 @@ import {
 import { LocalGitCredentialProvider } from "./providers/git";
 import { PskHostAuthProvider } from "./providers/host-auth";
 import { LocalModelProvider } from "./providers/model-providers";
-import { startHostRuntime } from "./runtime/host-runtime";
 import { installProcessSafetyNet } from "./safety";
 import { initTerminalBaseEnv, resolveTerminalBaseEnv } from "./terminal/env";
+import { startTerminalReaper } from "./terminal/reaper";
 import { connectRelay } from "./tunnel";
 
 async function main(): Promise<void> {
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
 		installProcessSafetyNet();
 		console.log(`[host-service] listening on http://localhost:${info.port}`);
 
-		startHostRuntime(db);
+		startTerminalReaper(db);
 
 		if (env.RELAY_URL) {
 			void connectRelay({

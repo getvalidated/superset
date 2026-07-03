@@ -19,8 +19,8 @@ export {
 	LocalModelProvider,
 } from "./providers/model-providers";
 export type { GitCredentialProvider, GitFactory } from "./runtime/git";
-export { startHostRuntime } from "./runtime/host-runtime";
 export { installProcessSafetyNet } from "./safety";
+export { startTerminalReaper } from "./terminal/reaper";
 export type {
 	DeleteInProgressCause,
 	TeardownFailureCause,
