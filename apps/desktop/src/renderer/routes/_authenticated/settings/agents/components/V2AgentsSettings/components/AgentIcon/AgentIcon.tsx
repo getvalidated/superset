@@ -1,12 +1,17 @@
 import { cn } from "@superset/ui/utils";
 import { Bot } from "lucide-react";
-import { getPresetIcon } from "renderer/assets/app-icons/preset-icons";
+import {
+	getPresetIcon,
+	useIsDarkTheme,
+} from "renderer/assets/app-icons/preset-icons";
 
 interface AgentIconProps {
-	/** Explicit icon override (built-in icon key). Falls back to `presetId`. */
+	/**
+	 * Explicit icon override: a built-in icon key or an uploaded `data:` image
+	 * URI. Falls back to the icon implied by `presetId`.
+	 */
 	iconId?: string | null;
 	presetId: string;
-	isDark: boolean;
 	/** Sizing/color classes applied to both the image and the fallback glyph. */
 	className?: string;
 }
@@ -16,12 +21,8 @@ interface AgentIconProps {
  * icon implied by `presetId`, otherwise a neutral fallback glyph so custom
  * agents without a recognizable icon still look intentional.
  */
-export function AgentIcon({
-	iconId,
-	presetId,
-	isDark,
-	className,
-}: AgentIconProps) {
+export function AgentIcon({ iconId, presetId, className }: AgentIconProps) {
+	const isDark = useIsDarkTheme();
 	const icon = getPresetIcon(iconId ?? presetId, isDark);
 	if (icon) {
 		return (

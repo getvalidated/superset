@@ -6,7 +6,6 @@ import { toast } from "@superset/ui/sonner";
 import { useMutation } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useIsDarkTheme } from "renderer/assets/app-icons/preset-icons";
 import {
 	getAgentCommandText,
 	isAgentCommandPatchChanged,
@@ -17,11 +16,10 @@ import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { getHostServiceUnavailableMessage } from "renderer/lib/host-service-unavailable";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import {
-	PromptTransportToggle,
+	AgentDetailHeader,
+	AgentLaunchFields,
 	Section,
-	StackedField,
 } from "../AgentFormControls";
-import { AgentIcon } from "../AgentIcon";
 import { AgentIconPicker } from "../AgentIconPicker";
 
 interface AgentDetailProps {
@@ -39,7 +37,6 @@ export function AgentDetail({
 }: AgentDetailProps) {
 	const hostService = useLocalHostService();
 	const { activeHostUrl } = hostService;
-	const isDark = useIsDarkTheme();
 	const isCustom = config.presetId === "custom";
 
 	const [label, setLabel] = useState(config.label);
@@ -152,20 +149,12 @@ export function AgentDetail({
 
 	return (
 		<div className="p-6 max-w-3xl w-full mx-auto">
-			<div className="mb-8 flex items-center gap-3">
-				<AgentIcon
-					iconId={config.iconId}
-					presetId={config.presetId}
-					isDark={isDark}
-					className="size-8"
-				/>
-				<div className="min-w-0 flex-1">
-					<h2 className="text-xl font-semibold truncate">{config.label}</h2>
-					<p className="text-sm text-muted-foreground mt-0.5 truncate">
-						{description}
-					</p>
-				</div>
-			</div>
+			<AgentDetailHeader
+				iconId={config.iconId}
+				presetId={config.presetId}
+				title={config.label}
+				subtitle={description}
+			/>
 
 			<div className="space-y-6">
 				<Section title="Label">
@@ -187,52 +176,17 @@ export function AgentDetail({
 					</Section>
 				) : null}
 
-				<Section title="Launch">
-					<StackedField
-						label="Command"
-						hint="Argv used to launch the agent."
-						htmlFor={`command-${config.id}`}
-					>
-						<Input
-							id={`command-${config.id}`}
-							className="font-mono text-xs"
-							value={commandText}
-							onChange={(e) => setCommandText(e.target.value)}
-							onBlur={handleCommandBlur}
-							placeholder="claude --dangerously-skip-permissions"
-						/>
-					</StackedField>
-
-					<StackedField
-						label="Prompt-only args"
-						hint={
-							<>
-								Added only when launching with a prompt — e.g. <code>--</code>,{" "}
-								<code>--prompt</code>, <code>-i</code>.
-							</>
-						}
-						htmlFor={`prompt-args-${config.id}`}
-					>
-						<Input
-							id={`prompt-args-${config.id}`}
-							className="font-mono text-xs"
-							value={promptArgsText}
-							onChange={(e) => setPromptArgsText(e.target.value)}
-							onBlur={handlePromptArgsBlur}
-							placeholder="--prompt"
-						/>
-					</StackedField>
-
-					<StackedField
-						label="Prompt transport"
-						hint="How the prompt is delivered to the process."
-					>
-						<PromptTransportToggle
-							value={promptTransport}
-							onChange={handleTransportChange}
-						/>
-					</StackedField>
-				</Section>
+				<AgentLaunchFields
+					idPrefix={config.id}
+					commandText={commandText}
+					onCommandTextChange={setCommandText}
+					onCommandBlur={handleCommandBlur}
+					promptArgsText={promptArgsText}
+					onPromptArgsTextChange={setPromptArgsText}
+					onPromptArgsBlur={handlePromptArgsBlur}
+					promptTransport={promptTransport}
+					onPromptTransportChange={handleTransportChange}
+				/>
 
 				<div className="pt-2 border-t border-border">
 					<div className="flex items-center justify-between gap-8">

@@ -5,9 +5,12 @@
  * every query — clamp it to icon size before storing. Returns the original data
  * URI if decoding/encoding fails.
  */
+/** Icons render small; clamp uploads to this square bound before storing. */
+export const MAX_ICON_DIMENSION = 128;
+
 export async function resizeImageDataUrl(
 	dataUrl: string,
-	maxDimension: number,
+	maxDimension: number = MAX_ICON_DIMENSION,
 ): Promise<string> {
 	try {
 		const image = await loadImage(dataUrl);

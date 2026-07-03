@@ -29,10 +29,6 @@ import { Plus, Wrench } from "lucide-react";
 import { useMemo } from "react";
 import { LuGripVertical } from "react-icons/lu";
 import {
-	getPresetIcon,
-	useIsDarkTheme,
-} from "renderer/assets/app-icons/preset-icons";
-import {
 	SettingsListSidebar,
 	settingsListItemClass,
 } from "../../../../../components/SettingsListSidebar";
@@ -63,7 +59,6 @@ export function AgentsSettingsSidebar({
 	isAdding,
 	isResetting,
 }: AgentsSettingsSidebarProps) {
-	const isDark = useIsDarkTheme();
 	const sortableIds = useMemo(() => configs.map((c) => c.id), [configs]);
 
 	const sensors = useSensors(
@@ -101,25 +96,16 @@ export function AgentsSettingsSidebar({
 					Custom agent…
 				</DropdownMenuItem>
 				<DropdownMenuSeparator />
-				{presets.map((preset) => {
-					const icon = getPresetIcon(preset.presetId, isDark);
-					return (
-						<DropdownMenuItem
-							key={preset.presetId}
-							onSelect={() => onAddAgent(preset)}
-							className="gap-2"
-						>
-							{icon ? (
-								<img
-									src={icon}
-									alt=""
-									className="size-4 object-contain shrink-0"
-								/>
-							) : null}
-							{preset.label}
-						</DropdownMenuItem>
-					);
-				})}
+				{presets.map((preset) => (
+					<DropdownMenuItem
+						key={preset.presetId}
+						onSelect={() => onAddAgent(preset)}
+						className="gap-2"
+					>
+						<AgentIcon presetId={preset.presetId} className="size-4" />
+						{preset.label}
+					</DropdownMenuItem>
+				))}
 				{presets.length > 0 ? <DropdownMenuSeparator /> : null}
 				<DropdownMenuItem
 					onSelect={() => onResetToDefaults()}
@@ -157,7 +143,6 @@ export function AgentsSettingsSidebar({
 							row={row}
 							isActive={row.id === selectedAgentId}
 							onSelect={() => onSelectAgent(row.id)}
-							isDark={isDark}
 						/>
 					)}
 				/>
@@ -170,15 +155,9 @@ interface AgentSidebarRowProps {
 	row: HostAgentConfig;
 	isActive: boolean;
 	onSelect: () => void;
-	isDark: boolean;
 }
 
-function AgentSidebarRow({
-	row,
-	isActive,
-	onSelect,
-	isDark,
-}: AgentSidebarRowProps) {
+function AgentSidebarRow({ row, isActive, onSelect }: AgentSidebarRowProps) {
 	const {
 		setNodeRef,
 		setActivatorNodeRef,
@@ -207,7 +186,6 @@ function AgentSidebarRow({
 				<AgentIcon
 					iconId={row.iconId}
 					presetId={row.presetId}
-					isDark={isDark}
 					className="size-4"
 				/>
 				<span className="truncate flex-1">{row.label}</span>

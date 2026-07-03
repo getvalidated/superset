@@ -35,6 +35,11 @@ export const PRESET_ICONS: Record<string, PresetIconSet> = {
 	opencode: { light: opencodeIcon, dark: opencodeWhiteIcon },
 };
 
+/** True when a value is an inline `data:` image URI rather than a preset key. */
+export function isDataImageUri(value: string): boolean {
+	return value.startsWith("data:image/");
+}
+
 export function getPresetIcon(
 	presetName: string,
 	isDark: boolean,
@@ -42,7 +47,7 @@ export function getPresetIcon(
 	// A user-uploaded icon is stored as a `data:` URI rather than a preset key.
 	// Return it as-is (before normalizing — base64 is case-sensitive) so every
 	// icon render site handles uploaded images without extra branching.
-	if (presetName.startsWith("data:image/")) return presetName;
+	if (isDataImageUri(presetName)) return presetName;
 	const normalizedName = presetName.toLowerCase().trim();
 	const iconSet = PRESET_ICONS[normalizedName];
 	if (!iconSet) return undefined;

@@ -1,4 +1,6 @@
 export {
+	AgentDetailHeader,
+	AgentLaunchFields,
 	PromptTransportToggle,
 	Section,
 	StackedField,
