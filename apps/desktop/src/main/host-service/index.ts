@@ -115,10 +115,6 @@ async function main(): Promise<void> {
 			// reach `main().catch(...)` and exit with a non-zero code.
 			installProcessSafetyNet();
 
-			// Orphan reaping + port-scan registration for daemon sessions no
-			// renderer has attached (e.g. adopted across a restart). Every
-			// serving entry must start this — desktop shipped without it and
-			// lost port detection for restored sessions (#5438).
 			startTerminalReaper(db);
 
 			if (env.ORGANIZATION_ID) {
