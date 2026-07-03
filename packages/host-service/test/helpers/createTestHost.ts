@@ -118,6 +118,10 @@ export async function createTestHost(
 				},
 		chatRuntime: options.chatRuntime as CreateAppOptions["chatRuntime"],
 		chatService: options.chatService as CreateAppOptions["chatService"],
+		// The reaper's warm-up timers outlive individual tests and reach the
+		// real pty-daemon via the process-wide daemon-client singleton, so a
+		// reaper from one test's app would reap another test's live sessions.
+		startTerminalReaper: false,
 	};
 
 	const result = createApp(createOptions);

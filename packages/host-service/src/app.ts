@@ -17,6 +17,7 @@ import type { GitCredentialProvider } from "./runtime/git";
 import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import { startTerminalReaper } from "./terminal/reaper";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import {
 	SqliteTerminalAgentBindingPersistence,
@@ -57,6 +58,14 @@ export interface CreateAppOptions {
 	execGh?: ExecGh;
 	chatRuntime?: ChatRuntimeManager;
 	chatService?: ChatService;
+	/**
+	 * Test-only escape hatch. The reaper's first pass and warm-up timers talk
+	 * to the real pty-daemon through the process-wide daemon-client singleton,
+	 * so a reaper leaked from one test's app can reap sessions that belong to
+	 * another test's daemon and db. `createTestHost` sets this to false;
+	 * production entries leave it on.
+	 */
+	startTerminalReaper?: boolean;
 }
 
 export interface CreateAppResult {
@@ -138,6 +147,13 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const eventBus = new EventBus({ db, filesystem, gitWatcher });
 	eventBus.start();
 
+	// Orphan reaping + port-scan registration for daemon sessions no renderer
+	// has attached (e.g. adopted across a restart). Started here, not in the
+	// serve entry points: the desktop entry and serve.ts must both get it, and
+	// wiring it per-entry is how the desktop app shipped without it entirely.
+	const stopTerminalReaper =
+		options.startTerminalReaper !== false ? startTerminalReaper(db) : null;
+
 	const terminalAgentStore = new TerminalAgentStore(
 		new SqliteTerminalAgentBindingPersistence(db),
 	);
@@ -203,6 +219,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		// Each step is best-effort and isolated: a throw in one cleanup must
 		// not skip the others, otherwise a flaky `.stop()` could leak the
 		// open SQLite handle for the rest of the process lifetime.
+		try {
+			stopTerminalReaper?.();
+		} catch (err) {
+			console.warn("[host-service] terminal reaper stop failed:", err);
+		}
 		try {
 			pullRequestRuntime.stop();
 		} catch (err) {
