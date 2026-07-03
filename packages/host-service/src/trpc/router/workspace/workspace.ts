@@ -3,7 +3,7 @@ import { getHostId } from "@superset/shared/host-info";
 import { TRPCError } from "@trpc/server";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { workspaces } from "../../../db/schema";
+import { cloudPresenceOutbox, workspaces } from "../../../db/schema";
 import { protectedProcedure, router } from "../../index";
 import { destroyWorkspace } from "../workspace-cleanup";
 
@@ -145,6 +145,17 @@ export const workspaceRouter = router({
 			};
 		});
 	}),
+
+	// Ids this host deleted locally whose cloud presence delete is still
+	// queued. The renderer masks exactly these from cloud presence — nothing
+	// broader, since other host-service profiles can share this machine's
+	// hostId (see cloud_presence_outbox in schema.ts).
+	pendingCloudDeletes: protectedProcedure.query(({ ctx }) =>
+		ctx.db.query.cloudPresenceOutbox
+			.findMany({ where: eq(cloudPresenceOutbox.op, "delete") })
+			.sync()
+			.map((row) => row.workspaceId),
+	),
 
 	gitStatus: protectedProcedure
 		.input(z.object({ id: z.string() }))

@@ -386,6 +386,11 @@ describe("workspace.create + workspace.delete integration", () => {
 				op: "create",
 			}),
 		]);
+
+		// Queued creates must not be masked from presence — only deletes are.
+		const pending =
+			await scenario.host.trpc.workspace.pendingCloudDeletes.query();
+		expect(pending).toEqual([]);
 	});
 
 	test("delete() rejects deleting a main workspace by path equality", async () => {

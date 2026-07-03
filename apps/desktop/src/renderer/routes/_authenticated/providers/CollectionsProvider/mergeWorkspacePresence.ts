@@ -13,7 +13,12 @@ interface MergeWorkspacePresenceArgs {
 	/** All org workspaces from cloud presence. */
 	cloud: SelectV2Workspace[];
 	organizationId: string;
-	localMachineId: string | null;
+	/**
+	 * Ids this host-service deleted locally whose cloud presence delete is
+	 * still queued (cloud_presence_outbox) — masked so a just-deleted
+	 * workspace doesn't resurrect from stale cloud presence.
+	 */
+	pendingCloudDeleteIds: ReadonlySet<string>;
 }
 
 interface MergeWorkspacePresenceResult {
@@ -35,7 +40,8 @@ function identityPatch(
 	return target;
 }
 
-// Local rows win for existence; cloud contributes other hosts' presence.
+// Local rows win for existence; cloud contributes presence for everything
+// this host-service doesn't own a row for.
 // For rows on both sides, identity (name/taskId) reconciles in both
 // directions so a rename made anywhere converges everywhere:
 // - local row never identity-edited (updatedAt === createdAt): cloud wins
@@ -49,7 +55,7 @@ export function mergeWorkspacePresence({
 	local,
 	cloud,
 	organizationId,
-	localMachineId,
+	pendingCloudDeleteIds,
 }: MergeWorkspacePresenceArgs): MergeWorkspacePresenceResult {
 	const localForOrg = local.filter((w) => w.organizationId === organizationId);
 	const cloudForOrg = cloud.filter((w) => w.organizationId === organizationId);
@@ -86,10 +92,13 @@ export function mergeWorkspacePresence({
 		return localRow;
 	});
 
-	// hostId === localMachineId but no local row means stale cloud presence
-	// (e.g. deleted locally while the cloud delete failed) — don't resurrect.
-	const remote = cloudForOrg.filter(
-		(w) => w.hostId !== localMachineId && !localIds.has(w.id),
+	// Cloud rows without a local row still render (presence): they may belong
+	// to another host, another host-service profile sharing this machine's
+	// hostId (dev vs prod), or a machine whose local DB was reset. Only ids
+	// this host-service explicitly deleted (pending in the presence outbox)
+	// are masked — anything broader hides real workspaces.
+	const presence = cloudForOrg.filter(
+		(w) => !localIds.has(w.id) && !pendingCloudDeleteIds.has(w.id),
 	);
-	return { rows: [...rows, ...remote], patches, cloudPatches };
+	return { rows: [...rows, ...presence], patches, cloudPatches };
 }

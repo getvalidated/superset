@@ -32,20 +32,36 @@ describe("mergeWorkspacePresence", () => {
 				ws({ id: "r2", hostId: "machine-remote", organizationId: "x" }),
 			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(rows.map((r) => r.id).sort()).toEqual(["l1", "r1"]);
 		expect(patches).toEqual([]);
 	});
 
-	it("drops stale cloud presence for this machine (no local row)", () => {
+	it("masks cloud rows whose delete is pending in the presence outbox", () => {
 		const { rows } = mergeWorkspacePresence({
 			local: [],
-			cloud: [ws({ id: "ghost", hostId: LOCAL_MACHINE })],
+			cloud: [
+				ws({ id: "just-deleted", hostId: LOCAL_MACHINE }),
+				ws({ id: "kept", hostId: LOCAL_MACHINE }),
+			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(["just-deleted"]),
 		});
-		expect(rows).toEqual([]);
+		expect(rows.map((r) => r.id)).toEqual(["kept"]);
+	});
+
+	it("renders own-hostId cloud rows with no local row (other profile / reset DB)", () => {
+		// Dev and prod host-services share a machine-derived hostId with
+		// separate DBs; a fresh/reset DB has no local rows at all. Masking
+		// on hostId would hide every workspace this machine actually runs.
+		const { rows } = mergeWorkspacePresence({
+			local: [],
+			cloud: [ws({ id: "prod-owned", hostId: LOCAL_MACHINE })],
+			organizationId: ORG,
+			pendingCloudDeleteIds: new Set(),
+		});
+		expect(rows.map((r) => r.id)).toEqual(["prod-owned"]);
 	});
 
 	it("adopts newer cloud identity edits and emits a patch", () => {
@@ -59,7 +75,7 @@ describe("mergeWorkspacePresence", () => {
 				}),
 			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(rows[0]?.name).toBe("renamed-remotely");
 		expect(rows[0]?.taskId).toBe("task-9");
@@ -81,7 +97,7 @@ describe("mergeWorkspacePresence", () => {
 				}),
 			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(rows[0]?.name).toBe("local-wins");
 		expect(patches).toEqual([]);
@@ -108,7 +124,7 @@ describe("mergeWorkspacePresence", () => {
 				}),
 			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(rows[0]?.name).toBe("quick-stranger");
 		expect(patches).toEqual([{ id: "ws-1", name: "quick-stranger" }]);
@@ -120,7 +136,7 @@ describe("mergeWorkspacePresence", () => {
 			local: [ws({})],
 			cloud: [ws({ updatedAt: new Date("2026-01-05T00:00:00Z") })],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(patches).toEqual([]);
 	});
@@ -136,7 +152,7 @@ describe("mergeWorkspacePresence", () => {
 				}),
 			],
 			organizationId: ORG,
-			localMachineId: LOCAL_MACHINE,
+			pendingCloudDeleteIds: new Set(),
 		});
 		expect(patches).toEqual([{ id: "ws-1", taskId: "task-1" }]);
 		expect(rows[0]?.branch).toBe("feat/local-branch");

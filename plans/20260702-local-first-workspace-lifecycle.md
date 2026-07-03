@@ -56,8 +56,11 @@ Edge cases:
 2. On cloud-delete failure, enqueue into the existing `cloud_delete_outbox`
    (shipped in PR #5396) — the boot/hourly flush already retries it.
 3. Renderer: the workspace disappears from `localList` on the next poll; the
-   ghost cloud row is masked client-side (merge drops own-host cloud rows with
-   no local row) until the outbox flush lands.
+   ghost cloud row is masked client-side until the outbox flush lands. The
+   mask is exactly the outbox's pending delete ids
+   (`workspace.pendingCloudDeletes`) — masking all own-hostId cloud rows
+   without a local row would hide the other profile's workspaces (dev/prod
+   share the machine hostId) and everything after a local DB reset.
 
 ### What NOT to do
 

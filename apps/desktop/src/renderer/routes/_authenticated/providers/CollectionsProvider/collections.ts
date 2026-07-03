@@ -152,7 +152,11 @@ async function fetchCloudWorkspacePresence(
 // full state, so a transient failure of either side must not drop that
 // side's rows — that would wipe them (and their persisted copies) until the
 // next successful poll.
-const lastGoodLocalWorkspaces = new Map<string, SelectV2Workspace[]>();
+interface LocalWorkspaceSnapshot {
+	rows: SelectV2Workspace[];
+	pendingCloudDeletes: string[];
+}
+const lastGoodLocalWorkspaces = new Map<string, LocalWorkspaceSnapshot>();
 const lastGoodCloudWorkspaces = new Map<string, SelectV2Workspace[]>();
 
 // Workspaces for the renderer: this machine's from the local host-service
@@ -163,14 +167,20 @@ async function fetchWorkspaces(
 	organizationId: string,
 ): Promise<SelectV2Workspace[]> {
 	const url = getActiveLocalHostUrl();
-	const localMachineId = getActiveLocalMachineId();
 
 	const [localResult, cloudResult] = await Promise.allSettled([
-		(async () => {
+		(async (): Promise<LocalWorkspaceSnapshot> => {
 			if (!url) throw new Error("local host-service not ready");
-			return (await getHostServiceClientByUrl(
-				url,
-			).workspace.localList.query()) as SelectV2Workspace[];
+			const client = getHostServiceClientByUrl(url);
+			const [rows, pendingCloudDeletes] = await Promise.all([
+				client.workspace.localList.query() as Promise<SelectV2Workspace[]>,
+				// Fail open ([]): a host-service predating this query must not
+				// take the whole local list down with it.
+				client.workspace.pendingCloudDeletes
+					.query()
+					.catch(() => [] as string[]),
+			]);
+			return { rows, pendingCloudDeletes };
 		})(),
 		fetchCloudWorkspacePresence(organizationId),
 	]);
@@ -201,10 +211,10 @@ async function fetchWorkspaces(
 	}
 
 	const { rows, patches, cloudPatches } = mergeWorkspacePresence({
-		local,
+		local: local.rows,
 		cloud,
 		organizationId,
-		localMachineId,
+		pendingCloudDeleteIds: new Set(local.pendingCloudDeletes),
 	});
 	// Best-effort both directions: a failed patch recurs next poll until it lands.
 	if (patches.length > 0 && url) {
@@ -520,14 +530,18 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					isLocalWorkspace &&
 					(name !== undefined || taskId !== undefined || branch !== undefined)
 				) {
-					await getHostServiceClientByUrl(
-						localUrl,
-					).workspace.updateLocal.mutate({
-						id: original.id,
-						name,
-						taskId,
-						branch,
-					});
+					// Matching hostId doesn't guarantee a local row: another
+					// host-service profile on this machine (dev vs prod) may own it.
+					// For those the cloud update below is the effective write and the
+					// owning profile adopts it on its next reconcile poll.
+					await getHostServiceClientByUrl(localUrl)
+						.workspace.updateLocal.mutate({
+							id: original.id,
+							name,
+							taskId,
+							branch,
+						})
+						.catch(() => {});
 				}
 				await apiClient.v2Workspace.update.mutate({
 					id: original.id,

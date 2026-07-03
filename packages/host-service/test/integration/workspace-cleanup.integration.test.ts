@@ -393,6 +393,11 @@ describe("workspaceCleanup.destroy integration", () => {
 				op: "delete",
 			}),
 		]);
+
+		// The renderer masks exactly these ids from cloud presence.
+		const pending =
+			await scenario.host.trpc.workspace.pendingCloudDeletes.query();
+		expect(pending).toEqual([scenario.featureWorkspaceId]);
 	});
 
 	test("cloud delete failure still honors the optional branch delete", async () => {
