@@ -1,12 +1,15 @@
 import type { PromptTransport } from "@superset/shared/agent-prompt-launch";
 import { Button } from "@superset/ui/button";
 import { Input } from "@superset/ui/input";
-import { Label } from "@superset/ui/label";
-import { cn } from "@superset/ui/utils";
 import { useState } from "react";
 import { useIsDarkTheme } from "renderer/assets/app-icons/preset-icons";
 import { parseAgentCommandText } from "renderer/lib/agent-launch-command";
 import { parseArgs } from "renderer/lib/argv";
+import {
+	PromptTransportToggle,
+	Section,
+	StackedField,
+} from "../AgentFormControls";
 import { AgentIcon } from "../AgentIcon";
 import { AgentIconPicker } from "../AgentIconPicker";
 
@@ -24,13 +27,14 @@ export interface CreateCustomAgentInput {
 interface NewCustomAgentDetailProps {
 	onCreate: (input: CreateCustomAgentInput) => void;
 	onCancel: () => void;
-	isCreating: boolean;
+	/** True while the create request is in flight. */
+	isSubmitting: boolean;
 }
 
 export function NewCustomAgentDetail({
 	onCreate,
 	onCancel,
-	isCreating,
+	isSubmitting,
 }: NewCustomAgentDetailProps) {
 	const isDark = useIsDarkTheme();
 	const [label, setLabel] = useState("");
@@ -43,7 +47,9 @@ export function NewCustomAgentDetail({
 	const trimmedLabel = label.trim();
 	const parsedCommand = parseAgentCommandText(commandText);
 	const canCreate =
-		trimmedLabel.length > 0 && parsedCommand.command.length > 0 && !isCreating;
+		trimmedLabel.length > 0 &&
+		parsedCommand.command.length > 0 &&
+		!isSubmitting;
 
 	const handleCreate = () => {
 		if (!canCreate) return;
@@ -78,7 +84,13 @@ export function NewCustomAgentDetail({
 				</div>
 			</div>
 
-			<div className="space-y-6">
+			<form
+				className="space-y-6"
+				onSubmit={(e) => {
+					e.preventDefault();
+					handleCreate();
+				}}
+			>
 				<Section title="Identity">
 					<StackedField label="Label" htmlFor="new-agent-label">
 						<Input
@@ -133,78 +145,22 @@ export function NewCustomAgentDetail({
 						label="Prompt transport"
 						hint="How the prompt is delivered to the process."
 					>
-						<div className="inline-flex rounded-md border border-border overflow-hidden">
-							<button
-								type="button"
-								onClick={() => setPromptTransport("argv")}
-								className={cn(
-									"px-3 py-1 text-xs font-medium transition-colors",
-									promptTransport === "argv"
-										? "bg-accent text-accent-foreground"
-										: "bg-transparent text-muted-foreground hover:bg-accent/50",
-								)}
-							>
-								argv
-							</button>
-							<button
-								type="button"
-								onClick={() => setPromptTransport("stdin")}
-								className={cn(
-									"px-3 py-1 text-xs font-medium transition-colors border-l border-border",
-									promptTransport === "stdin"
-										? "bg-accent text-accent-foreground"
-										: "bg-transparent text-muted-foreground hover:bg-accent/50",
-								)}
-							>
-								stdin
-							</button>
-						</div>
+						<PromptTransportToggle
+							value={promptTransport}
+							onChange={setPromptTransport}
+						/>
 					</StackedField>
 				</Section>
 
 				<div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-					<Button variant="ghost" size="sm" onClick={onCancel}>
+					<Button type="button" variant="ghost" size="sm" onClick={onCancel}>
 						Cancel
 					</Button>
-					<Button size="sm" onClick={handleCreate} disabled={!canCreate}>
+					<Button type="submit" size="sm" disabled={!canCreate}>
 						Add agent
 					</Button>
 				</div>
-			</div>
-		</div>
-	);
-}
-
-function Section({
-	title,
-	children,
-}: {
-	title: string;
-	children?: React.ReactNode;
-}) {
-	return (
-		<section className="space-y-3">
-			<h3 className="text-sm font-medium">{title}</h3>
-			{children ? <div className="space-y-5">{children}</div> : null}
-		</section>
-	);
-}
-
-interface StackedFieldProps {
-	label: string;
-	hint?: React.ReactNode;
-	htmlFor?: string;
-	children: React.ReactNode;
-}
-
-function StackedField({ label, hint, htmlFor, children }: StackedFieldProps) {
-	return (
-		<div className="space-y-1.5">
-			<Label htmlFor={htmlFor} className="text-sm font-medium">
-				{label}
-			</Label>
-			{hint && <p className="text-xs text-muted-foreground -mt-1">{hint}</p>}
-			{children}
+			</form>
 		</div>
 	);
 }

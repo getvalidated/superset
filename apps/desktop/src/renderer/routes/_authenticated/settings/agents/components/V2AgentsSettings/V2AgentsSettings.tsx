@@ -97,6 +97,7 @@ export function V2AgentsSettings({
 			return added;
 		},
 		onSuccess: (added) => {
+			setIsCreating(false);
 			invalidate();
 			if (added?.id) setSelectedAgentId(added.id);
 		},
@@ -179,6 +180,7 @@ export function V2AgentsSettings({
 			).settings.agentConfigs.resetToDefaults.mutate();
 		},
 		onSuccess: () => {
+			setIsCreating(false);
 			setSelectedAgentId(null);
 			invalidate();
 		},
@@ -264,7 +266,7 @@ export function V2AgentsSettings({
 					<NewCustomAgentDetail
 						onCreate={(input) => addCustomMutation.mutate(input)}
 						onCancel={() => setIsCreating(false)}
-						isCreating={addCustomMutation.isPending}
+						isSubmitting={addCustomMutation.isPending}
 					/>
 				) : selectedAgent ? (
 					<AgentDetail

@@ -2,9 +2,7 @@ import type { HostAgentConfig } from "@superset/host-service/settings";
 import type { PromptTransport } from "@superset/shared/agent-prompt-launch";
 import { Button } from "@superset/ui/button";
 import { Input } from "@superset/ui/input";
-import { Label } from "@superset/ui/label";
 import { toast } from "@superset/ui/sonner";
-import { cn } from "@superset/ui/utils";
 import { useMutation } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,6 +16,11 @@ import { joinArgs, parseArgs } from "renderer/lib/argv";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { getHostServiceUnavailableMessage } from "renderer/lib/host-service-unavailable";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import {
+	PromptTransportToggle,
+	Section,
+	StackedField,
+} from "../AgentFormControls";
 import { AgentIcon } from "../AgentIcon";
 import { AgentIconPicker } from "../AgentIconPicker";
 
@@ -224,32 +227,10 @@ export function AgentDetail({
 						label="Prompt transport"
 						hint="How the prompt is delivered to the process."
 					>
-						<div className="inline-flex rounded-md border border-border overflow-hidden">
-							<button
-								type="button"
-								onClick={() => handleTransportChange("argv")}
-								className={cn(
-									"px-3 py-1 text-xs font-medium transition-colors",
-									promptTransport === "argv"
-										? "bg-accent text-accent-foreground"
-										: "bg-transparent text-muted-foreground hover:bg-accent/50",
-								)}
-							>
-								argv
-							</button>
-							<button
-								type="button"
-								onClick={() => handleTransportChange("stdin")}
-								className={cn(
-									"px-3 py-1 text-xs font-medium transition-colors border-l border-border",
-									promptTransport === "stdin"
-										? "bg-accent text-accent-foreground"
-										: "bg-transparent text-muted-foreground hover:bg-accent/50",
-								)}
-							>
-								stdin
-							</button>
-						</div>
+						<PromptTransportToggle
+							value={promptTransport}
+							onChange={handleTransportChange}
+						/>
 					</StackedField>
 				</Section>
 
@@ -274,54 +255,6 @@ export function AgentDetail({
 					</div>
 				</div>
 			</div>
-		</div>
-	);
-}
-
-function Section({
-	title,
-	description,
-	action,
-	children,
-}: {
-	title: string;
-	description?: string;
-	action?: React.ReactNode;
-	children?: React.ReactNode;
-}) {
-	return (
-		<section className="space-y-3">
-			<div className="flex items-start justify-between gap-6">
-				<div className="min-w-0 flex-1">
-					<h3 className="text-sm font-medium">{title}</h3>
-					{description && (
-						<p className="text-xs text-muted-foreground mt-0.5">
-							{description}
-						</p>
-					)}
-				</div>
-				{action ? <div className="shrink-0">{action}</div> : null}
-			</div>
-			{children ? <div className="space-y-5">{children}</div> : null}
-		</section>
-	);
-}
-
-interface StackedFieldProps {
-	label: string;
-	hint?: React.ReactNode;
-	htmlFor?: string;
-	children: React.ReactNode;
-}
-
-function StackedField({ label, hint, htmlFor, children }: StackedFieldProps) {
-	return (
-		<div className="space-y-1.5">
-			<Label htmlFor={htmlFor} className="text-sm font-medium">
-				{label}
-			</Label>
-			{hint && <p className="text-xs text-muted-foreground -mt-1">{hint}</p>}
-			{children}
 		</div>
 	);
 }
