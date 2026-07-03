@@ -23,9 +23,12 @@ import { localDb } from "main/lib/local-db";
  *
  * SYMLINK PROTECTION:
  * - Filesystem operations should delegate to `workspace-fs`. Mutations are
- *   confined to the workspace root; reads are host-wide but still reject
- *   in-workspace symlinks that resolve outside the root, so a malicious repo
- *   can't disguise a sensitive host file as a workspace file.
+ *   confined to the workspace root; reads are host-wide, but file-content
+ *   reads (`readFile`) still reject in-workspace symlinks that resolve
+ *   outside the root, so a malicious repo can't disguise a sensitive host
+ *   file's contents as a workspace file. `listDirectory`/`getMetadata` don't
+ *   apply this check: `getMetadata` lstats (never follows links) and
+ *   directory listings only expose entry names.
  * - This module remains focused on registered-worktree and relative-path validation.
  */
 
