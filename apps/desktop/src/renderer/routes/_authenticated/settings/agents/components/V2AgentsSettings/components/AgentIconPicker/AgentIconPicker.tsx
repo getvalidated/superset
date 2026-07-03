@@ -8,6 +8,7 @@ import {
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { Check, ChevronDown, ImagePlus } from "lucide-react";
+import { useState } from "react";
 import { useIsDarkTheme } from "renderer/assets/app-icons/preset-icons";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { AgentIcon } from "../AgentIcon";
@@ -38,10 +39,15 @@ export function AgentIconPicker({
 }: AgentIconPickerProps) {
 	const isDark = useIsDarkTheme();
 	const selectImageMutation = electronTrpc.window.selectImageFile.useMutation();
+	// Covers the whole flow (native dialog → mutate → resize), not just the
+	// mutation, so re-entrant clicks can't fire overlapping selections.
+	const [isProcessing, setIsProcessing] = useState(false);
 	const uploaded = isUploadedIcon(value);
 	const selected = AGENT_ICON_OPTIONS.find((option) => option.id === value);
 
 	const handleUpload = async () => {
+		if (isProcessing) return;
+		setIsProcessing(true);
 		try {
 			const result = await selectImageMutation.mutateAsync();
 			if (result.canceled || !result.dataUrl) return;
@@ -52,6 +58,8 @@ export function AgentIconPicker({
 			onChange(resized);
 		} catch {
 			toast.error("Failed to load image");
+		} finally {
+			setIsProcessing(false);
 		}
 	};
 
@@ -64,7 +72,7 @@ export function AgentIconPicker({
 			<DropdownMenuTrigger asChild>
 				<button
 					type="button"
-					disabled={disabled || selectImageMutation.isPending}
+					disabled={disabled || isProcessing}
 					className={cn(
 						"inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm",
 						"bg-transparent hover:bg-accent/50 transition-colors disabled:opacity-50",
@@ -83,6 +91,7 @@ export function AgentIconPicker({
 			<DropdownMenuContent align="start" className="w-48">
 				<DropdownMenuItem
 					className="gap-2"
+					disabled={isProcessing}
 					onSelect={(e) => {
 						e.preventDefault();
 						void handleUpload();
