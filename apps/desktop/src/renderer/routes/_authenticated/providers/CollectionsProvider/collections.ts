@@ -70,8 +70,8 @@ import {
 } from "./dashboardSidebarLocal";
 import { withReadHeal } from "./withReadHeal";
 
-// Retained for workspaceSyncWaits' delete-sync timeout (no longer Electric).
-export const ELECTRIC_WRITE_SYNC_TIMEOUT_MS = 30_000;
+// How long workspaceSyncWaits waits for a delete to land in the collection.
+export const WRITE_SYNC_TIMEOUT_MS = 30_000;
 
 type HostWorkspacesCreateResult =
 	inferRouterOutputs<HostServiceAppRouter>["workspaces"]["create"];
@@ -129,7 +129,9 @@ const createPersistedQueryCollection = ((config: QuerySyncConfig) => {
 // (authoritative), merged with other machines' from cloud presence. Cloud is
 // best-effort so the app still lists local workspaces offline. Empty until the
 // local host boots.
-async function fetchWorkspaces(): Promise<SelectV2Workspace[]> {
+async function fetchWorkspaces(
+	organizationId: string,
+): Promise<SelectV2Workspace[]> {
 	const url = getActiveLocalHostUrl();
 	if (!url) return [];
 	const client = getHostServiceClientByUrl(url);
@@ -142,12 +144,18 @@ async function fetchWorkspaces(): Promise<SelectV2Workspace[]> {
 		>,
 	]);
 
+	// The host's SQLite holds every org's workspaces; this collection is per-org
+	// (Electric used to apply this filter server-side).
+	const localForOrg = local.filter((w) => w.organizationId === organizationId);
 	// Local rows win; cloud only contributes other hosts' presence.
-	const localIds = new Set(local.map((w) => w.id));
+	const localIds = new Set(localForOrg.map((w) => w.id));
 	const remote = cloud.filter(
-		(w) => w.hostId !== localMachineId && !localIds.has(w.id),
+		(w) =>
+			w.organizationId === organizationId &&
+			w.hostId !== localMachineId &&
+			!localIds.has(w.id),
 	);
-	return [...local, ...remote];
+	return [...localForOrg, ...remote];
 }
 
 const apiKeyDisplaySchema = z.object({
@@ -427,7 +435,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 			id: `v2_workspaces-${organizationId}`,
 			queryClient,
 			queryKey: ["local-workspaces", organizationId],
-			queryFn: fetchWorkspaces,
+			queryFn: () => fetchWorkspaces(organizationId),
 			refetchInterval: LOCAL_WORKSPACES_POLL_MS,
 			getKey: (item) => item.id,
 			onInsert: async ({ transaction }) => {
@@ -440,12 +448,23 @@ function createOrgCollections(organizationId: string): OrgCollections {
 				const { original, changes } = transaction.mutations[0];
 				const { branch, hostId, name, taskId } = changes;
 				// Persist to the local row (source of truth) so the next poll keeps
-				// the change, then mirror to cloud presence.
+				// the change, then mirror to cloud presence. Remote hosts' workspaces
+				// have no local row; for those the cloud update is authoritative.
 				const localUrl = getActiveLocalHostUrl();
-				if (localUrl && (name !== undefined || taskId !== undefined)) {
+				const isLocalWorkspace = original.hostId === getActiveLocalMachineId();
+				if (
+					localUrl &&
+					isLocalWorkspace &&
+					(name !== undefined || taskId !== undefined || branch !== undefined)
+				) {
 					await getHostServiceClientByUrl(
 						localUrl,
-					).workspace.updateLocal.mutate({ id: original.id, name, taskId });
+					).workspace.updateLocal.mutate({
+						id: original.id,
+						name,
+						taskId,
+						branch,
+					});
 				}
 				await apiClient.v2Workspace.update.mutate({
 					id: original.id,

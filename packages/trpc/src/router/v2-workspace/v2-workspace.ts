@@ -148,6 +148,8 @@ export const v2WorkspaceRouter = {
 					projectName: v2Projects.name,
 					hostId: v2Workspaces.hostId,
 					type: v2Workspaces.type,
+					taskId: v2Workspaces.taskId,
+					createdByUserId: v2Workspaces.createdByUserId,
 					createdAt: v2Workspaces.createdAt,
 				})
 				.from(v2Workspaces)
@@ -182,6 +184,8 @@ export const v2WorkspaceRouter = {
 				projectName: row.projectName ?? "",
 				hostId: row.hostId,
 				type: row.type,
+				taskId: row.taskId,
+				createdByUserId: row.createdByUserId,
 				createdAt: row.createdAt,
 			}));
 		}),
