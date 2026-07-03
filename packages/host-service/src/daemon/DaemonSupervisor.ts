@@ -98,19 +98,29 @@ export function shouldKillStaleDaemonForDev(
 }
 
 /**
- * Per-organization socket path. **Must stay short** — Darwin's `sun_path`
+ * Per-instance socket path. **Must stay short** — Darwin's `sun_path`
  * is 104 bytes, and `$SUPERSET_HOME_DIR/host/{orgId}/pty-daemon.sock` blows
- * past that in dev (worktree-relative SUPERSET_HOME_DIR + 36-char UUID).
- *
- * We put the socket in `os.tmpdir()` with a hash of the org id. Owner-only
+ * past that in dev (worktree-relative SUPERSET_HOME_DIR + 36-char UUID), so
+ * the socket lives in `os.tmpdir()` under a fixed-length hash. Owner-only
  * file mode (0600, set by the daemon's Server.listen) is the auth boundary;
  * the directory permissions don't matter.
+ *
+ * The hash covers the org id and, for non-default homes, `SUPERSET_HOME_DIR`.
+ * Daemon manifests are per-home, so a home-agnostic socket let a dev
+ * instance (worktree-local home) adopt the packaged app's daemon through the
+ * manifest-missing socket-probe fallback — its kill/adopt bookkeeping never
+ * saw the other home's manifest. Keying by home gives every home its own
+ * daemon; the default home keeps the legacy org-only path so packaged apps
+ * don't orphan their existing daemon on update.
  */
-export function ptyDaemonSocketPath(organizationId: string): string {
-	const shortId = createHash("sha256")
-		.update(organizationId)
-		.digest("hex")
-		.slice(0, 12);
+export function ptyDaemonSocketPath(
+	organizationId: string,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	const home = env.SUPERSET_HOME_DIR;
+	const isDefaultHome = !home || home === path.join(os.homedir(), ".superset");
+	const key = isDefaultHome ? organizationId : `${organizationId}:${home}`;
+	const shortId = createHash("sha256").update(key).digest("hex").slice(0, 12);
 	return path.join(os.tmpdir(), `superset-ptyd-${shortId}.sock`);
 }
 
@@ -695,17 +705,23 @@ export class DaemonSupervisor {
 	}
 
 	private async start(organizationId: string): Promise<DaemonInstance> {
-		// Dev mode: never adopt. A leftover detached daemon from a previous
-		// `bun dev` session would mask code changes — devs hit Update or
-		// open a session and see stale-bundle behavior with no obvious
-		// reason. Kill any running daemon for the org and spawn fresh.
-		// Production keeps the adopt path so PTY sessions survive
-		// host-service restarts (the original Phase 1 promise).
-		if (shouldKillStaleDaemonForDev()) {
+		// Dev mode: never adopt. Dev daemons spawn attached (they die with the
+		// app), so there is never a legitimately surviving dev daemon — a
+		// leftover from a killed `bun dev` session would only mask code
+		// changes. Kill any leftover recorded in this home's manifest and
+		// spawn fresh; skipping tryAdopt entirely also keeps the
+		// manifest-missing socket-probe fallback from re-attaching a daemon
+		// this home never spawned. Production keeps the adopt path so PTY
+		// sessions survive host-service restarts (the original Phase 1
+		// promise).
+		const spawnFreshForDev = shouldKillStaleDaemonForDev();
+		if (spawnFreshForDev) {
 			await this.killStaleDaemonForDev(organizationId);
 		}
 
-		const adopted = await this.tryAdopt(organizationId);
+		const adopted = spawnFreshForDev
+			? null
+			: await this.tryAdopt(organizationId);
 		if (adopted) {
 			this.instances.set(organizationId, adopted);
 			console.log(
