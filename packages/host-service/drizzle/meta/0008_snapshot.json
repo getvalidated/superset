@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "95be4f66-b0aa-4fa0-91b8-9947b30d1dec",
-  "prevId": "ec2fffc1-7b97-403a-9d22-695992bf47d9",
+  "id": "9a57b712-d995-46cf-a430-7e8d3a59a014",
+  "prevId": "7110a50e-1099-4a1e-bc62-22b45a8bbf54",
   "tables": {
     "cloud_delete_outbox": {
       "name": "cloud_delete_outbox",
@@ -43,6 +43,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "icon_id": {
+          "name": "icon_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "label": {
@@ -436,6 +443,94 @@
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "terminal_agent_bindings": {
+      "name": "terminal_agent_bindings",
+      "columns": {
+        "terminal_id": {
+          "name": "terminal_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_session_id": {
+          "name": "agent_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "definition_id": {
+          "name": "definition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_event_at": {
+          "name": "last_event_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_event_type": {
+          "name": "last_event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "terminal_agent_bindings_workspace_id_idx": {
+          "name": "terminal_agent_bindings_workspace_id_idx",
+          "columns": [
+            "workspace_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "terminal_agent_bindings_terminal_id_terminal_sessions_id_fk": {
+          "name": "terminal_agent_bindings_terminal_id_terminal_sessions_id_fk",
+          "tableFrom": "terminal_agent_bindings",
+          "tableTo": "terminal_sessions",
+          "columnsFrom": [
+            "terminal_id"
           ],
           "columnsTo": [
             "id"

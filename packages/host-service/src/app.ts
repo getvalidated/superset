@@ -19,7 +19,10 @@ import { createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
-import { TerminalAgentStore } from "./terminal-agents";
+import {
+	SqliteTerminalAgentBindingPersistence,
+	TerminalAgentStore,
+} from "./terminal-agents";
 import { appRouter } from "./trpc/router";
 import {
 	execGh as defaultExecGh,
@@ -136,7 +139,9 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const eventBus = new EventBus({ db, filesystem, gitWatcher });
 	eventBus.start();
 
-	const terminalAgentStore = new TerminalAgentStore();
+	const terminalAgentStore = new TerminalAgentStore(
+		new SqliteTerminalAgentBindingPersistence(db),
+	);
 
 	// Retry cloud presence deletes that failed at rollback time (boot +
 	// hourly). Idempotent; ghost rows otherwise stay visible on other machines.
