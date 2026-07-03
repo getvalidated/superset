@@ -144,7 +144,8 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 					}}
 					onDoubleClick={onDoubleClick}
 					className={cn(
-						"group relative flex w-full items-center py-2 pr-2",
+						// pb collapses when the details strip renders below the row.
+						"group relative flex w-full items-center py-2 pr-2 [&:not(:last-child)]:pb-0.5",
 						isInSection ? "pl-7" : "pl-5",
 						onClick && "cursor-pointer",
 					)}
