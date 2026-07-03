@@ -3,6 +3,12 @@
  * defend against. A passing test = defense holds; a failing test = real
  * bug worth fixing.
  *
+ * The filesystem section also pins the intended sandbox policy in both
+ * directions: reads are host-wide (viewing files a terminal/agent referenced
+ * outside the workspace), mutations are confined to the workspace root. An
+ * "allows" test failing means the read policy regressed, not that a defense
+ * appeared.
+ *
  * Categories:
  *   - sandbox / path traversal in workspace-fs operations
  *   - shell-arg / git-flag injection through user-controlled refs
@@ -27,7 +33,7 @@ import { projects, workspaces } from "../../src/db/schema";
 import { createTestHost, type TestHost } from "../helpers/createTestHost";
 import { createGitFixture, type GitFixture } from "../helpers/git-fixture";
 
-describe("bug-hunt: filesystem sandbox", () => {
+describe("bug-hunt: filesystem sandbox (mutations confined, reads host-wide)", () => {
 	let host: TestHost;
 	let repo: GitFixture;
 	const projectId = randomUUID();
@@ -71,8 +77,6 @@ describe("bug-hunt: filesystem sandbox", () => {
 	});
 
 	test("readFile allows viewing paths outside the workspace root", async () => {
-		// Reads are deliberately host-wide (viewing files a terminal/agent
-		// referenced outside the workspace); only mutations are confined.
 		const sibling = join(repo.repoPath, "..", `outside-read-${randomUUID()}`);
 		writeFileSync(sibling, "outside content");
 		try {
