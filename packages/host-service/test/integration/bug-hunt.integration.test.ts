@@ -64,15 +64,43 @@ describe("bug-hunt: filesystem sandbox", () => {
 		expect(existsSync(escapeWritePath)).toBe(false);
 	});
 
-	test("readFile rejects paths outside the workspace root", async () => {
-		// Try to read the test repo's parent /etc/hostname-equivalent
-		await expect(
-			host.trpc.filesystem.readFile.query({
+	test("readFile allows viewing paths outside the workspace root", async () => {
+		// Reads are deliberately host-wide (viewing files a terminal/agent
+		// referenced outside the workspace); only mutations are confined.
+		const sibling = join(repo.repoPath, "..", `outside-read-${randomUUID()}`);
+		writeFileSync(sibling, "outside content");
+		try {
+			const result = await host.trpc.filesystem.readFile.query({
 				workspaceId,
-				absolutePath: `${repo.repoPath}/../../../etc/hosts`,
+				absolutePath: sibling,
 				encoding: "utf8",
-			}),
-		).rejects.toThrow();
+			});
+			expect(result.kind).toBe("text");
+			expect(result.content).toBe("outside content");
+		} finally {
+			const { rmSync } = await import("node:fs");
+			rmSync(sibling, { force: true });
+		}
+	});
+
+	test("readFile still rejects in-workspace symlinks that escape the root", async () => {
+		const outside = join(repo.repoPath, "..", `symlink-target-${randomUUID()}`);
+		writeFileSync(outside, "secret");
+		const link = join(repo.repoPath, "innocent-looking.txt");
+		const { symlinkSync, rmSync } = await import("node:fs");
+		symlinkSync(outside, link);
+		try {
+			await expect(
+				host.trpc.filesystem.readFile.query({
+					workspaceId,
+					absolutePath: link,
+					encoding: "utf8",
+				}),
+			).rejects.toThrow();
+		} finally {
+			rmSync(link, { force: true });
+			rmSync(outside, { force: true });
+		}
 	});
 
 	test("deletePath rejects targets outside the workspace root", async () => {
@@ -128,13 +156,14 @@ describe("bug-hunt: filesystem sandbox", () => {
 		}
 	});
 
-	test("listDirectory rejects absolute paths outside workspace root", async () => {
-		await expect(
-			host.trpc.filesystem.listDirectory.query({
-				workspaceId,
-				absolutePath: "/etc",
-			}),
-		).rejects.toThrow();
+	test("listDirectory allows absolute paths outside workspace root", async () => {
+		const { entries } = await host.trpc.filesystem.listDirectory.query({
+			workspaceId,
+			absolutePath: join(repo.repoPath, ".."),
+		});
+		expect(entries.some((entry) => entry.absolutePath === repo.repoPath)).toBe(
+			true,
+		);
 	});
 });
 

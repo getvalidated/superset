@@ -22,8 +22,10 @@ import { localDb } from "main/lib/local-db";
  * - Defense in depth against path manipulation
  *
  * SYMLINK PROTECTION:
- * - Filesystem operations should delegate to `workspace-fs`, which enforces
- *   workspace-boundary and symlink-escape checks for reads and writes.
+ * - Filesystem operations should delegate to `workspace-fs`. Mutations are
+ *   confined to the workspace root; reads are host-wide but still reject
+ *   in-workspace symlinks that resolve outside the root, so a malicious repo
+ *   can't disguise a sensitive host file as a workspace file.
  * - This module remains focused on registered-worktree and relative-path validation.
  */
 
