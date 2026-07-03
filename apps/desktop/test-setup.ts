@@ -80,6 +80,29 @@ if (typeof globalThis.window !== "undefined") {
 	};
 }
 
+// localStorage: renderer stores persisted with zustand's `persist` middleware
+// write to it on every setState. Without this, such stores throw in Bun tests,
+// which only "passed" when another test happened to leak a global first.
+if (typeof globalThis.localStorage === "undefined") {
+	const store = new Map<string, string>();
+	const mockLocalStorage: Storage = {
+		get length() {
+			return store.size;
+		},
+		clear: () => store.clear(),
+		getItem: (key: string) => store.get(key) ?? null,
+		key: (index: number) => Array.from(store.keys())[index] ?? null,
+		removeItem: (key: string) => {
+			store.delete(key);
+		},
+		setItem: (key: string, value: string) => {
+			store.set(key, String(value));
+		},
+	};
+	// biome-ignore lint/suspicious/noExplicitAny: Test setup requires extending globalThis
+	(globalThis as any).localStorage = mockLocalStorage;
+}
+
 // =============================================================================
 // Electron Preload Mocks (exposed via contextBridge in real app)
 // =============================================================================
