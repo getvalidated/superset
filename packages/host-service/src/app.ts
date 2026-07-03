@@ -19,7 +19,6 @@ import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import {
-	reconcileTerminalAgentBindings,
 	SqliteTerminalAgentBindingPersistence,
 	TerminalAgentStore,
 } from "./terminal-agents";
@@ -65,6 +64,8 @@ export interface CreateAppResult {
 	injectWebSocket: ReturnType<typeof createNodeWebSocket>["injectWebSocket"];
 	api: ApiClient;
 	db: HostDb;
+	/** Exposed so the terminal reaper can prune stale bindings each pass. */
+	terminalAgentStore: TerminalAgentStore;
 	dispose: () => Promise<void>;
 }
 
@@ -139,14 +140,14 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	const eventBus = new EventBus({ db, filesystem, gitWatcher });
 	eventBus.start();
 
+	// Startup and periodic pruning of stale bindings happens in the terminal
+	// reaper's reap pass (see serve.ts wiring); the listener below handles the
+	// immediate case. A pty exit is the authoritative end of any agent bound to
+	// that terminal — agent exit hooks don't fire when the process is killed or
+	// crashes.
 	const terminalAgentStore = new TerminalAgentStore(
 		new SqliteTerminalAgentBindingPersistence(db),
 	);
-	// Drain bindings persisted for terminals that died while the host-service
-	// was down (or leaked before exit pruning existed).
-	reconcileTerminalAgentBindings({ db, store: terminalAgentStore });
-	// A pty exit is the authoritative end of any agent bound to that terminal —
-	// agent exit hooks don't fire when the process is killed or crashes.
 	eventBus.onTerminalLifecycle(({ terminalId }) => {
 		terminalAgentStore.markTerminalExited(terminalId);
 	});
@@ -236,5 +237,5 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		}
 	};
 
-	return { app, injectWebSocket, api, db, dispose };
+	return { app, injectWebSocket, api, db, terminalAgentStore, dispose };
 }

@@ -1,6 +1,10 @@
 import type { HostDb } from "../../db/index.ts";
 import { terminalSessions } from "../../db/schema.ts";
 import { portManager } from "../../ports/port-manager.ts";
+import {
+	reconcileTerminalAgentBindings,
+	type TerminalAgentStore,
+} from "../../terminal-agents/index.ts";
 import { getDaemonClient } from "../daemon-client-singleton.ts";
 import { disposeSessionAndWait, isLiveTerminalSession } from "../terminal.ts";
 
@@ -165,13 +169,78 @@ function syncPortScans(db: HostDb): ReturnType<typeof runPortScanSync> {
 	return inFlightPortScanSync;
 }
 
+/**
+ * Decide which agent bindings to prune, given the daemon's live sessions.
+ * A binding survives only while its terminal is alive somewhere — as an
+ * in-process session or a live daemon session. Session rows already flag
+ * most dead terminals (see {@link reconcileTerminalAgentBindings}); this
+ * liveness check additionally catches rows left `active` by a terminal that
+ * died while the host-service was down. Pure so the policy is unit testable.
+ */
+export function planAgentBindingPrune({
+	boundTerminalIds,
+	aliveTerminalIds,
+	isLive,
+}: {
+	boundTerminalIds: string[];
+	aliveTerminalIds: Set<string>;
+	isLive: (terminalId: string) => boolean;
+}): string[] {
+	return boundTerminalIds.filter(
+		(terminalId) => !aliveTerminalIds.has(terminalId) && !isLive(terminalId),
+	);
+}
+
+// Binding pruning is best-effort: a failure must not break orphan cleanup.
+function pruneAgentBindingsByLiveness(
+	store: TerminalAgentStore,
+	liveSessions: { id: string }[],
+): void {
+	// An empty daemon list can be a transient daemon.list() flake; stay as
+	// conservative as orphan reaping and skip the liveness-based prune.
+	if (liveSessions.length === 0) return;
+	try {
+		const prune = planAgentBindingPrune({
+			boundTerminalIds: store.listAll().map((binding) => binding.terminalId),
+			aliveTerminalIds: new Set(liveSessions.map((session) => session.id)),
+			isLive: isLiveTerminalSession,
+		});
+		for (const terminalId of prune) {
+			store.markTerminalExited(terminalId);
+		}
+		if (prune.length > 0) {
+			console.log(
+				`[host-service] terminal reaper: pruned ${prune.length} stale agent binding(s)`,
+			);
+		}
+	} catch (err) {
+		console.warn("[host-service] agent-binding prune failed:", err);
+	}
+}
+
 async function reapOrphanedSessions(
 	db: HostDb,
 	rowlessPendingSecondPass: Set<string>,
+	terminalAgentStore: TerminalAgentStore | undefined,
 ): Promise<ReapResult> {
+	// Row-flagged binding prune first: it must not depend on the daemon being
+	// reachable (syncPortScans can reject right after startup), because it is
+	// also what drains stale persisted bindings on the immediate first pass.
+	if (terminalAgentStore) {
+		try {
+			reconcileTerminalAgentBindings({ db, store: terminalAgentStore });
+		} catch (err) {
+			console.warn("[host-service] agent-binding reconcile failed:", err);
+		}
+	}
+
 	// Sync the port scanner before the empty-list short-circuit below so an idle
 	// daemon still drops stale scans.
 	const { liveSessions, rowById } = await syncPortScans(db);
+
+	if (terminalAgentStore) {
+		pruneAgentBindingsByLiveness(terminalAgentStore, liveSessions);
+	}
 
 	if (liveSessions.length === 0) {
 		rowlessPendingSecondPass.clear();
@@ -224,13 +293,20 @@ async function reapOrphanedSessions(
 	return { reaped, failed };
 }
 
-export function startTerminalReaper(db: HostDb): () => void {
+export function startTerminalReaper(
+	db: HostDb,
+	options?: { terminalAgentStore?: TerminalAgentStore },
+): () => void {
 	const rowlessPendingSecondPass = new Set<string>();
 	let running = false;
 	const run = () => {
 		if (running) return;
 		running = true;
-		void reapOrphanedSessions(db, rowlessPendingSecondPass)
+		void reapOrphanedSessions(
+			db,
+			rowlessPendingSecondPass,
+			options?.terminalAgentStore,
+		)
 			.then((result) => {
 				if (result.reaped > 0 || result.failed > 0) {
 					console.log(

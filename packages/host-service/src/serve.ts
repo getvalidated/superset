@@ -46,7 +46,7 @@ async function main(): Promise<void> {
 		apiUrl: env.SUPERSET_API_URL,
 	});
 
-	const { app, injectWebSocket, api, db } = createApp({
+	const { app, injectWebSocket, api, db, terminalAgentStore } = createApp({
 		config: {
 			organizationId: env.ORGANIZATION_ID,
 			dbPath: env.HOST_DB_PATH,
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
 		installProcessSafetyNet();
 		console.log(`[host-service] listening on http://localhost:${info.port}`);
 
-		startTerminalReaper(db);
+		startTerminalReaper(db, { terminalAgentStore });
 
 		if (env.RELAY_URL) {
 			void connectRelay({
