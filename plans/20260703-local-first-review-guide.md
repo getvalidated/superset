@@ -30,7 +30,7 @@ All collections rebuilt on `queryCollectionOptions` + `refetchInterval`. Mutatio
 - Host router: `localList` (source of truth, legacy nulls coalesced), `updateLocal` (identity edits, stamps `updatedAt`), `cloudList` kept for the v1 import modal.
 - Renderer `fetchWorkspaces`: local list + cloud presence fetched in parallel; cloud comes **directly from the renderer** (session auth) so remote-machine workspaces survive a dead local host; per-org last-good caches so a transient failure never wipes rows.
 - `mergeWorkspacePresence.ts` (pure, 7 tests): local rows win existence; other hosts' cloud rows appended; **identity reconciles both ways** — newer cloud renames adopted into local SQLite, newer local renames pushed to a stale cloud mirror, and never-locally-edited rows always adopt cloud (pre-flip local names are branch placeholders; LWW would clobber real names).
-- `cloud_delete_outbox` (host-service): failed rollback cloud-deletes retried on boot + hourly. Deliberately an outbox, not a "delete cloud rows missing locally" sweep — dev and prod hosts share a machine-derived `hostId`, a sweep would nuke each other's presence.
+- **Local-first lifecycle**: `workspaces.create` commits the local row + worktree with no cloud call (id generated host-side; cloud create is idempotent on it) and `workspaceCleanup.destroy` commits on the local row delete — both mirror presence best-effort into `cloud_presence_outbox` (op create|delete, latest local action wins), drained on boot + hourly. Create and delete now work offline. Deliberately an outbox, not a "delete cloud rows missing locally" sweep — dev and prod hosts share a machine-derived `hostId`, a sweep would nuke each other's presence.
 
 **4. Removed** — `@electric-sql/client` + `@tanstack/electric-db-collection` deps (both apps), `NEXT_PUBLIC_ELECTRIC_URL` env/CSP/vite hooks.
 
@@ -69,4 +69,4 @@ Manual checks in the running app:
 ## Not in this PR
 
 - Electric infra teardown (`plans/20260702-electric-infra-teardown.md`) — needs a clean `bun setup` run to merge.
-- Offline create/delete (`plans/20260702-local-first-workspace-lifecycle.md`) — lifecycle writes still require cloud.
+

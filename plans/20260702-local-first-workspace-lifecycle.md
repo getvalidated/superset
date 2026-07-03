@@ -1,8 +1,12 @@
 # Local-first workspace lifecycle (offline create/delete)
 
-**Status:** Planned. Follow-up to the v2-workspaces local-first flip
-(plans/20260629-v2-workspaces-local-authoritative.md). Read paths and identity
-reconcile shipped in PR #5396; lifecycle *writes* still hard-require cloud.
+**Status:** Implemented in PR #5396 (2026-07-03). Create and delete commit
+locally and mirror presence via `cloud_presence_outbox` (op create|delete);
+cloud create was already idempotent on a client-supplied id, so no cloud
+change was needed. Deviations from the sketch below: one generic presence
+outbox instead of a separate create outbox, and `adoptExistingWorktree` /
+`ensureMainWorkspace` stay cloud-first (adopt needs cloud relink semantics;
+main-ensure already degrades log-and-continue offline).
 
 ## Problem
 
