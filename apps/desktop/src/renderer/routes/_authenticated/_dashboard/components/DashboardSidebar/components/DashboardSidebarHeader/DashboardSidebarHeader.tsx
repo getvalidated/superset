@@ -232,10 +232,12 @@ export function DashboardSidebarHeader({
 		>
 			{/* -mx-2 cancels the parent's px-2 so this row owns the 80px traffic-light
 			    inset; inset and height are counter-scaled to a constant physical size
-			    so the fixed macOS traffic lights stay aligned under page zoom. The
-			    control clusters below use `zoom: 1 / zoomFactor` so the collapse/nav
+			    so the fixed macOS traffic lights stay aligned under page zoom. On Mac
+			    the control clusters below use `zoom: 1 / zoomFactor` so the collapse/nav
 			    icons and usage badge keep a constant physical size instead of scaling
-			    with page zoom and overflowing this fixed-height row. */}
+			    with page zoom and overflowing this fixed-height row. The zoom is Mac-only
+			    because the pinned row height it matches is Mac-only; elsewhere the row
+			    height (h-8) scales with zoom, so the controls should scale with it. */}
 			<div
 				className="drag -mx-2 flex h-8 items-center gap-1.5 pr-2"
 				style={
@@ -249,12 +251,15 @@ export function DashboardSidebarHeader({
 			>
 				<div
 					className="flex items-center gap-1.5"
-					style={{ zoom: 1 / zoomFactor }}
+					style={isMac ? { zoom: 1 / zoomFactor } : undefined}
 				>
 					<SidebarToggle />
 					<NavigationControls />
 				</div>
-				<div className="ml-auto" style={{ zoom: 1 / zoomFactor }}>
+				<div
+					className="ml-auto"
+					style={isMac ? { zoom: 1 / zoomFactor } : undefined}
+				>
 					<ResourceConsumption surface="v2" />
 				</div>
 			</div>
