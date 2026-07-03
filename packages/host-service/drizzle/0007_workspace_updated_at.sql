@@ -1,0 +1,1 @@
+ALTER TABLE `workspaces` ADD `updated_at` integer;

@@ -68,6 +68,7 @@ import {
 	type WorkspacesCreateInput,
 	workspaceLocalStateSchema,
 } from "./dashboardSidebarLocal";
+import { mergeWorkspacePresence } from "./mergeWorkspacePresence";
 import { withReadHeal } from "./withReadHeal";
 
 // How long workspaceSyncWaits waits for a delete to land in the collection.
@@ -125,39 +126,94 @@ const createPersistedQueryCollection = ((config: QuerySyncConfig) => {
 	} as any);
 }) as unknown as typeof createCollection;
 
+// Cloud presence fetched directly from the renderer (session auth), not via
+// the local host-service — remote hosts' workspaces must stay visible even
+// when the local host is down or its cloud auth is stale.
+async function fetchCloudWorkspacePresence(
+	organizationId: string,
+): Promise<SelectV2Workspace[]> {
+	const rows = await apiClient.v2Workspace.list.query({ organizationId });
+	return rows.map((row) => ({
+		id: row.id,
+		organizationId,
+		projectId: row.projectId,
+		hostId: row.hostId,
+		name: row.name,
+		branch: row.branch,
+		type: row.type,
+		createdByUserId: row.createdByUserId ?? null,
+		taskId: row.taskId ?? null,
+		createdAt: new Date(row.createdAt),
+		updatedAt: new Date(row.updatedAt ?? row.createdAt),
+	}));
+}
+
+// Last-good snapshots per org. A query-collection result is authoritative
+// full state, so a transient failure of either side must not drop that
+// side's rows — that would wipe them (and their persisted copies) until the
+// next successful poll.
+const lastGoodLocalWorkspaces = new Map<string, SelectV2Workspace[]>();
+const lastGoodCloudWorkspaces = new Map<string, SelectV2Workspace[]>();
+
 // Workspaces for the renderer: this machine's from the local host-service
-// (authoritative), merged with other machines' from cloud presence. Cloud is
-// best-effort so the app still lists local workspaces offline.
+// (authoritative), merged with other machines' from cloud presence. Identity
+// edits that arrived in cloud from other machines are adopted back into the
+// local row (see mergeWorkspacePresence).
 async function fetchWorkspaces(
 	organizationId: string,
 ): Promise<SelectV2Workspace[]> {
 	const url = getActiveLocalHostUrl();
-	// Throw (not []) while the host boots: a query-collection result is
-	// authoritative full state, and [] would wipe the persisted rows. An error
-	// keeps the previous snapshot until the next successful poll.
-	if (!url) throw new Error("local host-service not ready");
-	const client = getHostServiceClientByUrl(url);
 	const localMachineId = getActiveLocalMachineId();
 
-	const [local, cloud] = await Promise.all([
-		client.workspace.localList.query() as Promise<SelectV2Workspace[]>,
-		client.workspace.cloudList.query().catch(() => [] as unknown[]) as Promise<
-			SelectV2Workspace[]
-		>,
+	const [localResult, cloudResult] = await Promise.allSettled([
+		(async () => {
+			if (!url) throw new Error("local host-service not ready");
+			return (await getHostServiceClientByUrl(
+				url,
+			).workspace.localList.query()) as SelectV2Workspace[];
+		})(),
+		fetchCloudWorkspacePresence(organizationId),
 	]);
 
-	// The host's SQLite holds every org's workspaces; this collection is per-org
-	// (Electric used to apply this filter server-side).
-	const localForOrg = local.filter((w) => w.organizationId === organizationId);
-	// Local rows win; cloud only contributes other hosts' presence.
-	const localIds = new Set(localForOrg.map((w) => w.id));
-	const remote = cloud.filter(
-		(w) =>
-			w.organizationId === organizationId &&
-			w.hostId !== localMachineId &&
-			!localIds.has(w.id),
-	);
-	return [...localForOrg, ...remote];
+	if (localResult.status === "fulfilled") {
+		lastGoodLocalWorkspaces.set(organizationId, localResult.value);
+	}
+	if (cloudResult.status === "fulfilled") {
+		lastGoodCloudWorkspaces.set(organizationId, cloudResult.value);
+	}
+
+	const local =
+		localResult.status === "fulfilled"
+			? localResult.value
+			: lastGoodLocalWorkspaces.get(organizationId);
+	// No cloud and nothing cached (e.g. offline boot): local-only is fine —
+	// remote workspaces are unreachable offline anyway.
+	const cloud =
+		cloudResult.status === "fulfilled"
+			? cloudResult.value
+			: (lastGoodCloudWorkspaces.get(organizationId) ?? []);
+	// No local list and nothing cached: throw (not []) while the host boots —
+	// [] would wipe the persisted rows; an error keeps the previous snapshot.
+	if (!local) {
+		throw localResult.status === "rejected"
+			? localResult.reason
+			: new Error("local workspaces unavailable");
+	}
+
+	const { rows, patches } = mergeWorkspacePresence({
+		local,
+		cloud,
+		organizationId,
+		localMachineId,
+	});
+	if (patches.length > 0 && url) {
+		const client = getHostServiceClientByUrl(url);
+		// Best-effort: a failed patch recurs on the next poll until it lands.
+		await Promise.allSettled(
+			patches.map((patch) => client.workspace.updateLocal.mutate(patch)),
+		);
+	}
+	return rows;
 }
 
 const apiKeyDisplaySchema = z.object({

@@ -151,6 +151,7 @@ export const v2WorkspaceRouter = {
 					taskId: v2Workspaces.taskId,
 					createdByUserId: v2Workspaces.createdByUserId,
 					createdAt: v2Workspaces.createdAt,
+					updatedAt: v2Workspaces.updatedAt,
 				})
 				.from(v2Workspaces)
 				.innerJoin(
@@ -187,6 +188,7 @@ export const v2WorkspaceRouter = {
 				taskId: row.taskId,
 				createdByUserId: row.createdByUserId,
 				createdAt: row.createdAt,
+				updatedAt: row.updatedAt,
 			}));
 		}),
 

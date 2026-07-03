@@ -162,6 +162,10 @@ export const workspaces = sqliteTable(
 		createdAt: integer("created_at")
 			.notNull()
 			.$defaultFn(() => Date.now()),
+		// Identity-edit timestamp for last-write-wins against cloud presence
+		// (renderer reconciles cross-host renames). Nullable: legacy rows
+		// coalesce to createdAt in localList.
+		updatedAt: integer("updated_at"),
 	},
 	(table) => [
 		index("workspaces_project_id_idx").on(table.projectId),

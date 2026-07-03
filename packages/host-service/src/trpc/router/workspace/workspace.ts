@@ -49,7 +49,7 @@ export const workspaceRouter = router({
 				createdByUserId: row.createdByUserId ?? null,
 				taskId: row.taskId ?? null,
 				createdAt,
-				updatedAt: createdAt,
+				updatedAt: row.updatedAt ? new Date(row.updatedAt) : createdAt,
 			};
 		});
 	}),
@@ -67,14 +67,19 @@ export const workspaceRouter = router({
 			}),
 		)
 		.mutation(({ ctx, input }) => {
-			const patch: { name?: string; taskId?: string | null; branch?: string } =
-				{};
+			const patch: {
+				name?: string;
+				taskId?: string | null;
+				branch?: string;
+				updatedAt?: number;
+			} = {};
 			if (input.name !== undefined) patch.name = input.name;
 			if (input.taskId !== undefined) patch.taskId = input.taskId;
 			if (input.branch !== undefined) patch.branch = input.branch;
 			if (Object.keys(patch).length === 0) {
 				return { ok: true };
 			}
+			patch.updatedAt = Date.now();
 			const result = ctx.db
 				.update(workspaces)
 				.set(patch)
@@ -136,7 +141,7 @@ export const workspaceRouter = router({
 				createdByUserId: row.createdByUserId ?? null,
 				taskId: row.taskId ?? null,
 				createdAt,
-				updatedAt: createdAt,
+				updatedAt: new Date(row.updatedAt ?? row.createdAt),
 			};
 		});
 	}),

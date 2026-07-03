@@ -495,6 +495,7 @@ async function registerCloudAndLocal(args: {
 				organizationId: cloudRow.organizationId,
 				taskId: cloudRow.taskId,
 				createdByUserId: cloudRow.createdByUserId,
+				updatedAt: Date.now(),
 			})
 			.run();
 	} catch (err) {
