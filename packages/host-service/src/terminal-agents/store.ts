@@ -140,9 +140,12 @@ export class TerminalAgentStore extends EventEmitter {
 
 	private deleteTerminal(terminalId: string): void {
 		const existing = this.byTerminal.get(terminalId);
+		// Delete the persisted row even without an in-memory binding: startup
+		// reconciliation prunes rows whose sessions were never hydrated (e.g.
+		// already disposed when the store loaded).
+		this.persistence?.delete(terminalId);
 		if (!existing) return;
 		this.byTerminal.delete(terminalId);
-		this.persistence?.delete(terminalId);
 		this.emit("change", existing.workspaceId);
 	}
 }
