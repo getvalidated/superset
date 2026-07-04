@@ -31,7 +31,6 @@ export interface TrustdProbeDeps {
 	/** Reads the system CA bundle (source of a known-good cert to verify). */
 	readBundle?: () => string;
 	tmpDir?: string;
-	pid?: number;
 }
 
 // Bounded so a wedged `security` can't stall daemon startup (the probe runs
@@ -55,21 +54,26 @@ export function probeTrustdHealthy(deps: TrustdProbeDeps = {}): boolean {
 		((cmd: string, args: string[]) =>
 			spawnSync(cmd, args, { timeout: PROBE_TIMEOUT_MS }));
 
-	let certPath: string | undefined;
+	let certDir: string | undefined;
 	try {
 		const bundle = deps.readBundle
 			? deps.readBundle()
 			: fs.readFileSync(SYSTEM_CERT_BUNDLE, "utf8");
 		const begin = bundle.indexOf(BEGIN);
-		const end = bundle.indexOf(END);
-		if (begin === -1 || end === -1 || end < begin) return true;
+		// Search for END only from BEGIN onward so a different earlier PEM type
+		// (e.g. "BEGIN TRUSTED CERTIFICATE") whose END sits before the first
+		// "BEGIN CERTIFICATE" can't produce a bogus slice.
+		const end = bundle.indexOf(END, begin);
+		if (begin === -1 || end === -1) return true;
 		// A cert from the trust store verifies cleanly WHEN trustd is reachable,
 		// so a non-zero exit isolates "trustd unreachable" from "bad cert".
 		const cert = `${bundle.slice(begin, end + END.length)}\n`;
-		certPath = path.join(
-			deps.tmpDir ?? os.tmpdir(),
-			`superset-trustd-probe-${deps.pid ?? process.pid}.pem`,
+		// mkdtemp gives a fresh 0700 dir, so the cert path is unpredictable and
+		// can't be pre-seeded as a symlink (TOCTOU) or collide across runs.
+		certDir = fs.mkdtempSync(
+			path.join(deps.tmpDir ?? os.tmpdir(), "superset-trustd-"),
 		);
+		const certPath = path.join(certDir, "probe.pem");
 		fs.writeFileSync(certPath, cert, { mode: 0o600 });
 		const result = run("security", ["verify-cert", "-c", certPath]);
 		if (result.error) return true; // spawn failed / timed out → inconclusive
@@ -78,9 +82,9 @@ export function probeTrustdHealthy(deps: TrustdProbeDeps = {}): boolean {
 	} catch {
 		return true;
 	} finally {
-		if (certPath) {
+		if (certDir) {
 			try {
-				fs.unlinkSync(certPath);
+				fs.rmSync(certDir, { recursive: true, force: true });
 			} catch {
 				// best-effort
 			}

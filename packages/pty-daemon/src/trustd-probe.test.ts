@@ -43,7 +43,6 @@ describe("probeTrustdHealthy", () => {
 		probeTrustdHealthy({
 			platform: "darwin",
 			readBundle: () => FAKE_BUNDLE,
-			pid: 999,
 			run: (c, a) => {
 				cmd = c;
 				args = a;
@@ -53,7 +52,26 @@ describe("probeTrustdHealthy", () => {
 		expect(cmd).toBe("security");
 		expect(args[0]).toBe("verify-cert");
 		expect(args[1]).toBe("-c");
-		expect(args[2]).toMatch(/superset-trustd-probe-999\.pem$/);
+		expect(args[2]).toMatch(/superset-trustd-[^/]+\/probe\.pem$/);
+	});
+
+	it("finds the END marker after BEGIN when an earlier PEM type precedes it", () => {
+		// A "TRUSTED CERTIFICATE" block's END sits before the first plain
+		// "BEGIN CERTIFICATE"; indexOf(END, begin) must skip it.
+		const mixed =
+			"-----BEGIN TRUSTED CERTIFICATE-----\nAAA\n-----END TRUSTED CERTIFICATE-----\n" +
+			"-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n";
+		let seenArgs: string[] = [];
+		probeTrustdHealthy({
+			platform: "darwin",
+			readBundle: () => mixed,
+			run: (_c, a) => {
+				seenArgs = a;
+				return { status: 0 };
+			},
+		});
+		// Reached the run step (didn't bail on a bogus end<begin slice).
+		expect(seenArgs[0]).toBe("verify-cert");
 	});
 
 	it("assumes healthy when the CA bundle has no cert (can't determine)", () => {
