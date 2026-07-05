@@ -8,6 +8,8 @@ import type { GitWatcher } from "../../events/git-watcher";
 import type { ExecGh } from "../../trpc/router/workspace-creation/utils/exec-gh";
 import type { GitFactory } from "../git";
 import {
+	fetchOpenPullRequests,
+	fetchOpenPullRequestsFromGh,
 	fetchPullRequestByHead,
 	fetchPullRequestByHeadFromGh,
 	fetchPullRequestChecks,
@@ -181,8 +183,11 @@ function upstreamKey(
 	branch: string,
 ): string | null {
 	if (!owner || !repo) return null;
-	// GitHub owner/repo are case-insensitive; branch names are case-sensitive.
-	return `${owner.toLowerCase()}/${repo.toLowerCase()}#${branch}`;
+	// Branch compared case-insensitively too: git branch names are
+	// case-sensitive, but on case-insensitive filesystems (macOS default)
+	// the local casing can drift from the PR's headRefName — a case-sensitive
+	// key permanently strands such workspaces with pullRequestId = null.
+	return `${owner.toLowerCase()}/${repo.toLowerCase()}#${branch.toLowerCase()}`;
 }
 
 type RepoProvider = "github";
@@ -276,6 +281,10 @@ export class PullRequestRuntimeManager {
 	private readonly pullRequestHeadCache = new Map<
 		string,
 		{ promise: Promise<GitHubPullRequestNode | null>; fetchedAt: number }
+	>();
+	private readonly openPullRequestsCache = new Map<
+		string,
+		{ promise: Promise<GitHubPullRequestNode[]>; fetchedAt: number }
 	>();
 
 	constructor(options: PullRequestRuntimeManagerOptions) {
@@ -855,6 +864,37 @@ export class PullRequestRuntimeManager {
 		return rowId;
 	}
 
+	// Keep failed promises cached for the full TTL so subsequent polls share
+	// the rejection without firing new GitHub calls. Evicting on every error
+	// caused a self-perpetuating storm under rate-limit / abuse-detection
+	// responses: the failure invalidated the cache, the next 20s tick
+	// retried, hit the same 403, and re-evicted. Network blips heal at the
+	// next TTL boundary instead.
+	private cachedGitHubFetch<T>(
+		cache: Map<string, { promise: Promise<T>; fetchedAt: number }>,
+		cacheKey: string,
+		options: { bypassCache?: boolean },
+		fetcher: () => Promise<T>,
+	): Promise<T> {
+		if (!options.bypassCache) {
+			const cached = cache.get(cacheKey);
+			if (
+				cached &&
+				Date.now() - cached.fetchedAt < REPO_PULL_REQUEST_CACHE_TTL_MS
+			) {
+				return cached.promise;
+			}
+		}
+
+		const fetchedAt = Date.now();
+		const promise = fetcher();
+		// Observer to silence unhandledRejection warnings; real consumers
+		// observe the rejection via their own await on the cached promise.
+		promise.catch(() => {});
+		cache.set(cacheKey, { promise, fetchedAt });
+		return promise;
+	}
+
 	private async getCachedPullRequestByHead(
 		repo: NormalizedRepoIdentity,
 		head: GitHubPullRequestHeadRef,
@@ -865,61 +905,68 @@ export class PullRequestRuntimeManager {
 			repo.name.toLowerCase(),
 			head.owner.toLowerCase(),
 			head.repo.toLowerCase(),
-			head.branch,
+			head.branch.toLowerCase(),
 		].join("/");
-		if (!options.bypassCache) {
-			const cached = this.pullRequestHeadCache.get(cacheKey);
-			if (
-				cached &&
-				Date.now() - cached.fetchedAt < REPO_PULL_REQUEST_CACHE_TTL_MS
-			) {
-				return cached.promise;
-			}
-		}
-
-		const fetchedAt = Date.now();
-		const promise = (async () => {
-			try {
-				return await fetchPullRequestByHeadFromGh(
-					this.execGh,
-					{
-						owner: repo.owner,
-						name: repo.name,
-					},
-					head,
-				);
-			} catch (ghError) {
-				console.warn(
-					"[host-service:pull-request-runtime] gh PR head lookup failed; falling back to Octokit",
-					{
-						owner: repo.owner,
-						name: repo.name,
+		return this.cachedGitHubFetch(
+			this.pullRequestHeadCache,
+			cacheKey,
+			options,
+			async () => {
+				try {
+					return await fetchPullRequestByHeadFromGh(
+						this.execGh,
+						{ owner: repo.owner, name: repo.name },
 						head,
-						error: ghError,
-					},
-				);
-				const octokit = await this.github();
-				return fetchPullRequestByHead(
-					octokit,
-					{
+					);
+				} catch (ghError) {
+					console.warn(
+						"[host-service:pull-request-runtime] gh PR head lookup failed; falling back to Octokit",
+						{ owner: repo.owner, name: repo.name, head, error: ghError },
+					);
+					const octokit = await this.github();
+					return fetchPullRequestByHead(
+						octokit,
+						{ owner: repo.owner, name: repo.name },
+						head,
+					);
+				}
+			},
+		);
+	}
+
+	// Repo-wide listing was deliberately removed in #4268/#4291 because the
+	// old GraphQL sweep (100 PRs × 50 status contexts) 504'd on large repos.
+	// This one is different on purpose: a shallow REST `pulls?state=open`
+	// page with no checks/statuses, fired at most once per repo per TTL and
+	// only when a per-head lookup came up empty. Detail fetches stay per-PR.
+	private async getCachedOpenPullRequests(
+		repo: NormalizedRepoIdentity,
+		options: { bypassCache?: boolean } = {},
+	): Promise<GitHubPullRequestNode[]> {
+		const cacheKey = `${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}`;
+		return this.cachedGitHubFetch(
+			this.openPullRequestsCache,
+			cacheKey,
+			options,
+			async () => {
+				try {
+					return await fetchOpenPullRequestsFromGh(this.execGh, {
 						owner: repo.owner,
 						name: repo.name,
-					},
-					head,
-				);
-			}
-		})();
-		// Observer to silence unhandledRejection warnings; real consumers
-		// observe the rejection via their own await on the cached promise.
-		promise.catch(() => {});
-		// Keep failed promises cached for the full TTL so subsequent polls
-		// share the rejection without firing new GitHub calls. Evicting on
-		// every error caused a self-perpetuating storm under rate-limit /
-		// abuse-detection responses: the failure invalidated the cache, the
-		// next 20s tick retried, hit the same 403, and re-evicted. Network
-		// blips heal at the next TTL boundary instead.
-		this.pullRequestHeadCache.set(cacheKey, { promise, fetchedAt });
-		return promise;
+					});
+				} catch (ghError) {
+					console.warn(
+						"[host-service:pull-request-runtime] gh open-PR sweep failed; falling back to Octokit",
+						{ owner: repo.owner, name: repo.name, error: ghError },
+					);
+					const octokit = await this.github();
+					return fetchOpenPullRequests(octokit, {
+						owner: repo.owner,
+						name: repo.name,
+					});
+				}
+			},
+		);
 	}
 
 	private async fetchRepoPullRequests(
@@ -967,6 +1014,41 @@ export class PullRequestRuntimeManager {
 				}
 			}),
 		);
+
+		// GitHub's `head=` filter is case-sensitive on the branch component, so
+		// a workspace whose local branch casing drifted from the PR's
+		// headRefName gets nothing from the per-head lookups above. Sweep the
+		// repo's open PRs once and fill the gaps case-insensitively.
+		const unmatchedKeys = Array.from(wantedRefs.keys()).filter(
+			(key) => !latestByKey.has(key) && !failedKeys.has(key),
+		);
+		if (unmatchedKeys.length > 0) {
+			try {
+				const openNodes = await this.getCachedOpenPullRequests(repo, options);
+				const openByKey = new Map<string, GitHubPullRequestNode>();
+				for (const node of openNodes) {
+					const nodeKey = upstreamKey(
+						node.headRepositoryOwner?.login ?? null,
+						node.headRepository?.name ?? null,
+						node.headRefName,
+					);
+					// Sweep is sorted by updated desc; first hit per key wins.
+					if (nodeKey && !openByKey.has(nodeKey)) openByKey.set(nodeKey, node);
+				}
+				for (const key of unmatchedKeys) {
+					const node = openByKey.get(key);
+					if (node) latestByKey.set(key, node);
+				}
+			} catch (error) {
+				// Treat the whole sweep as failed lookups so existing links are
+				// kept rather than cleared on a transient error.
+				for (const key of unmatchedKeys) failedKeys.add(key);
+				console.warn(
+					"[host-service:pull-request-runtime] Open-PR sweep failed",
+					{ projectId, owner: repo.owner, name: repo.name, error },
+				);
+			}
+		}
 
 		const now = Date.now();
 

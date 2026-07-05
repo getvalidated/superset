@@ -351,6 +351,107 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 		]);
 	});
 
+	// Case drift: local branch `roshvan/…` vs PR head `Roshvan/…`. The
+	// case-sensitive `head=` query returns nothing; the open-PR sweep must
+	// still link the workspace case-insensitively.
+	test("links a case-drifted branch to its PR via the open-PR sweep", async () => {
+		const state = makeState("roshvan/fix-thing");
+		state.workspace = {
+			...state.workspace,
+			headSha: "abc123",
+			upstreamOwner: "base-owner",
+			upstreamRepo: "base-repo",
+			upstreamBranch: "roshvan/fix-thing",
+		};
+		const manager = createManager(state, {
+			execGh: async (args) => {
+				// Case-sensitive server-side filter: the drifted casing misses.
+				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
+				const path = args.find(
+					(arg) => typeof arg === "string" && arg.startsWith("repos/"),
+				);
+				if (
+					path === "repos/base-owner/base-repo/pulls" &&
+					args.includes("state=open")
+				) {
+					return [
+						{
+							number: 77,
+							title: "Fix thing",
+							html_url: "https://github.com/base-owner/base-repo/pull/77",
+							state: "open",
+							draft: false,
+							merged_at: null,
+							updated_at: "2026-05-08T12:00:00Z",
+							head: {
+								ref: "Roshvan/fix-thing",
+								sha: "abc123",
+								repo: {
+									name: "base-repo",
+									owner: { login: "base-owner" },
+								},
+							},
+							base: {
+								repo: {
+									full_name: "base-owner/base-repo",
+								},
+							},
+						},
+					];
+				}
+				throw new Error("detail refresh unavailable");
+			},
+			github: async () => {
+				throw new Error("octokit unavailable");
+			},
+		});
+
+		const originalWarn = console.warn;
+		console.warn = () => {};
+		try {
+			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
+		} finally {
+			console.warn = originalWarn;
+		}
+
+		expect(state.pullRequest?.prNumber).toBe(77);
+		expect(state.pullRequest?.headBranch).toBe("Roshvan/fix-thing");
+		expect(state.workspace.pullRequestId).toBe(state.pullRequest?.id ?? "");
+	});
+
+	// A transient sweep failure must not clear an existing link for a
+	// branch the per-head query can't see.
+	test("keeps an existing link when the open-PR sweep fails", async () => {
+		const state = makeState("roshvan/fix-thing");
+		state.workspace = {
+			...state.workspace,
+			headSha: "abc123",
+			upstreamOwner: "base-owner",
+			upstreamRepo: "base-repo",
+			upstreamBranch: "roshvan/fix-thing",
+			pullRequestId: "pr-existing",
+		};
+		const manager = createManager(state, {
+			execGh: async (args) => {
+				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
+				throw new Error("sweep unavailable");
+			},
+			github: async () => {
+				throw new Error("octokit unavailable");
+			},
+		});
+
+		const originalWarn = console.warn;
+		console.warn = () => {};
+		try {
+			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
+		} finally {
+			console.warn = originalWarn;
+		}
+
+		expect(state.workspace.pullRequestId).toBe("pr-existing");
+	});
+
 	test("preserves existing pullRequestId when head lookup fails", async () => {
 		const state = makeState("fix/sidebar");
 		state.workspace = {

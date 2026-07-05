@@ -313,7 +313,14 @@ async function planBranchSource(
 		resolved &&
 		(resolved.kind === "local" || resolved.kind === "remote-tracking")
 	) {
-		return { branch, startPoint: resolved, usedExistingBranch: true };
+		// `shortName`, not the input: resolveRef may have adopted an existing
+		// branch's canonical casing, and `-b <input-casing>` would mint a
+		// case-twin sharing the same loose-ref file on case-insensitive disks.
+		return {
+			branch: resolved.shortName,
+			startPoint: resolved,
+			usedExistingBranch: true,
+		};
 	}
 
 	if (resolved && resolved.kind === "tag") {
@@ -858,6 +865,9 @@ export const workspacesRouter = router({
 						listBranchNames(ctx, localProject.repoPath),
 					]);
 					plan = planResult;
+					// Adopt the plan's branch name — it may carry an existing
+					// branch's canonical casing rather than the typed input.
+					resolvedBranch = plan.branch;
 					autoNameFellBack = wantAi && aiNames === null;
 					aiTitle = aiNames?.title ?? null;
 					// Namespace newly-created branches under the configured
