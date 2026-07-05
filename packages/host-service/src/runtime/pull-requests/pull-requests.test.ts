@@ -7,182 +7,195 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { HostDb } from "../../db";
 import * as schema from "../../db/schema";
 import { pullRequests, workspaces } from "../../db/schema";
-import {
-	PullRequestRuntimeManager,
-	type PullRequestRuntimeManagerOptions,
-} from "./pull-requests";
+import { PullRequestRuntimeManager } from "./pull-requests";
 
+// All tests run the real manager against a real, migrated, in-memory SQLite
+// DB. An earlier hand-faked DB ignored query predicates and could only hold a
+// single workspace, which made multi-workspace cross-linking bugs (e.g.
+// case-variant branch collision) inexpressible — so the harness is faithful
+// on purpose.
 const MIGRATIONS_FOLDER = resolve(import.meta.dir, "../../../drizzle");
-
 const PROJECT_ID = "project-1";
-const WORKSPACE_ID = "workspace-1";
+const REPO = { owner: "base-owner", name: "base-repo" };
 
-interface FakeProject {
-	id: string;
-	repoPath: string;
-	repoProvider: "github";
-	repoOwner: string;
-	repoName: string;
-	repoUrl: string;
-	remoteName: string;
+function createRealDb(): HostDb {
+	const sqlite = new Database(":memory:");
+	sqlite.exec("PRAGMA foreign_keys = ON;");
+	const db = drizzle(sqlite, { schema });
+	migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+	return db as unknown as HostDb;
 }
 
-interface FakeWorkspace {
-	id: string;
-	projectId: string;
-	worktreePath: string;
-	branch: string;
-	headSha: string | null;
-	upstreamOwner: string | null;
-	upstreamRepo: string | null;
-	upstreamBranch: string | null;
-	pullRequestId: string | null;
-}
-
-interface FakePullRequest {
-	id: string;
-	projectId: string;
-	repoProvider: "github";
-	repoOwner: string;
-	repoName: string;
-	prNumber: number;
-	url: string;
-	title: string;
-	state: string;
-	isDraft: boolean;
-	headBranch: string;
-	headSha: string;
-	reviewDecision: string | null;
-	checksStatus: string;
-	checksJson: string;
-	lastFetchedAt: number | null;
-	error: string | null;
-	createdAt: number;
-	updatedAt: number;
-}
-
-interface FakeState {
-	project: FakeProject;
-	workspace: FakeWorkspace;
-	pullRequest: FakePullRequest | undefined;
-}
-
-function makeState(branch: string): FakeState {
-	return {
-		project: {
+function seedProject(db: HostDb) {
+	db.insert(schema.projects)
+		.values({
 			id: PROJECT_ID,
 			repoPath: "/repo",
+			createdAt: Date.now(),
 			repoProvider: "github",
-			repoOwner: "base-owner",
-			repoName: "base-repo",
-			repoUrl: "https://github.com/base-owner/base-repo.git",
+			repoOwner: REPO.owner,
+			repoName: REPO.name,
+			repoUrl: `https://github.com/${REPO.owner}/${REPO.name}.git`,
 			remoteName: "origin",
-		},
-		workspace: {
-			id: WORKSPACE_ID,
-			projectId: PROJECT_ID,
-			worktreePath: `/repo/.worktrees/${branch}`,
-			branch,
-			headSha: null,
-			upstreamOwner: null,
-			upstreamRepo: null,
-			upstreamBranch: null,
-			pullRequestId: null,
-		},
-		pullRequest: undefined,
-	};
+		})
+		.run();
 }
 
-function createFakeDb(state: FakeState) {
-	return {
-		query: {
-			projects: {
-				findFirst: () => ({ sync: () => state.project }),
-			},
-			pullRequests: {
-				findFirst: () => ({ sync: () => state.pullRequest }),
-			},
-		},
-		insert: (table: unknown) => ({
-			values: (values: FakePullRequest) => ({
-				run: () => {
-					if (table === pullRequests) {
-						state.pullRequest = values;
-					}
-				},
-			}),
-		}),
-		update: (table: unknown) => ({
-			set: (values: Partial<FakeWorkspace> | Partial<FakePullRequest>) => ({
-				where: () => ({
-					run: () => {
-						if (table === workspaces) {
-							state.workspace = {
-								...state.workspace,
-								...(values as Partial<FakeWorkspace>),
-							};
-						}
-						if (table === pullRequests && state.pullRequest) {
-							state.pullRequest = {
-								...state.pullRequest,
-								...(values as Partial<FakePullRequest>),
-							};
-						}
-					},
-				}),
-			}),
-		}),
-		select: (shape?: unknown) => ({
-			from: (table: unknown) => ({
-				where: () => ({
-					all: () => {
-						if (table !== workspaces) return [];
-						if (shape) return [{ projectId: state.workspace.projectId }];
-						return [state.workspace];
-					},
-				}),
-				all: () => {
-					if (table !== workspaces) return [];
-					if (shape) return [{ projectId: state.workspace.projectId }];
-					return [state.workspace];
-				},
-			}),
-		}),
-	};
+function seedWorkspace(
+	db: HostDb,
+	w: {
+		id: string;
+		branch: string;
+		headSha?: string | null;
+		upstreamOwner?: string | null;
+		upstreamRepo?: string | null;
+		upstreamBranch?: string | null;
+		pullRequestId?: string | null;
+	},
+) {
+	db.insert(schema.workspaces)
+		.values({
+			id: w.id,
+			projectId: PROJECT_ID,
+			worktreePath: `/repo/.worktrees/${w.id}`,
+			branch: w.branch,
+			createdAt: Date.now(),
+			headSha: w.headSha ?? null,
+			upstreamOwner: w.upstreamOwner ?? null,
+			upstreamRepo: w.upstreamRepo ?? null,
+			upstreamBranch: w.upstreamBranch ?? null,
+			pullRequestId: w.pullRequestId ?? null,
+		})
+		.run();
+}
+
+function seedPullRequest(
+	db: HostDb,
+	pr: {
+		id: string;
+		prNumber: number;
+		headBranch: string;
+		headSha: string;
+		title?: string;
+		state?: string;
+		reviewDecision?: string | null;
+		checksStatus?: string;
+		checksJson?: string;
+	},
+) {
+	db.insert(schema.pullRequests)
+		.values({
+			id: pr.id,
+			projectId: PROJECT_ID,
+			repoProvider: "github",
+			repoOwner: REPO.owner,
+			repoName: REPO.name,
+			prNumber: pr.prNumber,
+			url: `https://github.com/${REPO.owner}/${REPO.name}/pull/${pr.prNumber}`,
+			title: pr.title ?? `PR ${pr.prNumber}`,
+			state: pr.state ?? "open",
+			headBranch: pr.headBranch,
+			headSha: pr.headSha,
+			reviewDecision: pr.reviewDecision ?? null,
+			checksStatus: pr.checksStatus ?? "none",
+			checksJson: pr.checksJson ?? "[]",
+			createdAt: 1,
+			updatedAt: 1,
+		})
+		.run();
+}
+
+function getWorkspace(db: HostDb, id: string) {
+	return db.select().from(workspaces).where(eq(workspaces.id, id)).get();
+}
+
+function getPrById(db: HostDb, id: string) {
+	return db.select().from(pullRequests).where(eq(pullRequests.id, id)).get();
+}
+
+function getPrByNumber(db: HostDb, prNumber: number) {
+	return db
+		.select()
+		.from(pullRequests)
+		.where(eq(pullRequests.prNumber, prNumber))
+		.get();
 }
 
 function createManager(
-	state: FakeState,
-	overrides: Partial<
-		Pick<PullRequestRuntimeManagerOptions, "execGh" | "github">
-	> = {},
+	db: HostDb,
+	overrides: {
+		execGh?: (args: string[]) => Promise<unknown>;
+		github?: () => Promise<never>;
+	} = {},
 ) {
 	return new PullRequestRuntimeManager({
-		db: createFakeDb(state) as never,
+		db,
 		execGh:
-			overrides.execGh ??
-			(async () => {
+			(overrides.execGh as never) ??
+			((async () => {
 				throw new Error("gh should not be used for direct PR linking");
-			}),
-		git: async () => {
+			}) as never),
+		git: (async () => {
 			throw new Error("git should not be used when project metadata is set");
-		},
+		}) as never,
 		github:
-			overrides.github ??
-			(async () => {
-				throw new Error("github should not be used for direct PR linking");
-			}),
+			(overrides.github as never) ??
+			((async () => {
+				throw new Error("octokit should not be used");
+			}) as never),
 		gitWatcher: { onChanged: () => () => {} } as never,
 	});
 }
 
+// Builds a GitHub REST PR node (the shape normalizePullRequest expects).
+function makePrNode(pr: {
+	number: number;
+	headRef: string;
+	headSha: string;
+	headOwner?: string;
+	headRepo?: string;
+	title?: string;
+}) {
+	return {
+		number: pr.number,
+		title: pr.title ?? `PR ${pr.number}`,
+		html_url: `https://github.com/${REPO.owner}/${REPO.name}/pull/${pr.number}`,
+		state: "open",
+		draft: false,
+		merged_at: null,
+		updated_at: "2026-05-08T12:00:00Z",
+		head: {
+			ref: pr.headRef,
+			sha: pr.headSha,
+			repo: {
+				name: pr.headRepo ?? REPO.name,
+				owner: { login: pr.headOwner ?? REPO.owner },
+			},
+		},
+		base: { repo: { full_name: `${REPO.owner}/${REPO.name}` } },
+	};
+}
+
+// Silences the expected warnings the manager logs on handled failures.
+async function withSilencedWarnings<T>(fn: () => Promise<T>): Promise<T> {
+	const original = console.warn;
+	console.warn = () => {};
+	try {
+		return await fn();
+	} finally {
+		console.warn = original;
+	}
+}
+
 describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 	test("links a fork PR workspace to the selected PR and records fork upstream", async () => {
-		const state = makeState("fork-owner/fix-typo");
-		const manager = createManager(state);
+		const db = createRealDb();
+		seedProject(db);
+		seedWorkspace(db, { id: "ws", branch: "fork-owner/fix-typo" });
+		const manager = createManager(db);
 
 		const prId = await manager.linkWorkspaceToCheckoutPullRequest({
-			workspaceId: WORKSPACE_ID,
+			workspaceId: "ws",
 			projectId: PROJECT_ID,
 			pullRequest: {
 				number: 42,
@@ -198,22 +211,27 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 			},
 		});
 
-		expect(state.workspace.pullRequestId).toBe(prId);
-		expect(state.workspace.upstreamOwner).toBe("fork-owner");
-		expect(state.workspace.upstreamRepo).toBe("fork-repo");
-		expect(state.workspace.upstreamBranch).toBe("fix-typo");
-		expect(state.pullRequest?.prNumber).toBe(42);
-		expect(state.pullRequest?.repoOwner).toBe("base-owner");
-		expect(state.pullRequest?.repoName).toBe("base-repo");
-		expect(state.pullRequest?.headBranch).toBe("fix-typo");
+		const ws = getWorkspace(db, "ws");
+		expect(ws?.pullRequestId).toBe(prId);
+		expect(ws?.upstreamOwner).toBe("fork-owner");
+		expect(ws?.upstreamRepo).toBe("fork-repo");
+		expect(ws?.upstreamBranch).toBe("fix-typo");
+
+		const pr = getPrById(db, prId ?? "");
+		expect(pr?.prNumber).toBe(42);
+		expect(pr?.repoOwner).toBe("base-owner");
+		expect(pr?.repoName).toBe("base-repo");
+		expect(pr?.headBranch).toBe("fix-typo");
 	});
 
 	test("keeps a deleted-fork PR link when no upstream can be recorded", async () => {
-		const state = makeState("pr/42");
-		const manager = createManager(state);
+		const db = createRealDb();
+		seedProject(db);
+		seedWorkspace(db, { id: "ws", branch: "pr/42" });
+		const manager = createManager(db);
 
 		const prId = await manager.linkWorkspaceToCheckoutPullRequest({
-			workspaceId: WORKSPACE_ID,
+			workspaceId: "ws",
 			projectId: PROJECT_ID,
 			pullRequest: {
 				number: 42,
@@ -228,22 +246,25 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 			},
 		});
 
-		expect(state.workspace.pullRequestId).toBe(prId);
-		expect(state.workspace.upstreamOwner).toBeNull();
-		expect(state.workspace.upstreamRepo).toBeNull();
-		expect(state.workspace.upstreamBranch).toBeNull();
+		const linked = getWorkspace(db, "ws");
+		expect(linked?.pullRequestId).toBe(prId);
+		expect(linked?.upstreamOwner).toBeNull();
+		expect(linked?.upstreamRepo).toBeNull();
+		expect(linked?.upstreamBranch).toBeNull();
 
-		await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
+		await manager.refreshPullRequestsByWorkspaces(["ws"]);
 
-		expect(state.workspace.pullRequestId).toBe(prId);
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBe(prId);
 	});
 
 	test("clears a no-upstream PR link when workspace HEAD no longer matches the PR", async () => {
-		const state = makeState("pr/42");
-		const manager = createManager(state);
+		const db = createRealDb();
+		seedProject(db);
+		seedWorkspace(db, { id: "ws", branch: "pr/42" });
+		const manager = createManager(db);
 
 		await manager.linkWorkspaceToCheckoutPullRequest({
-			workspaceId: WORKSPACE_ID,
+			workspaceId: "ws",
 			projectId: PROJECT_ID,
 			pullRequest: {
 				number: 42,
@@ -257,36 +278,27 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 				isCrossRepository: true,
 			},
 		});
-		state.workspace.headSha = "def456";
+		db.update(workspaces)
+			.set({ headSha: "def456" })
+			.where(eq(workspaces.id, "ws"))
+			.run();
 
-		await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
+		await manager.refreshPullRequestsByWorkspaces(["ws"]);
 
-		expect(state.workspace.pullRequestId).toBeNull();
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBeNull();
 	});
+});
 
+describe("PullRequestRuntimeManager refresh", () => {
 	test("preserves last-known review and checks when detail refresh fails", async () => {
-		const state = makeState("fix/sidebar");
-		state.workspace = {
-			...state.workspace,
-			headSha: "abc123",
-			upstreamOwner: "fork-owner",
-			upstreamRepo: "fork-repo",
-			upstreamBranch: "fix/sidebar",
-			pullRequestId: "pr-existing",
-		};
-		state.pullRequest = {
+		const db = createRealDb();
+		seedProject(db);
+		seedPullRequest(db, {
 			id: "pr-existing",
-			projectId: PROJECT_ID,
-			repoProvider: "github",
-			repoOwner: "base-owner",
-			repoName: "base-repo",
 			prNumber: 42,
-			url: "https://github.com/base-owner/base-repo/pull/42",
-			title: "Fix sidebar",
-			state: "open",
-			isDraft: false,
 			headBranch: "fix/sidebar",
 			headSha: "old-sha",
+			title: "Fix sidebar",
 			reviewDecision: "approved",
 			checksStatus: "success",
 			checksJson: JSON.stringify([
@@ -296,41 +308,31 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 					url: "https://github.com/base-owner/base-repo/actions/1",
 				},
 			]),
-			lastFetchedAt: 1,
-			error: null,
-			createdAt: 1,
-			updatedAt: 1,
-		};
-		const manager = createManager(state, {
+		});
+		seedWorkspace(db, {
+			id: "ws",
+			branch: "fix/sidebar",
+			headSha: "abc123",
+			upstreamOwner: "fork-owner",
+			upstreamRepo: "fork-repo",
+			upstreamBranch: "fix/sidebar",
+			pullRequestId: "pr-existing",
+		});
+		const manager = createManager(db, {
 			execGh: async (args) => {
 				const path = args.find((arg) => arg.startsWith("repos/"));
 				if (path === "repos/base-owner/base-repo/pulls") {
 					return [
-						{
+						makePrNode({
 							number: 42,
+							headRef: "fix/sidebar",
+							headSha: "abc123",
+							headOwner: "fork-owner",
+							headRepo: "fork-repo",
 							title: "Fix sidebar updated",
-							html_url: "https://github.com/base-owner/base-repo/pull/42",
-							state: "open",
-							draft: false,
-							merged_at: null,
-							updated_at: "2026-05-08T12:00:00Z",
-							head: {
-								ref: "fix/sidebar",
-								sha: "abc123",
-								repo: {
-									name: "fork-repo",
-									owner: { login: "fork-owner" },
-								},
-							},
-							base: {
-								repo: {
-									full_name: "base-owner/base-repo",
-								},
-							},
-						},
+						}),
 					];
 				}
-
 				throw new Error("detail refresh unavailable");
 			},
 			github: async () => {
@@ -338,20 +340,17 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 			},
 		});
 
-		const originalWarn = console.warn;
-		console.warn = () => {};
-		try {
-			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
-		} finally {
-			console.warn = originalWarn;
-		}
+		await withSilencedWarnings(() =>
+			manager.refreshPullRequestsByWorkspaces(["ws"]),
+		);
 
-		expect(state.workspace.pullRequestId).toBe("pr-existing");
-		expect(state.pullRequest?.title).toBe("Fix sidebar updated");
-		expect(state.pullRequest?.headSha).toBe("abc123");
-		expect(state.pullRequest?.reviewDecision).toBe("approved");
-		expect(state.pullRequest?.checksStatus).toBe("success");
-		expect(JSON.parse(state.pullRequest?.checksJson ?? "[]")).toEqual([
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBe("pr-existing");
+		const pr = getPrById(db, "pr-existing");
+		expect(pr?.title).toBe("Fix sidebar updated");
+		expect(pr?.headSha).toBe("abc123");
+		expect(pr?.reviewDecision).toBe("approved");
+		expect(pr?.checksStatus).toBe("success");
+		expect(JSON.parse(pr?.checksJson ?? "[]")).toEqual([
 			{
 				name: "Typecheck",
 				status: "success",
@@ -360,118 +359,25 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 		]);
 	});
 
-	// Case drift: local branch `roshvan/…` vs PR head `Roshvan/…`. The
-	// case-sensitive `head=` query returns nothing; the open-PR sweep must
-	// still link the workspace case-insensitively.
-	test("links a case-drifted branch to its PR via the open-PR sweep", async () => {
-		const state = makeState("roshvan/fix-thing");
-		state.workspace = {
-			...state.workspace,
-			headSha: "abc123",
-			upstreamOwner: "base-owner",
-			upstreamRepo: "base-repo",
-			upstreamBranch: "roshvan/fix-thing",
-		};
-		const manager = createManager(state, {
-			execGh: async (args) => {
-				// Case-sensitive server-side filter: the drifted casing misses.
-				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
-				const path = args.find(
-					(arg) => typeof arg === "string" && arg.startsWith("repos/"),
-				);
-				if (
-					path === "repos/base-owner/base-repo/pulls" &&
-					args.includes("state=open")
-				) {
-					return [
-						{
-							number: 77,
-							title: "Fix thing",
-							html_url: "https://github.com/base-owner/base-repo/pull/77",
-							state: "open",
-							draft: false,
-							merged_at: null,
-							updated_at: "2026-05-08T12:00:00Z",
-							head: {
-								ref: "Roshvan/fix-thing",
-								sha: "abc123",
-								repo: {
-									name: "base-repo",
-									owner: { login: "base-owner" },
-								},
-							},
-							base: {
-								repo: {
-									full_name: "base-owner/base-repo",
-								},
-							},
-						},
-					];
-				}
-				throw new Error("detail refresh unavailable");
-			},
-			github: async () => {
-				throw new Error("octokit unavailable");
-			},
-		});
-
-		const originalWarn = console.warn;
-		console.warn = () => {};
-		try {
-			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
-		} finally {
-			console.warn = originalWarn;
-		}
-
-		expect(state.pullRequest?.prNumber).toBe(77);
-		expect(state.pullRequest?.headBranch).toBe("Roshvan/fix-thing");
-		expect(state.workspace.pullRequestId).toBe(state.pullRequest?.id ?? "");
-	});
-
-	// A transient sweep failure must not clear an existing link for a
-	// branch the per-head query can't see.
-	test("keeps an existing link when the open-PR sweep fails", async () => {
-		const state = makeState("roshvan/fix-thing");
-		state.workspace = {
-			...state.workspace,
-			headSha: "abc123",
-			upstreamOwner: "base-owner",
-			upstreamRepo: "base-repo",
-			upstreamBranch: "roshvan/fix-thing",
-			pullRequestId: "pr-existing",
-		};
-		const manager = createManager(state, {
-			execGh: async (args) => {
-				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
-				throw new Error("sweep unavailable");
-			},
-			github: async () => {
-				throw new Error("octokit unavailable");
-			},
-		});
-
-		const originalWarn = console.warn;
-		console.warn = () => {};
-		try {
-			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
-		} finally {
-			console.warn = originalWarn;
-		}
-
-		expect(state.workspace.pullRequestId).toBe("pr-existing");
-	});
-
 	test("preserves existing pullRequestId when head lookup fails", async () => {
-		const state = makeState("fix/sidebar");
-		state.workspace = {
-			...state.workspace,
+		const db = createRealDb();
+		seedProject(db);
+		seedPullRequest(db, {
+			id: "pr-existing",
+			prNumber: 42,
+			headBranch: "fix/sidebar",
+			headSha: "abc123",
+		});
+		seedWorkspace(db, {
+			id: "ws",
+			branch: "fix/sidebar",
 			headSha: "abc123",
 			upstreamOwner: "fork-owner",
 			upstreamRepo: "fork-repo",
 			upstreamBranch: "fix/sidebar",
 			pullRequestId: "pr-existing",
-		};
-		const manager = createManager(state, {
+		});
+		const manager = createManager(db, {
 			execGh: async () => {
 				throw new Error("gh unavailable");
 			},
@@ -480,53 +386,105 @@ describe("PullRequestRuntimeManager direct checkout PR linking", () => {
 			},
 		});
 
-		const originalWarn = console.warn;
-		console.warn = () => {};
-		try {
-			await manager.refreshPullRequestsByWorkspaces([WORKSPACE_ID]);
-		} finally {
-			console.warn = originalWarn;
-		}
+		await withSilencedWarnings(() =>
+			manager.refreshPullRequestsByWorkspaces(["ws"]),
+		);
 
-		expect(state.workspace.pullRequestId).toBe("pr-existing");
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBe("pr-existing");
+	});
+
+	// Case drift: local branch `roshvan/…` vs PR head `Roshvan/…`. The
+	// case-sensitive `head=` query returns nothing; the open-PR sweep must
+	// still link the workspace case-insensitively.
+	test("links a case-drifted branch to its PR via the open-PR sweep", async () => {
+		const db = createRealDb();
+		seedProject(db);
+		seedWorkspace(db, {
+			id: "ws",
+			branch: "roshvan/fix-thing",
+			headSha: "abc123",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "roshvan/fix-thing",
+		});
+		const manager = createManager(db, {
+			execGh: async (args) => {
+				// Case-sensitive server-side filter: the drifted casing misses.
+				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
+				if (args.includes("graphql")) {
+					return {
+						data: { repository: { pullRequest: { mergeQueueEntry: null } } },
+					};
+				}
+				const path = args.find(
+					(arg) => typeof arg === "string" && arg.startsWith("repos/"),
+				);
+				if (path?.endsWith("/reviews")) return [];
+				if (path?.endsWith("/check-runs")) return { check_runs: [] };
+				if (path?.endsWith("/statuses")) return [];
+				if (
+					path === "repos/base-owner/base-repo/pulls" &&
+					args.includes("state=open")
+				) {
+					return [
+						makePrNode({
+							number: 77,
+							headRef: "Roshvan/fix-thing",
+							headSha: "abc123",
+							title: "Fix thing",
+						}),
+					];
+				}
+				throw new Error("detail refresh unavailable");
+			},
+		});
+
+		await withSilencedWarnings(() =>
+			manager.refreshPullRequestsByWorkspaces(["ws"]),
+		);
+
+		const pr = getPrByNumber(db, 77);
+		expect(pr?.headBranch).toBe("Roshvan/fix-thing");
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBe(pr?.id);
+	});
+
+	// A transient sweep failure must not clear an existing link for a branch
+	// the per-head query can't see.
+	test("keeps an existing link when the open-PR sweep fails", async () => {
+		const db = createRealDb();
+		seedProject(db);
+		seedPullRequest(db, {
+			id: "pr-existing",
+			prNumber: 42,
+			headBranch: "Roshvan/fix-thing",
+			headSha: "abc123",
+		});
+		seedWorkspace(db, {
+			id: "ws",
+			branch: "roshvan/fix-thing",
+			headSha: "abc123",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "roshvan/fix-thing",
+			pullRequestId: "pr-existing",
+		});
+		const manager = createManager(db, {
+			execGh: async (args) => {
+				if (args.includes("head=base-owner:roshvan/fix-thing")) return [];
+				throw new Error("sweep unavailable");
+			},
+		});
+
+		await withSilencedWarnings(() =>
+			manager.refreshPullRequestsByWorkspaces(["ws"]),
+		);
+
+		expect(getWorkspace(db, "ws")?.pullRequestId).toBe("pr-existing");
 	});
 });
 
-// ── Multi-workspace regression suite (real in-memory DB) ──────────────────
-//
-// The single-workspace fake DB above cannot express two workspaces at once,
-// so a whole class of cross-linking bugs was untestable — including case-
-// variant branches on a case-sensitive host collapsing onto one PR identity.
-// These tests run the real manager against a real (migrated, in-memory)
-// SQLite DB so those scenarios are expressible and asserted.
-
-const REPO = { owner: "base-owner", name: "base-repo" };
-
-function makePrNode(overrides: {
-	number: number;
-	headRef: string;
-	headSha: string;
-	title?: string;
-}) {
-	return {
-		number: overrides.number,
-		title: overrides.title ?? `PR ${overrides.number}`,
-		html_url: `https://github.com/${REPO.owner}/${REPO.name}/pull/${overrides.number}`,
-		state: "open",
-		draft: false,
-		merged_at: null,
-		updated_at: "2026-05-08T12:00:00Z",
-		head: {
-			ref: overrides.headRef,
-			sha: overrides.headSha,
-			repo: { name: REPO.name, owner: { login: REPO.owner } },
-		},
-		base: { repo: { full_name: `${REPO.owner}/${REPO.name}` } },
-	};
-}
-
-// Routes gh REST/GraphQL calls to fixtures keyed by the exact head branch,
-// so a wrong-case cache hit or key collision surfaces as the wrong PR number.
+// Routes gh REST/GraphQL calls to fixtures keyed by the exact head branch, so
+// a wrong-case cache hit or key collision surfaces as the wrong PR number.
 function routeGh(prsByHeadRef: Record<string, ReturnType<typeof makePrNode>>) {
 	return async (args: string[]): Promise<unknown> => {
 		if (args.includes("graphql")) {
@@ -555,104 +513,53 @@ function routeGh(prsByHeadRef: Record<string, ReturnType<typeof makePrNode>>) {
 	};
 }
 
-function createRealDb(): HostDb {
-	const sqlite = new Database(":memory:");
-	sqlite.exec("PRAGMA foreign_keys = ON;");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-	return db as unknown as HostDb;
-}
-
-function seedProjectAndWorkspaces(
-	db: HostDb,
-	branches: { id: string; branch: string }[],
-) {
-	const now = Date.now();
-	db.insert(schema.projects)
-		.values({
-			id: PROJECT_ID,
-			repoPath: "/repo",
-			createdAt: now,
-			repoProvider: "github",
-			repoOwner: REPO.owner,
-			repoName: REPO.name,
-			repoUrl: `https://github.com/${REPO.owner}/${REPO.name}.git`,
-			remoteName: "origin",
-		})
-		.run();
-	for (const { id, branch } of branches) {
-		db.insert(schema.workspaces)
-			.values({
-				id,
-				projectId: PROJECT_ID,
-				worktreePath: `/repo/.worktrees/${id}`,
-				branch,
-				createdAt: now,
-				headSha: `sha-${branch}`,
-				upstreamOwner: REPO.owner,
-				upstreamRepo: REPO.name,
-				upstreamBranch: branch,
-			})
-			.run();
-	}
-}
-
-function createRealManager(
-	db: HostDb,
-	execGh: (args: string[]) => Promise<unknown>,
-) {
-	return new PullRequestRuntimeManager({
-		db,
-		execGh: execGh as never,
-		git: (async () => {
-			throw new Error("git should not be used when project metadata is set");
-		}) as never,
-		github: (async () => {
-			throw new Error("octokit should not be used");
-		}) as never,
-		gitWatcher: { onChanged: () => () => {} } as never,
-	});
-}
-
-function linkedPrNumber(db: HostDb, workspaceId: string): number | null {
-	const rows = db
-		.select({ prNumber: pullRequests.prNumber })
-		.from(workspaces)
-		.leftJoin(pullRequests, eq(workspaces.pullRequestId, pullRequests.id))
-		.where(eq(workspaces.id, workspaceId))
-		.all();
-	return rows[0]?.prNumber ?? null;
-}
-
-describe("case-variant branch isolation (real DB)", () => {
+describe("case-variant branch isolation", () => {
 	// P1: `feature` and `Feature` are distinct branches with distinct PRs on a
 	// case-sensitive host. A branch-lowercased identity key collapses them and
-	// links one workspace to the other's PR. bypassCache path isolates the
+	// links one workspace to the other's PR. The bypass path isolates the
 	// identity key (upstreamKey) from the per-head cache.
 	test("distinct case-variant branches link to their own PRs (bypass path)", async () => {
 		const db = createRealDb();
-		seedProjectAndWorkspaces(db, [
-			{ id: "ws-lower", branch: "feature" },
-			{ id: "ws-upper", branch: "Feature" },
-		]);
-		const execGh = routeGh({
-			feature: makePrNode({
-				number: 101,
-				headRef: "feature",
-				headSha: "sha-feature",
-			}),
-			Feature: makePrNode({
-				number: 102,
-				headRef: "Feature",
-				headSha: "sha-Feature",
+		seedProject(db);
+		seedWorkspace(db, {
+			id: "ws-lower",
+			branch: "feature",
+			headSha: "sha-feature",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "feature",
+		});
+		seedWorkspace(db, {
+			id: "ws-upper",
+			branch: "Feature",
+			headSha: "sha-Feature",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "Feature",
+		});
+		const manager = createManager(db, {
+			execGh: routeGh({
+				feature: makePrNode({
+					number: 101,
+					headRef: "feature",
+					headSha: "sha-feature",
+				}),
+				Feature: makePrNode({
+					number: 102,
+					headRef: "Feature",
+					headSha: "sha-Feature",
+				}),
 			}),
 		});
-		const manager = createRealManager(db, execGh);
 
 		await manager.refreshPullRequestsByWorkspaces(["ws-lower", "ws-upper"]);
 
-		expect(linkedPrNumber(db, "ws-lower")).toBe(101);
-		expect(linkedPrNumber(db, "ws-upper")).toBe(102);
+		expect(getWorkspace(db, "ws-lower")?.pullRequestId).toBe(
+			getPrByNumber(db, 101)?.id,
+		);
+		expect(getWorkspace(db, "ws-upper")?.pullRequestId).toBe(
+			getPrByNumber(db, 102)?.id,
+		);
 	});
 
 	// P2: the per-head cache is exercised by the non-bypass refresh path. A
@@ -660,32 +567,48 @@ describe("case-variant branch isolation (real DB)", () => {
 	// so the second lookup returns the first's PR.
 	test("per-head cache does not cross-serve case-variant branches (cache path)", async () => {
 		const db = createRealDb();
-		seedProjectAndWorkspaces(db, [
-			{ id: "ws-lower", branch: "feature" },
-			{ id: "ws-upper", branch: "Feature" },
-		]);
-		const execGh = routeGh({
-			feature: makePrNode({
-				number: 101,
-				headRef: "feature",
-				headSha: "sha-feature",
-			}),
-			Feature: makePrNode({
-				number: 102,
-				headRef: "Feature",
-				headSha: "sha-Feature",
+		seedProject(db);
+		seedWorkspace(db, {
+			id: "ws-lower",
+			branch: "feature",
+			headSha: "sha-feature",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "feature",
+		});
+		seedWorkspace(db, {
+			id: "ws-upper",
+			branch: "Feature",
+			headSha: "sha-Feature",
+			upstreamOwner: REPO.owner,
+			upstreamRepo: REPO.name,
+			upstreamBranch: "Feature",
+		});
+		const manager = createManager(db, {
+			execGh: routeGh({
+				feature: makePrNode({
+					number: 101,
+					headRef: "feature",
+					headSha: "sha-feature",
+				}),
+				Feature: makePrNode({
+					number: 102,
+					headRef: "Feature",
+					headSha: "sha-Feature",
+				}),
 			}),
 		});
-		const manager = createRealManager(db, execGh);
 
 		// refreshProject (private) uses the cache (bypassCache defaults false).
 		await (
-			manager as unknown as {
-				refreshProject: (id: string) => Promise<void>;
-			}
+			manager as unknown as { refreshProject: (id: string) => Promise<void> }
 		).refreshProject(PROJECT_ID);
 
-		expect(linkedPrNumber(db, "ws-lower")).toBe(101);
-		expect(linkedPrNumber(db, "ws-upper")).toBe(102);
+		expect(getWorkspace(db, "ws-lower")?.pullRequestId).toBe(
+			getPrByNumber(db, 101)?.id,
+		);
+		expect(getWorkspace(db, "ws-upper")?.pullRequestId).toBe(
+			getPrByNumber(db, 102)?.id,
+		);
 	});
 });
