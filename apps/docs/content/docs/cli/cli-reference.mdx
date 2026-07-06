@@ -631,11 +631,11 @@ superset workspaces open ws_… --print
 #### Opening a specific session
 
 `workspaces open` targets a workspace, not a session. A session started with
-[`agents run`](#superset-agents-run) syncs to the desktop app but has no pane in
+[`agents create`](#superset-agents-create) syncs to the desktop app but has no pane in
 the workspace view until you navigate to it — and there is no session list, so a
 freshly created session is effectively invisible until opened. `workspaces open`
 can't focus a session, so build the deep link yourself and append a query param
-chosen by the session `kind` returned by `agents run`:
+chosen by the session `kind` returned by `agents create`:
 
 | `kind` | Example agents | Query param |
 | --- | --- | --- |
@@ -644,7 +644,7 @@ chosen by the session `kind` returned by `agents run`:
 
 ```bash
 # Run the agent with --json, then pull kind + sessionId out of the payload:
-session=$(superset agents run --workspace ws_… --agent claude --prompt "…" --json)
+session=$(superset agents create --workspace ws_… --agent claude --prompt "…" --json)
 kind=$(echo "$session" | jq -r '.kind')           # "chat" or "terminal"
 sessionId=$(echo "$session" | jq -r '.sessionId')
 

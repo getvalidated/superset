@@ -11,7 +11,7 @@ This document records the CLI surface implemented in `packages/cli` as of
 - Command files: `packages/cli/src/commands/**/command.ts`
 - Command groups: `packages/cli/src/commands/**/meta.ts`
 - CLI framework: `packages/cli-framework/src`
-- Built version: `0.2.14`
+- Built version: `0.2.23`
 
 To regenerate a command inventory:
 
