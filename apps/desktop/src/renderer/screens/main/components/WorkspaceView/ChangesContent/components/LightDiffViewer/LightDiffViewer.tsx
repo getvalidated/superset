@@ -8,6 +8,7 @@ import {
 } from "renderer/screens/main/components/WorkspaceView/utils/code-theme";
 import { useResolvedTheme } from "renderer/stores/theme";
 import type { DiffViewMode, FileContents } from "shared/changes-types";
+import { isDiffTooLarge } from "shared/diff-size";
 
 interface LightDiffViewerProps {
 	contents: FileContents;
@@ -27,6 +28,13 @@ export function LightDiffViewer({
 	style,
 }: LightDiffViewerProps) {
 	const activeTheme = useResolvedTheme();
+
+	// `MultiFileDiff` is not virtualized: it parses and lays out every line
+	// synchronously on the main thread. For very large files (lockfiles,
+	// minified bundles, generated snapshots) that freezes the app (#5462), so
+	// short-circuit to a placeholder instead of rendering the diff.
+	const tooLarge = isDiffTooLarge(contents.original, contents.modified);
+
 	const { data: fontSettings } = electronTrpc.settings.getFontSettings.useQuery(
 		undefined,
 		{
@@ -46,6 +54,26 @@ export function LightDiffViewer({
 			? parsedEditorFontSize
 			: undefined,
 	});
+
+	if (tooLarge) {
+		return (
+			<div
+				className={cn(
+					"flex flex-col items-center justify-center gap-1 bg-background px-4 py-8 text-center text-sm text-muted-foreground",
+					className,
+				)}
+				style={style}
+			>
+				<span className="cursor-text select-text">
+					File too large to display
+				</span>
+				<span className="max-w-md text-xs">
+					This diff is too big to render without freezing the app. Use the file
+					header to open it outside the diff viewer.
+				</span>
+			</div>
+		);
+	}
 
 	return (
 		<MultiFileDiff
