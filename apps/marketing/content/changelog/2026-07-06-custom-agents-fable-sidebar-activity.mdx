@@ -1,0 +1,59 @@
+---
+title: Custom terminal agents, Fable 5 everywhere, and dock badges
+date: 2026-07-06
+image: /changelog/IMAGE_PLACEHOLDER.png
+---
+
+{/* TODO: Replace header image with actual screenshot of the custom-agent creation flow */}
+
+## Bring your own terminal agent <PRBadge url="https://github.com/superset-sh/superset/pull/5420" />
+
+You're no longer limited to our built-in presets. From **Settings → Agents → Add agent → Custom agent**, wire up any CLI-based coding agent with its own launch command and icon.
+
+- Pick a built-in icon or upload your own image
+- Custom agents show up in the sidebar and every agent picker, just like a built-in
+- **Polygraph** also joins the built-in roster <PRBadge url="https://github.com/superset-sh/superset/pull/5422" /> — the Nx team's cross-repo meta-harness that layers on top of Claude Code, Codex, or OpenCode
+
+## Claude Fable 5, fully wired up <PRBadge url="https://github.com/superset-sh/superset/pull/5418" />
+
+Fable 5 is now selectable everywhere it's supported — Claude Code, Copilot, Cursor Agent, and opencode <PRBadge url="https://github.com/superset-sh/superset/pull/5435" /> — alongside a new reasoning-effort picker for agents whose CLIs support it (low/medium/high/xhigh/max, depending on the harness).
+
+## Dock badge for workspaces that need you <PRBadge url="https://github.com/superset-sh/superset/pull/5351" />
+
+The desktop app now shows a badge count on the dock (macOS) or taskbar (Windows/Linux) for every workspace that's done and ready for review or waiting on a permission prompt. Workspaces where an agent is still working don't count — the badge is reserved for things that actually need your attention.
+
+## Loud automation failures <PRBadge url="https://github.com/superset-sh/superset/pull/4817" />
+
+Failed automation runs used to be a tiny red dot with no follow-up. Now a failed run shows a readable, copyable error inline ("Target machine was offline" instead of raw relay jargon) and fires a desktop notification so a failure doesn't get lost.
+
+## Improvements
+
+- **Compact sidebar activity strip** - overlapping agent avatars and a port-count pill that morph into full labeled pills on hover, replacing the old multi-row agent/port sections <PRBadge url="https://github.com/superset-sh/superset/pull/5439" />
+- **Pinned diff section headers** - the diff pane now shows a sticky Unstaged/Staged/Committed/Against-base indicator that updates as you scroll <PRBadge url="https://github.com/superset-sh/superset/pull/5409" />
+- **Live-work sections stand out** in the changes sidebar <PRBadge url="https://github.com/superset-sh/superset/pull/5416" />
+- **View files outside your workspace root** - opening a path an agent or terminal referenced (like `~/Downloads/foo.dmg`) no longer fails <PRBadge url="https://github.com/superset-sh/superset/pull/5427" />
+- **Configure where port badges open** - Settings → Links now has a Ports option for in-app browser, new tab, or your system browser <PRBadge url="https://github.com/superset-sh/superset/pull/5350" />
+- **"Last used" badge on sign-in** - both web and desktop now flag which sign-in method (GitHub, Google) you used last <PRBadge url="https://github.com/superset-sh/superset/pull/5432" />
+- **Model picker on workspace create** <PRBadge url="https://github.com/superset-sh/superset/pull/5248" />
+- **Quit Superset Completely** added to the macOS app menu <PRBadge url="https://github.com/superset-sh/superset/pull/5419" />
+- Sidebar running/PR state now persists across restarts, with a new **Clear Status** action <PRBadge url="https://github.com/superset-sh/superset/pull/5349" />
+
+---
+
+**Bug fixes**
+
+- Fixed workspace PR/diff status drifting out of sync with GitHub <PRBadge url="https://github.com/superset-sh/superset/pull/5455" />
+- Automations and Workspaces lists now use real tables — fixes overflow, sorting, and adds row context menus <PRBadge url="https://github.com/superset-sh/superset/pull/5454" />
+- Sanitized agent prompt control characters before launch to prevent terminal injection <PRBadge url="https://github.com/superset-sh/superset/pull/5421" />
+- Fixed a resize bug that could brick the terminal parser mid inline-image decode <PRBadge url="https://github.com/superset-sh/superset/pull/5352" />
+- Fixed batched "Discard All" occasionally racing on git's index lock <PRBadge url="https://github.com/superset-sh/superset/pull/5442" />
+- Restored the native right-click edit menu (cut/copy/paste) on text inputs <PRBadge url="https://github.com/superset-sh/superset/pull/5441" />
+- Fixed Shift+Enter inserting a newline in terminal chat TUIs instead of submitting <PRBadge url="https://github.com/superset-sh/superset/pull/5434" />
+- Fixed Cmd+Backspace sending a bare Ctrl-U in the terminal <PRBadge url="https://github.com/superset-sh/superset/pull/5388" />
+- Fixed sidebar and traffic-light icons resizing under page zoom <PRBadge url="https://github.com/superset-sh/superset/pull/5431" /> <PRBadge url="https://github.com/superset-sh/superset/pull/5390" />
+- Ports now recover promptly after a host-service restart <PRBadge url="https://github.com/superset-sh/superset/pull/5430" />
+- Fixed invoices reading from the wrong Stripe customer for some orgs <PRBadge url="https://github.com/superset-sh/superset/pull/5406" />
+- Fixed project create/clone failing when a parent directory was missing <PRBadge url="https://github.com/superset-sh/superset/pull/5397" />
+- Fixed device and workspace host state falling out of sync in Automations <PRBadge url="https://github.com/superset-sh/superset/pull/5394" />
+- Fixed reopening a tab being hijacked by a stale force-reload <PRBadge url="https://github.com/superset-sh/superset/pull/5121" />
+- Codex agent now handles binary and video file changes correctly <PRBadge url="https://github.com/superset-sh/superset/pull/5385" />
