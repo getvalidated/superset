@@ -277,7 +277,7 @@ export function V2WorkspaceRow({
 							</span>
 						</TableCell>
 
-						<TableCell className="hidden py-1.5 md:table-cell">
+						<TableCell className="hidden py-1.5 @lg:table-cell">
 							{treatAsOffline ? (
 								<Tooltip delayDuration={300}>
 									<TooltipTrigger asChild>{hostCell}</TooltipTrigger>
@@ -288,7 +288,7 @@ export function V2WorkspaceRow({
 							)}
 						</TableCell>
 
-						<TableCell className="hidden py-1.5 lg:table-cell">
+						<TableCell className="hidden py-1.5 @3xl:table-cell">
 							<span
 								className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
 								title={workspace.branch}
@@ -301,7 +301,7 @@ export function V2WorkspaceRow({
 						</TableCell>
 
 						<TableCell
-							className="hidden truncate py-1.5 text-xs tabular-nums text-muted-foreground xl:table-cell"
+							className="hidden truncate py-1.5 text-xs tabular-nums text-muted-foreground @5xl:table-cell"
 							title={`Created ${workspace.createdAt.toLocaleString()} by ${creatorLabel}`}
 						>
 							{timeLabel} · {creatorLabel}

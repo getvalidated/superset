@@ -195,7 +195,7 @@ export function V2WorkspacesList({ workspaces }: V2WorkspacesListProps) {
 					/>
 				</TableHead>
 				<TableHead
-					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-48 md:table-cell")}
+					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-48 @lg:table-cell")}
 				>
 					<SortableHeader
 						field="host"
@@ -206,7 +206,7 @@ export function V2WorkspacesList({ workspaces }: V2WorkspacesListProps) {
 					/>
 				</TableHead>
 				<TableHead
-					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-56 lg:table-cell")}
+					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-56 @3xl:table-cell")}
 				>
 					<SortableHeader
 						field="branch"
@@ -217,7 +217,7 @@ export function V2WorkspacesList({ workspaces }: V2WorkspacesListProps) {
 					/>
 				</TableHead>
 				<TableHead
-					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-44 xl:table-cell")}
+					className={cn(DATA_TABLE_HEAD_CELL, "hidden w-44 @5xl:table-cell")}
 				>
 					<SortableHeader
 						field="created"
@@ -234,7 +234,7 @@ export function V2WorkspacesList({ workspaces }: V2WorkspacesListProps) {
 
 	if (totalCount === 0) {
 		return (
-			<div className="flex min-h-0 flex-1 flex-col">
+			<div className="@container flex min-h-0 flex-1 flex-col">
 				<Table className="table-fixed">{columnHeader}</Table>
 				<Empty className="flex-1 border-0">
 					<EmptyHeader>
@@ -272,7 +272,7 @@ export function V2WorkspacesList({ workspaces }: V2WorkspacesListProps) {
 	}
 
 	return (
-		<div className="min-h-0 flex-1">
+		<div className="@container min-h-0 flex-1">
 			<Table
 				containerClassName="h-full overflow-y-auto"
 				className="table-fixed"
