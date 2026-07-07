@@ -1,8 +1,8 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
-import { and, eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { HiPlus } from "react-icons/hi2";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 
@@ -33,24 +33,26 @@ export function DashboardSidebarChats({
 	const navigate = useNavigate();
 	const matchRoute = useMatchRoute();
 
-	// Freeform chats have no workspace (both workspace links are null).
-	const { data: chats = [] } = useLiveQuery(
+	// Freeform chats have no workspace (both workspace links are null). Filter in
+	// JS: tanstack/db `eq(col, null)` uses SQL-style equality and never matches
+	// null values, so the where-clause approach silently returns nothing.
+	const { data: allChats = [] } = useLiveQuery(
 		(q) =>
 			q
 				.from({ chatSessions: collections.chatSessions })
-				.where(({ chatSessions }) =>
-					and(
-						eq(chatSessions.v2WorkspaceId, null),
-						eq(chatSessions.workspaceId, null),
-					),
-				)
 				.orderBy(({ chatSessions }) => chatSessions.lastActiveAt, "desc")
 				.select(({ chatSessions }) => ({
 					id: chatSessions.id,
 					title: chatSessions.title,
 					lastActiveAt: chatSessions.lastActiveAt,
+					v2WorkspaceId: chatSessions.v2WorkspaceId,
+					workspaceId: chatSessions.workspaceId,
 				})),
 		[collections.chatSessions],
+	);
+	const chats = useMemo(
+		() => allChats.filter((c) => !c.v2WorkspaceId && !c.workspaceId),
+		[allChats],
 	);
 
 	const startNewChat = () => {
