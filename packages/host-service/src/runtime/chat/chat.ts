@@ -705,7 +705,10 @@ When you need to ask the user ANY question — including simple yes/no, confirma
 		await restartRuntimeFromUserMessage(runtime, input);
 	}
 
-	async stop(input: { sessionId: string; workspaceId?: string }): Promise<void> {
+	async stop(input: {
+		sessionId: string;
+		workspaceId?: string;
+	}): Promise<void> {
 		const runtime = await this.getOrCreateRuntime(
 			input.sessionId,
 			input.workspaceId,

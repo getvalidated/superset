@@ -1376,11 +1376,8 @@ export function registerWorkspaceTerminalRoute({
 				if (record.status === "exited") {
 					return { error: `Terminal session "${terminalId}" has exited.` };
 				}
-				if (!record.originWorkspaceId) {
-					return {
-						error: `Terminal session "${terminalId}" is missing a workspace.`,
-					};
-				}
+				// A null originWorkspaceId means a freeform terminal (no workspace),
+				// which is valid — don't reject it.
 				if (requestedWorkspaceId) {
 					const mismatchError = getTerminalWorkspaceMismatchError({
 						terminalId,
@@ -1396,7 +1393,7 @@ export function registerWorkspaceTerminalRoute({
 				// host-service restart, we keep the live shell + ring buffer.
 				const adopted = await createTerminalSessionInternal({
 					terminalId,
-					workspaceId: record.originWorkspaceId,
+					workspaceId: record.originWorkspaceId ?? undefined,
 					themeType,
 					db,
 					eventBus,
@@ -1412,7 +1409,7 @@ export function registerWorkspaceTerminalRoute({
 				console.log(`[terminal] respawning lost session ${terminalId}`);
 				return createTerminalSessionInternal({
 					terminalId,
-					workspaceId: record.originWorkspaceId,
+					workspaceId: record.originWorkspaceId ?? undefined,
 					themeType,
 					db,
 					eventBus,

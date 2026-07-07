@@ -1,29 +1,21 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ChatPane } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/usePaneRegistry/components/ChatPane";
+import { createFileRoute } from "@tanstack/react-router";
+import { FreeformSessionProvider } from "../providers/FreeformSessionProvider";
+import { FreeformSessionContent } from "./components/FreeformSessionContent";
 
 export const Route = createFileRoute(
 	"/_authenticated/_dashboard/chat/$sessionId/",
 )({
-	component: FreeformChatPage,
+	component: FreeformSessionPage,
 });
 
-function FreeformChatPage() {
+function FreeformSessionPage() {
 	const { sessionId } = Route.useParams();
-	const navigate = useNavigate();
 
 	return (
-		<div className="flex h-full w-full flex-col overflow-hidden">
-			{/* No workspaceId — this is a freeform chat; the host runs it in ~. */}
-			<ChatPane
-				key={sessionId}
-				sessionId={sessionId}
-				onSessionIdChange={(nextSessionId) => {
-					navigate({
-						to: "/chat/$sessionId",
-						params: { sessionId: nextSessionId ?? crypto.randomUUID() },
-					});
-				}}
-			/>
+		<div className="flex min-h-0 min-w-0 flex-1">
+			<FreeformSessionProvider key={sessionId} sessionId={sessionId}>
+				<FreeformSessionContent initialChatSessionId={sessionId} />
+			</FreeformSessionProvider>
 		</div>
 	);
 }

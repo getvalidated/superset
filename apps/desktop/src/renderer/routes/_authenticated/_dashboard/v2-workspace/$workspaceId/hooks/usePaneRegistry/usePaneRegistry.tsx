@@ -111,8 +111,11 @@ export function usePaneRegistry({
 	launcher,
 	store,
 }: UsePaneRegistryOptions): PaneRegistry<PaneViewerData> {
-	const { workspace } = useWorkspace();
+	const { workspace, isFreeform } = useWorkspace();
 	const workspaceId = workspace.id;
+	// Freeform sessions have no workspace — terminal/chat host calls must omit
+	// the workspaceId so the host runs them in the home dir.
+	const hostWorkspaceId = isFreeform ? undefined : workspaceId;
 	const runAgent = workspaceTrpc.agents.run.useMutation();
 	const collections = useCollections();
 	const clearShortcut = useHotkeyDisplay("CLEAR_TERMINAL").text;
@@ -329,7 +332,10 @@ export function usePaneRegistry({
 					}
 					clearWorkspaceRunTerminal(terminalId);
 					terminalRuntimeRegistry.dispose(terminalId);
-					killTerminalSessionSilently({ terminalId, workspaceId });
+					killTerminalSessionSilently({
+						terminalId,
+						workspaceId: hostWorkspaceId,
+					});
 				},
 				renderTitle: (ctx: RendererContext<PaneViewerData>) => (
 					<div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -346,7 +352,7 @@ export function usePaneRegistry({
 				renderPane: (ctx: RendererContext<PaneViewerData>) => (
 					<TerminalPane
 						ctx={ctx}
-						workspaceId={workspaceId}
+						workspaceId={hostWorkspaceId}
 						onOpenFile={onOpenFile}
 						onRevealPath={onRevealPath}
 					/>
@@ -437,7 +443,7 @@ export function usePaneRegistry({
 							const { terminalId } = ctx.pane.data as TerminalPaneData;
 							killTerminalSession({
 								terminalId,
-								workspaceId,
+								workspaceId: hostWorkspaceId,
 							});
 						},
 					};
@@ -484,7 +490,7 @@ export function usePaneRegistry({
 					const data = ctx.pane.data as ChatPaneData;
 					return (
 						<ChatPane
-							workspaceId={workspaceId}
+							workspaceId={hostWorkspaceId}
 							sessionId={data.sessionId}
 							onSessionIdChange={(id) =>
 								ctx.actions.updateData({ ...data, sessionId: id })
@@ -547,6 +553,7 @@ export function usePaneRegistry({
 		}),
 		[
 			workspaceId,
+			hostWorkspaceId,
 			clearWorkspaceRunTerminal,
 			clearShortcut,
 			scrollToBottomShortcut,
