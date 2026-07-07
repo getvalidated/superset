@@ -3,7 +3,10 @@ import { Button } from "@superset/ui/button";
 import { useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MosaicBranch } from "react-mosaic-component";
-import type { MarkdownEditorAdapter } from "renderer/components/MarkdownRenderer";
+import type {
+	MarkdownEditorAdapter,
+	MarkdownRelativeLinkTarget,
+} from "renderer/components/MarkdownRenderer";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { FileSaveConflictDialog } from "renderer/screens/main/components/WorkspaceView/components/FileSaveConflictDialog";
 import { useWorkspaceFileEvents } from "renderer/screens/main/components/WorkspaceView/hooks/useWorkspaceFileEvents";
@@ -133,6 +136,7 @@ export function FileViewerPane({
 	const isFocused = useTabsStore((s) => s.focusedPaneIds[tabId] === paneId);
 	const equalizePaneSplits = useTabsStore((s) => s.equalizePaneSplits);
 	const pinPane = useTabsStore((s) => s.pinPane);
+	const addFileViewerPane = useTabsStore((s) => s.addFileViewerPane);
 	const {
 		viewMode: diffViewMode,
 		setViewMode: setDiffViewMode,
@@ -322,6 +326,29 @@ export function FileViewerPane({
 	const absoluteFilePath = useMemo(
 		() => toAbsoluteWorkspacePath(worktreePath, filePath),
 		[worktreePath, filePath],
+	);
+
+	const handleOpenRelativeLink = useCallback(
+		(target: MarkdownRelativeLinkTarget) => {
+			if (!target.path) {
+				return;
+			}
+
+			// `target.path` is workspace-relative (resolved against the current
+			// file); the tab store expects a canonical absolute path.
+			const absoluteTargetPath = toAbsoluteWorkspacePath(
+				worktreePath,
+				target.path,
+			);
+
+			addFileViewerPane(normalizedWorkspaceId, {
+				filePath: absoluteTargetPath,
+				viewMode: target.path.toLowerCase().endsWith(".md")
+					? "rendered"
+					: undefined,
+			});
+		},
+		[addFileViewerPane, normalizedWorkspaceId, worktreePath],
 	);
 	const baselineContent = getEditorDocumentBaselineContent(documentKey);
 
@@ -714,6 +741,7 @@ export function FileViewerPane({
 							diffSearch={diffSearch}
 							markdownContainerRef={markdownContainerRef}
 							markdownSearch={markdownSearch}
+							onOpenRelativeLink={handleOpenRelativeLink}
 						/>
 					</div>
 				</div>

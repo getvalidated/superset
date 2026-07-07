@@ -7,6 +7,7 @@ import {
 import { LuLoader } from "react-icons/lu";
 import {
 	type MarkdownEditorAdapter,
+	type MarkdownRelativeLinkTarget,
 	TipTapMarkdownRenderer,
 } from "renderer/components/MarkdownRenderer";
 import { LightDiffViewer } from "renderer/screens/main/components/WorkspaceView/ChangesContent/components/LightDiffViewer";
@@ -133,6 +134,7 @@ interface FileViewerContentProps {
 	diffSearch: TextSearchState;
 	markdownContainerRef: RefObject<HTMLDivElement | null>;
 	markdownSearch: TextSearchState;
+	onOpenRelativeLink?: (target: MarkdownRelativeLinkTarget) => void;
 }
 
 export function FileViewerContent({
@@ -168,6 +170,7 @@ export function FileViewerContent({
 	diffSearch,
 	markdownContainerRef,
 	markdownSearch,
+	onOpenRelativeLink,
 }: FileViewerContentProps) {
 	const isImage = isImageFile(filePath);
 
@@ -461,6 +464,8 @@ export function FileViewerContent({
 						editorRef={markdownEditorRef}
 						onChange={onContentChange}
 						onSave={onSaveFile}
+						currentFilePath={filePath}
+						onOpenRelativeLink={onOpenRelativeLink}
 					/>
 				</div>
 			</div>
