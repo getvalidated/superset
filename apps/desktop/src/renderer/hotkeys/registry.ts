@@ -193,9 +193,9 @@ export const HOTKEYS_REGISTRY = {
 			windows: L("ctrl+alt+n"),
 			linux: L("ctrl+alt+n"),
 		},
-		label: "New Chat",
+		label: "New Session",
 		category: "Navigation",
-		description: "Start a new freeform chat session",
+		description: "Start a new freeform session",
 	},
 	NEXT_FREEFORM_CHAT: {
 		key: {
@@ -203,9 +203,9 @@ export const HOTKEYS_REGISTRY = {
 			windows: "ctrl+alt+pagedown",
 			linux: "ctrl+alt+pagedown",
 		},
-		label: "Next Chat",
+		label: "Next Session",
 		category: "Navigation",
-		description: "Navigate to the next chat in the sidebar",
+		description: "Navigate to the next session in the sidebar",
 	},
 	PREV_FREEFORM_CHAT: {
 		key: {
@@ -213,9 +213,9 @@ export const HOTKEYS_REGISTRY = {
 			windows: "ctrl+alt+pageup",
 			linux: "ctrl+alt+pageup",
 		},
-		label: "Previous Chat",
+		label: "Previous Session",
 		category: "Navigation",
-		description: "Navigate to the previous chat in the sidebar",
+		description: "Navigate to the previous session in the sidebar",
 	},
 	DELETE_FREEFORM_CHAT: {
 		key: {
@@ -223,9 +223,9 @@ export const HOTKEYS_REGISTRY = {
 			windows: "ctrl+alt+backspace",
 			linux: "ctrl+alt+backspace",
 		},
-		label: "Delete Chat",
+		label: "Delete Session",
 		category: "Navigation",
-		description: "Delete the current freeform chat session",
+		description: "Delete the current freeform session",
 	},
 	NEW_WORKSPACE: {
 		key: {

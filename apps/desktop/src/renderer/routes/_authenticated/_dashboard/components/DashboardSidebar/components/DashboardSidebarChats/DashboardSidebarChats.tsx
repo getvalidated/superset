@@ -91,9 +91,16 @@ export function DashboardSidebarChats({
 		[navigate],
 	);
 
-	const startNewChat = useCallback(
-		() => goToChat(crypto.randomUUID()),
-		[goToChat],
+	// A new session opens with a terminal first (start=terminal); opening an
+	// existing session from a row opens its chat.
+	const startNewSession = useCallback(
+		() =>
+			navigate({
+				to: "/chat/$sessionId",
+				params: { sessionId: crypto.randomUUID() },
+				search: { start: "terminal" },
+			}),
+		[navigate],
 	);
 
 	const deleteChat = useCallback(
@@ -130,7 +137,7 @@ export function DashboardSidebarChats({
 		[chats, currentChatId, goToChat],
 	);
 
-	useHotkey("NEW_FREEFORM_CHAT", startNewChat);
+	useHotkey("NEW_FREEFORM_CHAT", startNewSession);
 	useHotkey("NEXT_FREEFORM_CHAT", () => cycleChat(1));
 	useHotkey("PREV_FREEFORM_CHAT", () => cycleChat(-1));
 	useHotkey("DELETE_FREEFORM_CHAT", () => {
@@ -143,20 +150,20 @@ export function DashboardSidebarChats({
 		<section className="border-b border-border">
 			<div className="group/chats flex min-h-10 items-center pl-3 pr-2 py-1.5">
 				<span className="flex-1 text-sm font-medium text-muted-foreground">
-					Chats
+					Sessions
 				</span>
 				<Tooltip delayDuration={300}>
 					<TooltipTrigger asChild>
 						<button
 							type="button"
-							aria-label="New chat"
-							onClick={startNewChat}
+							aria-label="New session"
+							onClick={startNewSession}
 							className="flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/chats:opacity-100 focus-visible:opacity-100"
 						>
 							<HiPlus className="size-4" />
 						</button>
 					</TooltipTrigger>
-					<TooltipContent side="right">New chat</TooltipContent>
+					<TooltipContent side="right">New session</TooltipContent>
 				</Tooltip>
 			</div>
 
@@ -184,7 +191,7 @@ export function DashboardSidebarChats({
 										className="flex min-h-9 min-w-0 flex-1 items-center py-1.5 text-left"
 									>
 										<span className="min-w-0 flex-1 truncate">
-											{chat.title?.trim() || "New chat"}
+											{chat.title?.trim() || "New session"}
 										</span>
 									</button>
 									<span className="ml-2 shrink-0 text-[10px] tabular-nums text-muted-foreground group-hover/row:hidden">
@@ -192,7 +199,7 @@ export function DashboardSidebarChats({
 									</span>
 									<button
 										type="button"
-										aria-label="Delete chat"
+										aria-label="Delete session"
 										onClick={() => deleteChat(chat.id)}
 										className="ml-1 hidden size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive group-hover/row:flex"
 									>
@@ -206,7 +213,7 @@ export function DashboardSidebarChats({
 									onSelect={() => deleteChat(chat.id)}
 								>
 									<Trash2 className="size-4" />
-									Delete chat
+									Delete session
 								</ContextMenuItem>
 							</ContextMenuContent>
 						</ContextMenu>

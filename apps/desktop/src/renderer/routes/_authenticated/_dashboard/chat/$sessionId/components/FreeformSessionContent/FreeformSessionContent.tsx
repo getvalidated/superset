@@ -18,23 +18,35 @@ const noop = () => {};
  */
 export function FreeformSessionContent({
 	initialChatSessionId,
+	initialTab,
 }: {
 	initialChatSessionId: string;
+	initialTab: "chat" | "terminal";
 }) {
 	const { store } = useV2WorkspacePaneLayout();
 	const launcher = useV2TerminalLauncher();
 
-	// Freeform pane layout isn't persisted, so seed the session with a chat tab
-	// bound to the route's chat session on first mount (unless tabs already exist).
+	// Freeform pane layout isn't persisted, so seed the first tab on mount (unless
+	// tabs already exist): a terminal for a brand-new session, or a chat bound to
+	// the route's session when opening an existing chat.
 	const seededRef = useRef(false);
 	useEffect(() => {
 		if (seededRef.current) return;
 		seededRef.current = true;
 		if (store.getState().tabs.length > 0) return;
+		if (initialTab === "terminal") {
+			void launcher.create().then((terminalId) => {
+				if (store.getState().tabs.length > 0) return;
+				store
+					.getState()
+					.addTab({ panes: [{ kind: "terminal", data: { terminalId } }] });
+			});
+			return;
+		}
 		store.getState().addTab({
 			panes: [{ kind: "chat", data: { sessionId: initialChatSessionId } }],
 		});
-	}, [store, initialChatSessionId]);
+	}, [store, launcher, initialChatSessionId, initialTab]);
 	const paneRegistry = usePaneRegistry({
 		onOpenFile: noop,
 		onRevealPath: noop,
