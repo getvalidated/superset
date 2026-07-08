@@ -1,37 +1,53 @@
 import { LegendList } from "@legendapp/list/react-native";
-import type {
-	SelectGithubPullRequest,
-	SelectV2Workspace,
-} from "@superset/db/schema";
+import type { SelectGithubPullRequest } from "@superset/db/schema";
 import { useLiveQuery } from "@tanstack/react-db";
-import { compareDesc } from "date-fns";
-import { Stack, useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { compareDesc, isAfter } from "date-fns";
+import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import {
+	Pressable,
+	RefreshControl,
+	useWindowDimensions,
+	View,
+} from "react-native";
 import { Text } from "@/components/ui/text";
+import {
+	type HostWorkspaceItem,
+	useHostWorkspaces,
+} from "@/hooks/useHostWorkspaces";
 import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizations";
 import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
 import { OrganizationHeaderButton } from "./components/OrganizationHeaderButton";
 import { OrganizationSwitcherSheet } from "./components/OrganizationSwitcherSheet";
 import { ProjectAvatar } from "./components/ProjectAvatar";
-import { WorkspaceActionsSheet } from "./components/WorkspaceActionsSheet";
 import {
+	type FilterableHost,
 	type FilterableProject,
 	WorkspaceFilterSheet,
 	type WorkspaceSort,
 } from "./components/WorkspaceFilterSheet";
-import { WorkspaceRow } from "./components/WorkspaceRow";
+import { prStateFor, WorkspaceRow } from "./components/WorkspaceRow";
+import { useVisibleDiffStats } from "./hooks/useVisibleDiffStats";
+
+const VIEWABILITY_CONFIG = {
+	itemVisiblePercentThreshold: 50,
+	minimumViewTime: 250,
+};
+
+const MAX_VISIBLE_DIFF_STATS = 20;
 
 export function WorkspacesScreen() {
-	const router = useRouter();
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 	const [projectFilter, setProjectFilter] = useState<string | null>(null);
+	const [hostFilter, setHostFilter] = useState<string | null>(null);
 	const [sort, setSort] = useState<WorkspaceSort>("updatedAt");
-	const [actionsWorkspace, setActionsWorkspace] =
-		useState<SelectV2Workspace | null>(null);
+	const [visibleIds, setVisibleIds] = useState<string[]>([]);
+	const [refreshing, setRefreshing] = useState(false);
 	const { width } = useWindowDimensions();
 	const collections = useCollections();
+	const queryClient = useQueryClient();
 	const {
 		organizations,
 		activeOrganization,
@@ -39,10 +55,8 @@ export function WorkspacesScreen() {
 		switchOrganization,
 	} = useOrganizations();
 
-	const { data: workspaces, isReady: workspacesReady } = useLiveQuery(
-		(q) => q.from({ v2Workspaces: collections.v2Workspaces }),
-		[collections],
-	);
+	const { workspaces, isReady, cache } = useHostWorkspaces();
+
 	const { data: projects } = useLiveQuery(
 		(q) => q.from({ v2Projects: collections.v2Projects }),
 		[collections],
@@ -63,7 +77,7 @@ export function WorkspacesScreen() {
 
 	const filterableProjects = useMemo<FilterableProject[]>(() => {
 		const counts = new Map<string, number>();
-		for (const workspace of workspaces ?? []) {
+		for (const workspace of workspaces) {
 			counts.set(
 				workspace.projectId,
 				(counts.get(workspace.projectId) ?? 0) + 1,
@@ -82,43 +96,116 @@ export function WorkspacesScreen() {
 		(project) => project.id === selectedProjectId,
 	);
 
-	const visibleWorkspaces = useMemo<SelectV2Workspace[]>(() => {
-		return (workspaces ?? [])
-			.filter((workspace) => workspace.projectId === selectedProjectId)
-			.sort((a, b) => compareDesc(a[sort], b[sort]));
-	}, [workspaces, selectedProjectId, sort]);
-
-	const pullRequestsByBranch = useMemo(() => {
-		const byBranch = new Map<string, SelectGithubPullRequest>();
-		const rank = (state: string) =>
-			state === "open" ? 2 : state === "merged" ? 1 : 0;
-		for (const pullRequest of pullRequests ?? []) {
-			const existing = byBranch.get(pullRequest.headBranch);
-			if (!existing || rank(pullRequest.state) > rank(existing.state)) {
-				byBranch.set(pullRequest.headBranch, pullRequest);
-			}
+	const filterableHosts = useMemo<FilterableHost[]>(() => {
+		const counts = new Map<string, number>();
+		for (const workspace of workspaces) {
+			if (workspace.projectId !== selectedProjectId) continue;
+			counts.set(workspace.hostId, (counts.get(workspace.hostId) ?? 0) + 1);
 		}
-		return byBranch;
-	}, [pullRequests]);
+		return (hosts ?? [])
+			.map((host) => ({
+				machineId: host.machineId,
+				name: host.name,
+				isOnline: host.isOnline,
+				workspaceCount: counts.get(host.machineId) ?? 0,
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}, [hosts, workspaces, selectedProjectId]);
 
-	const hostsById = useMemo(
-		() => new Map((hosts ?? []).map((host) => [host.machineId, host])),
-		[hosts],
+	const visibleWorkspaces = useMemo<HostWorkspaceItem[]>(() => {
+		return workspaces
+			.filter(
+				(workspace) =>
+					workspace.projectId === selectedProjectId &&
+					(hostFilter === null || workspace.hostId === hostFilter),
+			)
+			.sort((a, b) => compareDesc(a[sort], b[sort]));
+	}, [workspaces, selectedProjectId, hostFilter, sort]);
+
+	const workspacesById = useMemo(
+		() => new Map(workspaces.map((workspace) => [workspace.id, workspace])),
+		[workspaces],
 	);
 
+	const pullRequestsByRepoBranch = useMemo(() => {
+		const rank = { closed: 3, draft: 1, merged: 2, open: 0 } as const;
+		const byRepoBranch = new Map<string, SelectGithubPullRequest>();
+		for (const pullRequest of pullRequests ?? []) {
+			const key = `${pullRequest.repositoryId}::${pullRequest.headBranch}`;
+			const existing = byRepoBranch.get(key);
+			if (!existing) {
+				byRepoBranch.set(key, pullRequest);
+				continue;
+			}
+			const cmp = rank[prStateFor(pullRequest)] - rank[prStateFor(existing)];
+			if (
+				cmp < 0 ||
+				(cmp === 0 && isAfter(pullRequest.updatedAt, existing.updatedAt))
+			) {
+				byRepoBranch.set(key, pullRequest);
+			}
+		}
+		return byRepoBranch;
+	}, [pullRequests]);
+
+	const diffStats = useVisibleDiffStats({
+		visibleIds,
+		workspacesById,
+		resolveHostUrl: cache.resolveHostUrl,
+	});
+
+	const onViewableItemsChanged = useCallback(
+		({
+			viewableItems,
+		}: {
+			viewableItems: Array<{ item: HostWorkspaceItem; isViewable: boolean }>;
+		}) => {
+			setVisibleIds(
+				viewableItems
+					.filter((viewable) => viewable.isViewable)
+					.slice(0, MAX_VISIBLE_DIFF_STATS)
+					.map((viewable) => viewable.item.id),
+			);
+		},
+		[],
+	);
+
+	const refreshHostData = useCallback(() => {
+		void queryClient.invalidateQueries({
+			queryKey: ["host-service", "workspaces", "list"],
+		});
+		void queryClient.invalidateQueries({ queryKey: ["diff-stats"] });
+	}, [queryClient]);
+
+	useFocusEffect(refreshHostData);
+
+	const onRefresh = useCallback(async () => {
+		setRefreshing(true);
+		await queryClient
+			.refetchQueries({ queryKey: ["host-service", "workspaces", "list"] })
+			.catch(() => {});
+		void queryClient.invalidateQueries({ queryKey: ["diff-stats"] });
+		setRefreshing(false);
+	}, [queryClient]);
+
+	const projectRepositoryId = selectedProject?.githubRepositoryId ?? null;
+
 	const renderItem = useCallback(
-		({ item }: { item: SelectV2Workspace }) => (
+		({ item }: { item: HostWorkspaceItem }) => (
 			<WorkspaceRow
 				workspace={item}
-				pullRequest={pullRequestsByBranch.get(item.branch)}
-				hostOnline={hostsById.get(item.hostId)?.isOnline}
-				onPress={() =>
-					router.push(`/(authenticated)/workspace/${item.id}/chat`)
+				pullRequest={
+					projectRepositoryId
+						? pullRequestsByRepoBranch.get(
+								`${projectRepositoryId}::${item.branch}`,
+							)
+						: undefined
 				}
-				onLongPress={() => setActionsWorkspace(item)}
+				diffStats={diffStats.get(item.id) ?? null}
+				cache={cache}
 			/>
 		),
-		[pullRequestsByBranch, hostsById, router],
+		[pullRequestsByRepoBranch, projectRepositoryId, diffStats, cache],
 	);
 
 	const handleSwitchOrganization = (organizationId: string) => {
@@ -134,7 +221,6 @@ export function WorkspacesScreen() {
 				onPress={() => setSheetOpen(true)}
 			/>
 			<Stack.Toolbar placement="right">
-				<Stack.Toolbar.Button icon="square.and.pencil" onPress={() => {}} />
 				<Stack.Toolbar.View>
 					<Pressable
 						hitSlop={8}
@@ -155,10 +241,15 @@ export function WorkspacesScreen() {
 				contentContainerStyle={{ paddingBottom: 112, paddingVertical: 8 }}
 				data={visibleWorkspaces}
 				extraData={renderItem}
-				keyExtractor={(item: SelectV2Workspace) => item.id}
+				keyExtractor={(item: HostWorkspaceItem) => item.id}
 				renderItem={renderItem}
+				viewabilityConfig={VIEWABILITY_CONFIG}
+				onViewableItemsChanged={onViewableItemsChanged}
+				refreshControl={
+					<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+				}
 				ListEmptyComponent={
-					workspacesReady ? (
+					isReady ? (
 						<View className="items-center justify-center py-20">
 							<Text className="text-center text-muted-foreground">
 								No workspaces in this project yet
@@ -184,16 +275,11 @@ export function WorkspacesScreen() {
 					setProjectFilter(projectId);
 					setFilterSheetOpen(false);
 				}}
+				hosts={filterableHosts}
+				selectedHostId={hostFilter}
+				onSelectHost={setHostFilter}
 				sort={sort}
 				onChangeSort={setSort}
-				width={width}
-			/>
-			<WorkspaceActionsSheet
-				workspace={actionsWorkspace}
-				isPresented={actionsWorkspace !== null}
-				onIsPresentedChange={(value) => {
-					if (!value) setActionsWorkspace(null);
-				}}
 				width={width}
 			/>
 		</>

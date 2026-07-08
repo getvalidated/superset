@@ -13,21 +13,21 @@ export default function TabsLayout() {
 				<NativeTabs.Trigger.Icon
 					sf={{ default: "house", selected: "house.fill" }}
 				/>
-				<NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Label hidden>Home</NativeTabs.Trigger.Label>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="(tasks)">
 				<NativeTabs.Trigger.Icon
 					sf={{ default: "list.clipboard", selected: "list.clipboard.fill" }}
 				/>
-				<NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Label hidden>Tasks</NativeTabs.Trigger.Label>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="(search)" role="search">
 				<NativeTabs.Trigger.Icon sf="magnifyingglass" />
-				<NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Label hidden>Search</NativeTabs.Trigger.Label>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="(more)">
 				<NativeTabs.Trigger.Icon sf="ellipsis" />
-				<NativeTabs.Trigger.Label>More</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Label hidden>More</NativeTabs.Trigger.Label>
 			</NativeTabs.Trigger>
 		</NativeTabs>
 	);

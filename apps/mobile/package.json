@@ -52,6 +52,7 @@
 		"@shikijs/themes": "4.2.0",
 		"@superset/auth": "workspace:*",
 		"@superset/db": "workspace:*",
+		"@superset/shared": "workspace:*",
 		"@superset/trpc": "workspace:*",
 		"@tanstack/db": "0.6.10",
 		"@tanstack/electric-db-collection": "0.3.8",
