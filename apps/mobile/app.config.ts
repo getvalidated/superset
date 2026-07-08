@@ -48,7 +48,7 @@ export default ({ config }: ConfigContext) => ({
 		[
 			"expo-image-picker",
 			{
-				photosPermission:
+			photosPermission:
 					"Superset needs access to your photo library so you can attach images to chat messages.",
 				cameraPermission: false,
 				microphonePermission: false,
