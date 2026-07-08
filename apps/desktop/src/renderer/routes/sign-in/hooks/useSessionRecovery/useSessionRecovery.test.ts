@@ -26,9 +26,21 @@ describe("nextRecoveryDelayMs", () => {
 	});
 
 	it("caps the backoff at the max delay", () => {
+		// random=1 → jitter factor 1.0, so the returned value equals the raw
+		// capped backoff — this asserts the cap is applied before jitter.
 		// 2**8 * 15s = 3.84M ms, well past the 5-min cap.
 		expect(nextRecoveryDelayMs(9, 1)).toBe(SESSION_RECOVERY_MAX_DELAY_MS);
 		expect(nextRecoveryDelayMs(10, 1)).toBe(SESSION_RECOVERY_MAX_DELAY_MS);
+	});
+
+	it("clamps attempt < 1 to the attempt-1 band (focus/visibility race)", () => {
+		// A focus/visibility reset can leave attemptRef at 0 when an in-flight
+		// request's finally runs; nextRecoveryDelayMs(0) must not drop below the
+		// attempt-1 delay via a negative exponent.
+		expect(nextRecoveryDelayMs(0, MID)).toBe(nextRecoveryDelayMs(1, MID));
+		expect(nextRecoveryDelayMs(0, 0) as number).toBeGreaterThanOrEqual(
+			15_000 * 0.5,
+		);
 	});
 
 	it("stops (returns null) once the attempt budget is spent", () => {

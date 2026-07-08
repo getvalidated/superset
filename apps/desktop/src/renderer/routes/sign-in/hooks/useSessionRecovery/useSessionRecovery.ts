@@ -22,8 +22,12 @@ export function nextRecoveryDelayMs(
 	if (attemptsMade >= SESSION_RECOVERY_MAX_ATTEMPTS) {
 		return null;
 	}
+	// Clamp to >=1 so a focus/visibility reset that races an in-flight request
+	// (attemptsMade === 0 in the finally) still yields the attempt-1 delay band,
+	// never a sub-floor value from a negative exponent.
+	const step = Math.max(1, attemptsMade);
 	const backoff = Math.min(
-		SESSION_RECOVERY_BASE_DELAY_MS * 2 ** (attemptsMade - 1),
+		SESSION_RECOVERY_BASE_DELAY_MS * 2 ** (step - 1),
 		SESSION_RECOVERY_MAX_DELAY_MS,
 	);
 	return backoff * (0.5 + random * 0.5);
