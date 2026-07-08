@@ -15,6 +15,7 @@ import {
 import { THEME } from "@/lib/theme";
 import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizations";
 import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
+import { NewChatWidget } from "./components/NewChatWidget";
 import { OrganizationHeaderButton } from "./components/OrganizationHeaderButton";
 import { OrganizationSwitcherSheet } from "./components/OrganizationSwitcherSheet";
 import { prStateFor, WorkspaceRow } from "./components/WorkspaceRow";
@@ -257,6 +258,7 @@ export function WorkspacesScreen() {
 					) : null
 				}
 			/>
+			<NewChatWidget workspaces={workspaces} />
 			<OrganizationSwitcherSheet
 				isPresented={sheetOpen}
 				onIsPresentedChange={setSheetOpen}
