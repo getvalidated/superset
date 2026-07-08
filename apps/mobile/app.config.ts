@@ -51,6 +51,13 @@ export default ({ config }: ConfigContext) => ({
 				cameraPermission: "Superset uses the camera to attach photos to chats.",
 			},
 		],
+		[
+			"expo-media-library",
+			{
+				photosPermission:
+					"Superset shows your recent photos so you can attach them to chats.",
+			},
+		],
 	],
 	extra: {
 		router: {},
