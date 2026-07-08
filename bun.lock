@@ -521,7 +521,7 @@
         "expo-file-system": "56.0.7",
         "expo-glass-effect": "56.0.4",
         "expo-image": "56.0.10",
-        "expo-image-manipulator": "56.0.20",
+        "expo-image-manipulator": "56.0.17",
         "expo-image-picker": "56.0.16",
         "expo-linking": "56.0.13",
         "expo-localization": "56.0.6",
@@ -4249,7 +4249,7 @@
 
     "expo-image-loader": ["expo-image-loader@56.0.3", "", { "peerDependencies": { "expo": "*" } }, "sha512-JgUo4fUeU1ZC+z8iBFj8v7yoGQnZrLbOVPyNE+DWVrld55F2F6R1ck+rmdm/8TNWLz1LhNQfD7c3XYP1ZikxXA=="],
 
-    "expo-image-manipulator": ["expo-image-manipulator@56.0.20", "", { "dependencies": { "expo-image-loader": "~56.0.3" }, "peerDependencies": { "expo": "*" } }, "sha512-Ma0mpY1FoV52xOOCT+2lbzGj1t79KhS8brmcrNvKJzih+DF8hRnuycuwoe0gog5zhJ772/f46UdGxx6OBMxu9g=="],
+    "expo-image-manipulator": ["expo-image-manipulator@56.0.17", "", { "dependencies": { "expo-image-loader": "~56.0.3" }, "peerDependencies": { "expo": "*" } }, "sha512-/rgDufMgc3y/PLO+Q5XrXHDX6lyesueoAVAIqmLEVBH0mVKgCC5u7O3JcIN3foCEB+8zi1fWDipuhKbWtPKq6w=="],
 
     "expo-image-picker": ["expo-image-picker@56.0.16", "", { "dependencies": { "expo-image-loader": "~56.0.3" }, "peerDependencies": { "expo": "*" } }, "sha512-t7tNtkPsbK4D7kKgd0dNylUVTD2IPNmZIa/MXSzMb+uSm7VyHrHfXt+GVZENFRMi99amBGWBuen5OYESwOp5rw=="],
 
