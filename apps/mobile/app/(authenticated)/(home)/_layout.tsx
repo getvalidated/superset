@@ -9,6 +9,15 @@ export default function HomeLayout() {
 			}}
 		>
 			<Stack.Screen name="index" options={{ title: "" }} />
+			<Stack.Screen
+				name="filter"
+				options={{
+					presentation: "formSheet",
+					headerShown: false,
+					sheetAllowedDetents: [1.0],
+					sheetGrabberVisible: true,
+				}}
+			/>
 		</Stack>
 	);
 }

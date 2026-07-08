@@ -1,0 +1,110 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useLiveQuery } from "@tanstack/react-db";
+import { useRouter } from "expo-router";
+import { View } from "react-native";
+import { useTheme } from "@/hooks/useTheme";
+import {
+	SORT_OPTIONS,
+	useWorkspacesFilterStore,
+} from "@/screens/(authenticated)/(home)/workspaces/stores/workspacesFilterStore";
+import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
+import { FilterRow } from "./components/FilterRow";
+import { FilterRowValue } from "./components/FilterRowValue";
+import { HostStatusDot } from "./components/HostStatusDot";
+import { ProjectAvatar } from "./components/ProjectAvatar";
+
+export function FilterScreen() {
+	const router = useRouter();
+	const theme = useTheme();
+	const collections = useCollections();
+	const projectFilter = useWorkspacesFilterStore(
+		(store) => store.projectFilter,
+	);
+	const hostFilter = useWorkspacesFilterStore((store) => store.hostFilter);
+	const sort = useWorkspacesFilterStore((store) => store.sort);
+
+	const { data: projects } = useLiveQuery(
+		(q) => q.from({ v2Projects: collections.v2Projects }),
+		[collections],
+	);
+	const { data: hosts } = useLiveQuery(
+		(q) => q.from({ v2Hosts: collections.v2Hosts }),
+		[collections],
+	);
+
+	const sortedProjects = [...(projects ?? [])].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	const selectedProject =
+		sortedProjects.find((project) => project.id === projectFilter) ??
+		sortedProjects[0];
+	const selectedHost = (hosts ?? []).find(
+		(host) => host.machineId === hostFilter,
+	);
+	const sortLabel =
+		SORT_OPTIONS.find((option) => option.value === sort)?.label ?? "";
+
+	return (
+		<View className="bg-background flex-1 px-6">
+			<FilterRow
+				icon={
+					<Ionicons
+						name="folder-outline"
+						size={20}
+						color={theme.mutedForeground}
+					/>
+				}
+				label="Project"
+				trailing={
+					<FilterRowValue
+						value={selectedProject?.name ?? "All"}
+						accessory={
+							selectedProject ? (
+								<ProjectAvatar
+									name={selectedProject.name}
+									iconUrl={selectedProject.iconUrl}
+									size={22}
+								/>
+							) : undefined
+						}
+					/>
+				}
+				onPress={() => router.push("/(authenticated)/(home)/filter/project")}
+			/>
+			<FilterRow
+				icon={
+					<Ionicons
+						name="desktop-outline"
+						size={20}
+						color={theme.mutedForeground}
+					/>
+				}
+				label="Host"
+				trailing={
+					<FilterRowValue
+						value={selectedHost?.name ?? "All hosts"}
+						accessory={
+							selectedHost ? (
+								<HostStatusDot isOnline={selectedHost.isOnline} />
+							) : undefined
+						}
+					/>
+				}
+				onPress={() => router.push("/(authenticated)/(home)/filter/host")}
+			/>
+			<FilterRow
+				icon={
+					<Ionicons
+						name="swap-vertical"
+						size={20}
+						color={theme.mutedForeground}
+					/>
+				}
+				label="Sort"
+				trailing={<FilterRowValue value={sortLabel} />}
+				onPress={() => router.push("/(authenticated)/(home)/filter/sort")}
+				isLast
+			/>
+		</View>
+	);
+}

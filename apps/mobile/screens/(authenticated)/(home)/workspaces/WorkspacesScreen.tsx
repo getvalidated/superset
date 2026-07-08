@@ -3,9 +3,10 @@ import type { SelectGithubPullRequest } from "@superset/db/schema";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQueryClient } from "@tanstack/react-query";
 import { compareDesc, isAfter } from "date-fns";
-import { Stack, useFocusEffect } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import {
 	type HostWorkspaceItem,
@@ -16,14 +17,9 @@ import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizatio
 import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
 import { OrganizationHeaderButton } from "./components/OrganizationHeaderButton";
 import { OrganizationSwitcherSheet } from "./components/OrganizationSwitcherSheet";
-import {
-	type FilterableHost,
-	type FilterableProject,
-	WorkspaceFilterSheet,
-	type WorkspaceSort,
-} from "./components/WorkspaceFilterSheet";
 import { prStateFor, WorkspaceRow } from "./components/WorkspaceRow";
 import { useVisibleDiffStats } from "./hooks/useVisibleDiffStats";
+import { useWorkspacesFilterStore } from "./stores/workspacesFilterStore";
 
 const VIEWABILITY_CONFIG = {
 	itemVisiblePercentThreshold: 50,
@@ -32,16 +28,21 @@ const VIEWABILITY_CONFIG = {
 
 const MAX_VISIBLE_DIFF_STATS = 20;
 
+const NAVIGATION_BAR_HEIGHT = 44;
+
 export function WorkspacesScreen() {
+	const router = useRouter();
 	const [sheetOpen, setSheetOpen] = useState(false);
-	const [filterSheetOpen, setFilterSheetOpen] = useState(false);
-	const [projectFilter, setProjectFilter] = useState<string | null>(null);
-	const [hostFilter, setHostFilter] = useState<string | null>(null);
-	const [sort, setSort] = useState<WorkspaceSort>("updatedAt");
+	const projectFilter = useWorkspacesFilterStore(
+		(store) => store.projectFilter,
+	);
+	const hostFilter = useWorkspacesFilterStore((store) => store.hostFilter);
+	const sort = useWorkspacesFilterStore((store) => store.sort);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [visibleIds, setVisibleIds] = useState<string[]>([]);
 	const [refreshing, setRefreshing] = useState(false);
-	const { width } = useWindowDimensions();
+	const { width, height: windowHeight } = useWindowDimensions();
+	const insets = useSafeAreaInsets();
 	const collections = useCollections();
 	const queryClient = useQueryClient();
 	const {
@@ -61,49 +62,13 @@ export function WorkspacesScreen() {
 		(q) => q.from({ githubPullRequests: collections.githubPullRequests }),
 		[collections],
 	);
-	const { data: hosts } = useLiveQuery(
-		(q) => q.from({ v2Hosts: collections.v2Hosts }),
-		[collections],
-	);
 
 	const sortedProjects = useMemo(
 		() => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
 		[projects],
 	);
 
-	const filterableProjects = useMemo<FilterableProject[]>(() => {
-		const counts = new Map<string, number>();
-		for (const workspace of workspaces) {
-			counts.set(
-				workspace.projectId,
-				(counts.get(workspace.projectId) ?? 0) + 1,
-			);
-		}
-		return sortedProjects.map((project) => ({
-			id: project.id,
-			name: project.name,
-			iconUrl: project.iconUrl,
-			workspaceCount: counts.get(project.id) ?? 0,
-		}));
-	}, [sortedProjects, workspaces]);
-
 	const selectedProjectId = projectFilter ?? sortedProjects[0]?.id ?? null;
-
-	const filterableHosts = useMemo<FilterableHost[]>(() => {
-		const counts = new Map<string, number>();
-		for (const workspace of workspaces) {
-			if (workspace.projectId !== selectedProjectId) continue;
-			counts.set(workspace.hostId, (counts.get(workspace.hostId) ?? 0) + 1);
-		}
-		return (hosts ?? [])
-			.map((host) => ({
-				machineId: host.machineId,
-				name: host.name,
-				isOnline: host.isOnline,
-				workspaceCount: counts.get(host.machineId) ?? 0,
-			}))
-			.sort((a, b) => a.name.localeCompare(b.name));
-	}, [hosts, workspaces, selectedProjectId]);
 
 	const projectNamesById = useMemo(
 		() =>
@@ -245,16 +210,10 @@ export function WorkspacesScreen() {
 				logo={activeOrganization?.logo}
 				onPress={() => setSheetOpen(true)}
 			/>
-			<Stack.Toolbar placement="right">
-				<Stack.Toolbar.Button
-					icon="line.3.horizontal.decrease"
-					onPress={() => setFilterSheetOpen(true)}
-				/>
-			</Stack.Toolbar>
 			<Stack.SearchBar
 				placeholder="Search workspaces"
-				placement="integrated"
-				allowToolbarIntegration
+				placement="integratedButton"
+				allowToolbarIntegration={false}
 				hideNavigationBar={false}
 				textColor={THEME.dark.foreground}
 				hintTextColor={THEME.dark.mutedForeground}
@@ -262,10 +221,18 @@ export function WorkspacesScreen() {
 				onChangeText={(event) => setSearchQuery(event.nativeEvent.text)}
 				onCancelButtonPress={() => setSearchQuery("")}
 			/>
+			<Stack.Toolbar placement="right">
+				<Stack.Toolbar.Button
+					icon="line.3.horizontal.decrease"
+					onPress={() => router.push("/(authenticated)/(home)/filter")}
+				/>
+			</Stack.Toolbar>
 			<LegendList
 				className="flex-1 bg-background"
+				contentInsetAdjustmentBehavior="automatic"
 				contentContainerStyle={{
-					flexGrow: 1,
+					minHeight:
+						windowHeight - insets.top - NAVIGATION_BAR_HEIGHT - insets.bottom,
 					paddingBottom: 112,
 					paddingTop: 8,
 				}}
@@ -296,19 +263,6 @@ export function WorkspacesScreen() {
 				organizations={organizations}
 				activeOrganizationId={activeOrganizationId}
 				onSwitchOrganization={handleSwitchOrganization}
-				width={width}
-			/>
-			<WorkspaceFilterSheet
-				isPresented={filterSheetOpen}
-				onIsPresentedChange={setFilterSheetOpen}
-				projects={filterableProjects}
-				selectedProjectId={selectedProjectId}
-				onSelectProject={setProjectFilter}
-				hosts={filterableHosts}
-				selectedHostId={hostFilter}
-				onSelectHost={setHostFilter}
-				sort={sort}
-				onChangeSort={setSort}
 				width={width}
 			/>
 		</>
