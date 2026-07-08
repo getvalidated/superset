@@ -8,7 +8,6 @@ import {
 	KeyboardAvoidingView,
 	Pressable,
 	StyleSheet,
-	useWindowDimensions,
 	View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,7 +68,6 @@ function NewChatWidgetInner({
 	workspaces: HostWorkspaceItem[];
 }) {
 	const insets = useSafeAreaInsets();
-	const { width } = useWindowDimensions();
 	const controller = usePromptInputController();
 
 	const [targetSheetOpen, setTargetSheetOpen] = useState(false);
@@ -249,9 +247,8 @@ function NewChatWidgetInner({
 				onSelect={setBaseBranch}
 			/>
 			<ContextSheet
-				isPresented={contextSheetOpen}
-				onIsPresentedChange={setContextSheetOpen}
-				width={width}
+				open={contextSheetOpen}
+				onOpenChange={setContextSheetOpen}
 			/>
 		</>
 	);

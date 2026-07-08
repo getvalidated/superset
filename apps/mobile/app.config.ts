@@ -54,7 +54,14 @@ export default ({ config }: ConfigContext) => ({
 				microphonePermission: false,
 			},
 		],
-		"expo-document-picker",
+	"expo-document-picker",
+		[
+			"expo-media-library",
+			{
+				photosPermission:
+					"Superset shows your recent photos so you can attach them to chats.",
+			},
+		],
 	],
 	extra: {
 		router: {},
