@@ -7,6 +7,7 @@ import {
 	mock,
 	test,
 } from "bun:test";
+import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import path from "node:path";
@@ -89,6 +90,34 @@ mock.module("./local-db", () => ({
 	localDb: {
 		select: () => ({ from: () => ({ get: () => null }) }),
 	},
+}));
+
+// Fake child-process factory so we can drive the real spawn path (and its
+// `exit` supervision handler) without launching a real host-service.
+interface FakeChild extends EventEmitter {
+	pid: number;
+	stdout: null;
+	stderr: null;
+	unref: () => void;
+	kill: (signal?: NodeJS.Signals | number) => boolean;
+}
+
+let spawnedChildren: FakeChild[] = [];
+const spawnMock = mock((_command: string, _args: string[]) => {
+	const child = new EventEmitter() as FakeChild;
+	child.pid = 50_000 + spawnedChildren.length + 1;
+	child.stdout = null;
+	child.stderr = null;
+	child.unref = () => {};
+	child.kill = () => true;
+	spawnedChildren.push(child);
+	return child;
+});
+
+const realChildProcess = await import("node:child_process");
+mock.module("node:child_process", () => ({
+	...realChildProcess,
+	spawn: spawnMock,
 }));
 
 const { HostServiceCoordinator } = await import("./host-service-coordinator");
@@ -233,6 +262,83 @@ describe("HostServiceCoordinator.reset", () => {
 		expect(killedPids).toHaveLength(0);
 		expect(spawnMock).toHaveBeenCalledTimes(1);
 		expect(conn.port).toBe(60000);
+	});
+});
+
+describe("HostServiceCoordinator supervision", () => {
+	let coordinator: InstanceType<typeof HostServiceCoordinator>;
+
+	beforeEach(() => {
+		resetMocks();
+		spawnedChildren = [];
+		spawnMock.mockClear();
+		pollHealthCheckMock.mockImplementation(() => Promise.resolve(true));
+		testManifestRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hsc-test-"));
+		coordinator = new HostServiceCoordinator();
+		// buildEnv shells out (PATH + relay resolution); irrelevant to spawn
+		// supervision and slow/flaky in a unit test, so stub it out.
+		(
+			coordinator as unknown as {
+				buildEnv: () => Promise<Record<string, string>>;
+			}
+		).buildEnv = async () => ({});
+	});
+
+	afterEach(() => {
+		coordinator.stopAll();
+		if (testManifestRoot) {
+			fs.rmSync(testManifestRoot, { recursive: true, force: true });
+			testManifestRoot = "";
+		}
+	});
+
+	async function waitFor(
+		predicate: () => boolean,
+		timeoutMs = 3_000,
+	): Promise<void> {
+		const deadline = Date.now() + timeoutMs;
+		while (!predicate()) {
+			if (Date.now() > deadline) throw new Error("waitFor timed out");
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+	}
+
+	// Reproduces superset-sh/superset#5503 (Bug 2): a host-service child that
+	// dies on its own is never respawned, leaving every host-backed UI action
+	// failing until the whole app is restarted.
+	test("respawns the host-service after it exits unexpectedly", async () => {
+		const conn = await coordinator.start("org-1", spawnConfig);
+		expect(conn.port).toBe(40000);
+		expect(spawnMock).toHaveBeenCalledTimes(1);
+		expect(coordinator.getProcessStatus("org-1")).toBe("running");
+
+		// Host-service crashes / receives an external SIGTERM — no deliberate
+		// stop() was called.
+		spawnedChildren[0].emit("exit", 1, null);
+
+		await waitFor(
+			() =>
+				spawnMock.mock.calls.length === 2 &&
+				coordinator.getProcessStatus("org-1") === "running",
+		);
+
+		expect(spawnMock).toHaveBeenCalledTimes(2);
+		expect(coordinator.getProcessStatus("org-1")).toBe("running");
+	});
+
+	test("does not respawn after a deliberate stop()", async () => {
+		await coordinator.start("org-1", spawnConfig);
+		expect(spawnMock).toHaveBeenCalledTimes(1);
+
+		coordinator.stop("org-1");
+		// The stopped child still fires its own exit event; it must not be
+		// mistaken for an unexpected crash and trigger a respawn.
+		spawnedChildren[0].emit("exit", 0, "SIGTERM");
+
+		await new Promise((resolve) => setTimeout(resolve, 800));
+
+		expect(spawnMock).toHaveBeenCalledTimes(1);
+		expect(coordinator.getProcessStatus("org-1")).toBe("stopped");
 	});
 });
 

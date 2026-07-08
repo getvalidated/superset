@@ -52,12 +52,26 @@ interface HostServiceProcess {
 	port: number;
 	secret: string;
 	status: HostServiceStatus;
+	stabilityTimer?: ReturnType<typeof setTimeout>;
 }
 
 // High, uncommon user-space range: above usual web/dev server ports and below
 // macOS's default ephemeral range, while still falling back if occupied.
 const STABLE_PORT_BASE = 48_000;
 const STABLE_PORT_COUNT = 1_000;
+
+// Supervision: when a host-service child dies without a deliberate stop()
+// (crash, external kill, OOM), respawn it with exponential backoff so a dead
+// host-service recovers on its own instead of leaving every host-backed UI
+// action failing until the whole app is restarted (superset-sh/superset#5503).
+const RESPAWN_BASE_DELAY_MS = 500;
+const RESPAWN_MAX_DELAY_MS = 30_000;
+// Cap consecutive crash-respawns so a host-service that dies immediately on
+// every boot doesn't spin forever. Reset once an instance stays up.
+const MAX_CONSECUTIVE_RESPAWNS = 10;
+// How long a respawned instance must stay running before we consider it
+// stable and clear the consecutive-crash counter.
+const RESPAWN_STABILITY_MS = 60_000;
 
 function getStablePortForOrganization(organizationId: string): number {
 	let hash = 2_166_136_261;
@@ -87,6 +101,8 @@ export class HostServiceCoordinator extends EventEmitter {
 	private instances = new Map<string, HostServiceProcess>();
 	private pendingStarts = new Map<string, Promise<Connection>>();
 	private lastKnownPorts = new Map<string, number>();
+	private respawnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private consecutiveRespawns = new Map<string, number>();
 	private scriptPath = path.join(__dirname, "host-service.js");
 	private machineId = getHostId();
 	private devReloadWatcher: fs.FSWatcher | null = null;
@@ -153,11 +169,16 @@ export class HostServiceCoordinator extends EventEmitter {
 	}
 
 	stop(organizationId: string): void {
+		// A deliberate stop cancels supervision: this org's death is intended,
+		// so any pending respawn must not fire.
+		this.cancelRespawn(organizationId);
+
 		const instance = this.instances.get(organizationId);
 		if (!instance) return;
 
 		const previousStatus = instance.status;
 		instance.status = "stopped";
+		if (instance.stabilityTimer) clearTimeout(instance.stabilityTimer);
 		this.rememberPort(organizationId, instance.port);
 
 		try {
@@ -172,6 +193,11 @@ export class HostServiceCoordinator extends EventEmitter {
 	stopAll(): void {
 		for (const [id] of this.instances) {
 			this.stop(id);
+		}
+		// Cancel respawns for orgs whose instance already died and is only
+		// waiting to be respawned — stop() above only iterates live instances.
+		for (const id of [...this.respawnTimers.keys()]) {
+			this.cancelRespawn(id);
 		}
 	}
 
@@ -411,10 +437,15 @@ export class HostServiceCoordinator extends EventEmitter {
 			if (!current || current.pid !== childPid || current.status === "stopped")
 				return;
 
+			if (current.stabilityTimer) clearTimeout(current.stabilityTimer);
 			this.rememberPort(organizationId, current.port);
 			this.instances.delete(organizationId);
 			removeManifest(organizationId);
 			this.emitStatus(organizationId, "stopped", "running");
+
+			// The child died without a deliberate stop() — supervise it back up
+			// so a crashed/killed host-service recovers on its own.
+			this.scheduleRespawn(organizationId, config);
 		});
 		// Don't let the child block Electron's exit — stopAll() handles teardown.
 		child.unref();
@@ -431,9 +462,71 @@ export class HostServiceCoordinator extends EventEmitter {
 
 		instance.status = "running";
 
+		// Once an instance stays up for a while, treat it as recovered and
+		// reset the crash counter so a much-later crash gets a fresh backoff
+		// budget rather than immediately hitting the cap.
+		const stabilityTimer = setTimeout(() => {
+			if (this.instances.get(organizationId)?.pid === childPid) {
+				this.consecutiveRespawns.delete(organizationId);
+			}
+		}, RESPAWN_STABILITY_MS);
+		stabilityTimer.unref?.();
+		instance.stabilityTimer = stabilityTimer;
+
 		log.info(`[host-service:${organizationId}] listening on port ${port}`);
 		this.emitStatus(organizationId, "running", "starting");
 		return { port, secret, machineId: this.machineId };
+	}
+
+	// ── Supervision ───────────────────────────────────────────────────
+
+	private cancelRespawn(organizationId: string): void {
+		const timer = this.respawnTimers.get(organizationId);
+		if (timer) clearTimeout(timer);
+		this.respawnTimers.delete(organizationId);
+		this.consecutiveRespawns.delete(organizationId);
+	}
+
+	private scheduleRespawn(organizationId: string, config: SpawnConfig): void {
+		// Never stack respawns; one pending timer per org is enough.
+		if (this.respawnTimers.has(organizationId)) return;
+
+		const attempts = this.consecutiveRespawns.get(organizationId) ?? 0;
+		if (attempts >= MAX_CONSECUTIVE_RESPAWNS) {
+			log.error(
+				`[host-service:${organizationId}] exited ${attempts} times in a row; not respawning until the app or org is restarted manually`,
+			);
+			return;
+		}
+
+		const delay = Math.min(
+			RESPAWN_BASE_DELAY_MS * 2 ** attempts,
+			RESPAWN_MAX_DELAY_MS,
+		);
+		this.consecutiveRespawns.set(organizationId, attempts + 1);
+
+		const timer = setTimeout(() => {
+			this.respawnTimers.delete(organizationId);
+			// A manual start()/restart() may have already brought it back.
+			if (
+				this.instances.has(organizationId) ||
+				this.pendingStarts.has(organizationId)
+			) {
+				return;
+			}
+
+			log.info(
+				`[host-service:${organizationId}] respawning after unexpected exit (attempt ${attempts + 1})`,
+			);
+			void this.startWithPreferredPorts(organizationId, config).catch(
+				(error) => {
+					log.warn(`[host-service:${organizationId}] respawn failed`, error);
+					this.scheduleRespawn(organizationId, config);
+				},
+			);
+		}, delay);
+		timer.unref?.();
+		this.respawnTimers.set(organizationId, timer);
 	}
 
 	private async buildEnv(
