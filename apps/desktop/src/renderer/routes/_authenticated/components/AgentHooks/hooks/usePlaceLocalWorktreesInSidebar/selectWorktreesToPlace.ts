@@ -14,15 +14,26 @@ export type LocalWorkspaceForPlacement = {
  * gated `isAutoIncludedLocalMainWorkspace` path. A workspace that already has a
  * local-state row is "already placed" and skipped, so nothing the user has
  * moved, hidden, or removed is re-added.
+ *
+ * `attemptedWorkspaceIds` holds worktrees this session already tried to place
+ * but whose local-state row never landed — most importantly because the write
+ * threw (e.g. `QuotaExceededError`) and the optimistic row rolled back. Without
+ * this backoff the reconciler re-selects such a worktree on every live-query
+ * emission and retries forever, pegging the renderer (see issue #5496). Skipping
+ * already-attempted ids makes a deterministically-failing placement a no-op
+ * after the first try instead of an infinite loop.
  */
 export function selectWorktreesToPlace(
 	localWorkspaces: readonly LocalWorkspaceForPlacement[],
 	placedWorkspaceIds: ReadonlySet<string>,
+	attemptedWorkspaceIds: ReadonlySet<string> = new Set(),
 ): Array<{ id: string; projectId: string }> {
 	return localWorkspaces
 		.filter(
 			(workspace) =>
-				workspace.type === "worktree" && !placedWorkspaceIds.has(workspace.id),
+				workspace.type === "worktree" &&
+				!placedWorkspaceIds.has(workspace.id) &&
+				!attemptedWorkspaceIds.has(workspace.id),
 		)
 		.map((workspace) => ({ id: workspace.id, projectId: workspace.projectId }));
 }

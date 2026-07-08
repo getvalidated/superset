@@ -34,4 +34,19 @@ describe("selectWorktreesToPlace", () => {
 
 		expect(result).toEqual([{ id: "wt-new", projectId: "p1" }]);
 	});
+
+	it("skips worktrees already attempted this session (quota backoff, issue #5496)", () => {
+		const result = selectWorktreesToPlace(
+			[
+				{ id: "wt-failed", projectId: "p1", type: "worktree" },
+				{ id: "wt-new", projectId: "p1", type: "worktree" },
+			],
+			new Set(),
+			new Set(["wt-failed"]),
+		);
+
+		// wt-failed's write rolled back so it has no row, but re-selecting it
+		// would spin the reconciler — the attempted set suppresses the retry.
+		expect(result).toEqual([{ id: "wt-new", projectId: "p1" }]);
+	});
 });

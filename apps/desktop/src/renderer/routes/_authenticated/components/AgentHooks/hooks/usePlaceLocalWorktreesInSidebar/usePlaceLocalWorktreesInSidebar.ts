@@ -1,6 +1,6 @@
 import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
@@ -48,6 +48,14 @@ export function usePlaceLocalWorktreesInSidebar(): void {
 		[collections],
 	);
 
+	// Worktrees this session already tried to place. A placement whose write
+	// rolls back (e.g. `QuotaExceededError`) leaves no local-state row, so the
+	// live query re-emits and the effect would otherwise re-select and re-insert
+	// the same worktree forever — the renderer-pegging loop in issue #5496.
+	// Recording every attempt makes a deterministically-failing placement stop
+	// after one try.
+	const attemptedPlacements = useRef<Set<string>>(new Set());
+
 	useEffect(() => {
 		if (!workspacesReady || !localStateReady) return;
 
@@ -58,7 +66,9 @@ export function usePlaceLocalWorktreesInSidebar(): void {
 		for (const worktree of selectWorktreesToPlace(
 			localWorkspaces,
 			placedWorkspaceIds,
+			attemptedPlacements.current,
 		)) {
+			attemptedPlacements.current.add(worktree.id);
 			ensureWorkspaceInSidebar(worktree.id, worktree.projectId);
 		}
 	}, [
