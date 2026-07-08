@@ -11,6 +11,37 @@ const MAX_RETAINED_SESSIONS = 3;
 
 let started = false;
 
+type CaptureMode = "default" | "includeSensitive";
+
+/**
+ * Network capture is opt-in and off by default. It records the
+ * `persist:superset` session — including live API traffic — so it must never
+ * run without an explicit, per-launch signal from a support/debug flow.
+ *
+ * `SUPERSET_CAPTURE_NETWORK_LOGS`:
+ *   - unset / "0" / "false" / "off" -> disabled (default)
+ *   - "1" / "true" / "on" / "default" -> capture at `default` level, which
+ *     excludes cookies and Authorization headers
+ *   - "sensitive" / "includeSensitive" -> capture cookies/auth headers; only
+ *     for a support flow that has explicitly escalated
+ */
+function resolveCaptureMode(): CaptureMode | null {
+	const raw = process.env.SUPERSET_CAPTURE_NETWORK_LOGS?.trim().toLowerCase();
+	if (!raw) return null;
+	switch (raw) {
+		case "0":
+		case "false":
+		case "off":
+		case "no":
+			return null;
+		case "sensitive":
+		case "includesensitive":
+			return "includeSensitive";
+		default:
+			return "default";
+	}
+}
+
 function logsDir(): string {
 	const dir = path.join(app.getPath("userData"), "network-logs");
 	fs.mkdirSync(dir, { recursive: true });
@@ -79,15 +110,20 @@ function pruneOldSessions(): void {
 
 export async function startNetworkLogger(): Promise<void> {
 	if (started) return;
+	const captureMode = resolveCaptureMode();
+	if (!captureMode) return;
 	archivePreviousSession();
 	pruneOldSessions();
 	const logPath = path.join(logsDir(), CURRENT_FILE);
 	await session.fromPartition(PARTITION).netLog.startLogging(logPath, {
-		captureMode: "includeSensitive",
+		captureMode,
 		maxFileSize: MAX_FILE_BYTES,
 	});
 	started = true;
-	console.log("[network-logger] recording to", logPath);
+	console.log(
+		`[network-logger] recording (captureMode: ${captureMode}) to`,
+		logPath,
+	);
 }
 
 export async function stopNetworkLogger(): Promise<void> {
