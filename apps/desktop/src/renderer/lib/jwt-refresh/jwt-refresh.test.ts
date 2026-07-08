@@ -64,20 +64,22 @@ describe("shouldAttemptJwtRefresh", () => {
 describe("applyJwtRefreshResult", () => {
 	it("resets the failure count on success and clears in-flight", () => {
 		const next = applyJwtRefreshResult(
-			state({ inFlight: true, consecutiveFailures: 3 }),
+			state({ inFlight: true, consecutiveFailures: 3, lastAttemptAt: T0 }),
 			true,
 		);
 		expect(next.consecutiveFailures).toBe(0);
 		expect(next.inFlight).toBe(false);
+		expect(next.lastAttemptAt).toBe(T0); // preserved — backoff timing depends on it
 	});
 
 	it("increments the failure count on failure and clears in-flight", () => {
 		const next = applyJwtRefreshResult(
-			state({ inFlight: true, consecutiveFailures: 3 }),
+			state({ inFlight: true, consecutiveFailures: 3, lastAttemptAt: T0 }),
 			false,
 		);
 		expect(next.consecutiveFailures).toBe(4);
 		expect(next.inFlight).toBe(false);
+		expect(next.lastAttemptAt).toBe(T0); // preserved — backoff timing depends on it
 	});
 
 	it("drives the circuit: MAX_FAILURES consecutive failures block refresh", () => {

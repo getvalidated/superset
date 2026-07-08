@@ -30,7 +30,9 @@ export function nextRecoveryDelayMs(
 		SESSION_RECOVERY_BASE_DELAY_MS * 2 ** (step - 1),
 		SESSION_RECOVERY_MAX_DELAY_MS,
 	);
-	return backoff * (0.5 + random * 0.5);
+	// Symmetric ±50% jitter (0.5x–1.5x, centered on the backoff), clamped to the
+	// max delay — retries spread across the full band instead of biasing down.
+	return Math.min(backoff * (0.5 + random), SESSION_RECOVERY_MAX_DELAY_MS);
 }
 
 export function useSessionRecovery() {
@@ -41,6 +43,17 @@ export function useSessionRecovery() {
 	const recoveryInFlightRef = useRef(false);
 	const attemptRef = useRef(0);
 	const timerRef = useRef<number | null>(null);
+	const isMountedRef = useRef(true);
+
+	// Empty-dep cleanup runs only on unmount (not on re-runs), so this reliably
+	// marks teardown — used to stop an in-flight refetch's finally from arming an
+	// orphaned timer after the component is gone.
+	useEffect(() => {
+		isMountedRef.current = true;
+		return () => {
+			isMountedRef.current = false;
+		};
+	}, []);
 
 	const clearTimer = useCallback(() => {
 		if (timerRef.current !== null) {
@@ -75,7 +88,7 @@ export function useSessionRecovery() {
 			// Vercel's DDoS mitigation.
 			clearTimer();
 			const delay = nextRecoveryDelayMs(attemptRef.current);
-			if (!session?.user && delay !== null) {
+			if (isMountedRef.current && !session?.user && delay !== null) {
 				timerRef.current = window.setTimeout(() => {
 					void retrySessionRecovery();
 				}, delay);

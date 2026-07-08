@@ -6,10 +6,10 @@ import {
 	SESSION_RECOVERY_MAX_DELAY_MS,
 } from "./useSessionRecovery";
 
-// random=0.5 → jitter factor 0.75, i.e. the midpoint of the ±50% band. Using a
-// fixed value keeps the base backoff assertions deterministic.
+// random=0.5 → jitter factor 1.0 (the center of the symmetric ±50% band). Using
+// a fixed value keeps the base backoff assertions deterministic.
 const MID = 0.5;
-const factor = (random: number) => 0.5 + random * 0.5;
+const factor = (random: number) => 0.5 + random;
 
 describe("nextRecoveryDelayMs", () => {
 	it("starts at the base delay on the first retry", () => {
@@ -53,10 +53,11 @@ describe("nextRecoveryDelayMs", () => {
 		);
 	});
 
-	it("applies ±50% jitter so a fleet cannot synchronize", () => {
-		// random=0 → floor (0.5x), random=1 → ceiling (1.0x) of the base backoff.
+	it("applies symmetric ±50% jitter so a fleet cannot synchronize", () => {
+		// random=0 → 0.5x floor, random=1 → 1.5x ceiling of the base backoff.
 		expect(nextRecoveryDelayMs(1, 0)).toBe(15_000 * 0.5);
-		expect(nextRecoveryDelayMs(1, 1)).toBe(15_000 * 1.0);
+		// Must overshoot the base — proves jitter is symmetric, not downward-only.
+		expect(nextRecoveryDelayMs(1, 1)).toBe(15_000 * 1.5);
 		// Two different random draws must yield different delays (no fixed cadence).
 		expect(nextRecoveryDelayMs(3, 0.1)).not.toBe(nextRecoveryDelayMs(3, 0.9));
 	});
