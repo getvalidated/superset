@@ -1,1 +1,1 @@
-export { WorkspaceRow } from "./WorkspaceRow";
+export { prStateFor, WorkspaceRow } from "./WorkspaceRow";

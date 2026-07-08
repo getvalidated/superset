@@ -19,6 +19,13 @@ export interface FilterableProject {
 	workspaceCount: number;
 }
 
+export interface FilterableHost {
+	machineId: string;
+	name: string;
+	isOnline: boolean;
+	workspaceCount: number;
+}
+
 const SORT_OPTIONS: { value: WorkspaceSort; label: string }[] = [
 	{ label: "Last updated", value: "updatedAt" },
 	{ label: "Date created", value: "createdAt" },
@@ -30,6 +37,9 @@ export function WorkspaceFilterSheet({
 	projects,
 	selectedProjectId,
 	onSelectProject,
+	hosts,
+	selectedHostId,
+	onSelectHost,
 	sort,
 	onChangeSort,
 	width,
@@ -39,6 +49,9 @@ export function WorkspaceFilterSheet({
 	projects: FilterableProject[];
 	selectedProjectId: string | null;
 	onSelectProject: (projectId: string) => void;
+	hosts: FilterableHost[];
+	selectedHostId: string | null;
+	onSelectHost: (machineId: string | null) => void;
 	sort: WorkspaceSort;
 	onChangeSort: (sort: WorkspaceSort) => void;
 	width: number;
@@ -135,6 +148,69 @@ export function WorkspaceFilterSheet({
 									);
 								})}
 							</ScrollView>
+							<Text
+								className="mb-2 mt-4 text-sm font-semibold"
+								style={{ color: theme.mutedForeground }}
+							>
+								Host
+							</Text>
+							<Pressable
+								onPress={() => onSelectHost(null)}
+								className="flex-row items-center gap-2.5 py-2.5"
+							>
+								<Text
+									className="flex-1 text-sm font-medium"
+									style={{ color: theme.foreground }}
+								>
+									All hosts
+								</Text>
+								{selectedHostId === null ? (
+									<Ionicons
+										name="checkmark-circle"
+										size={18}
+										color={theme.primary}
+									/>
+								) : null}
+							</Pressable>
+							{hosts.map((host) => {
+								const isActive = host.machineId === selectedHostId;
+								return (
+									<Pressable
+										key={host.machineId}
+										onPress={() => onSelectHost(host.machineId)}
+										className="flex-row items-center gap-2.5 py-2.5"
+									>
+										<View
+											className="size-2 rounded-full"
+											style={{
+												backgroundColor: host.isOnline
+													? "#3fb950"
+													: theme.mutedForeground,
+											}}
+										/>
+										<Text
+											className="flex-1 text-sm font-medium"
+											style={{ color: theme.foreground }}
+											numberOfLines={1}
+										>
+											{host.name}
+										</Text>
+										<Text
+											className="text-xs"
+											style={{ color: theme.mutedForeground }}
+										>
+											{host.workspaceCount}
+										</Text>
+										{isActive ? (
+											<Ionicons
+												name="checkmark-circle"
+												size={18}
+												color={theme.primary}
+											/>
+										) : null}
+									</Pressable>
+								);
+							})}
 						</View>
 					</RNHostView>
 				</Group>
