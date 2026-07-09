@@ -102,6 +102,10 @@ if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
   error "Tag ${TAG_NAME} already exists. Pass a higher suffix or delete the tag first."
 fi
 
+info "Diffing against the previous release..."
+release_diff_report "${REPO_ROOT}" cli
+guard_daemon_bump "${REPO_ROOT}" "${WITH_DAEMON}" || error "Release blocked by diff check."
+
 info "Setting ${UNIFIED_PACKAGES[*]} to ${NEW_VERSION}..."
 sync_unified_versions "${REPO_ROOT}" "${NEW_VERSION}"
 
@@ -110,12 +114,10 @@ sync_unified_versions "${REPO_ROOT}" "${NEW_VERSION}"
 DAEMON_MSG=""
 GIT_ADD_DAEMON=()
 if [ "$WITH_DAEMON" = true ]; then
-  DAEMON_OLD=$(pkg_version "${REPO_ROOT}/packages/pty-daemon")
-  DAEMON_NEW=$(increment_patch "${DAEMON_OLD}")
-  set_pkg_version "${REPO_ROOT}" "packages/pty-daemon" "${DAEMON_NEW}"
-  DAEMON_MSG=", pty-daemon ${DAEMON_OLD} -> ${DAEMON_NEW}"
+  DAEMON_BUMP=$(bump_daemon_patch "${REPO_ROOT}")
+  DAEMON_MSG=", pty-daemon ${DAEMON_BUMP}"
   GIT_ADD_DAEMON=(packages/pty-daemon/package.json)
-  info "Patch-bumped pty-daemon ${DAEMON_OLD} -> ${DAEMON_NEW}"
+  info "Patch-bumped pty-daemon ${DAEMON_BUMP}"
 fi
 
 refresh_lockfile "${REPO_ROOT}"

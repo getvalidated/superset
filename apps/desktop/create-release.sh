@@ -76,6 +76,7 @@ VERSION=""
 COMMIT_INPUT=""
 AUTO_PUBLISH=false
 AUTO_MERGE=false
+WITH_DAEMON=false
 
 for arg in "$@"; do
     case $arg in
@@ -85,8 +86,11 @@ for arg in "$@"; do
         --merge)
             AUTO_MERGE=true
             ;;
+        --daemon)
+            WITH_DAEMON=true
+            ;;
         -*)
-            error "Unknown option: $arg\nUsage: $0 [version] [commit] [--publish] [--merge]"
+            error "Unknown option: $arg\nUsage: $0 [version] [commit] [--publish] [--merge] [--daemon]"
             ;;
         *)
             if [ -z "$VERSION" ]; then
@@ -286,14 +290,27 @@ if [ -n "$COMMIT_INPUT" ]; then
     if [ "${WORKTREE_VERSION}" == "${VERSION}" ]; then
         warn "Commit ${SHORT_SHA} already has version ${VERSION}; skipping bump"
     else
+        info "Diffing against the previous release..."
+        release_diff_report "${WORKTREE_DIR}" desktop
+        guard_daemon_bump "${WORKTREE_DIR}" "${WITH_DAEMON}" "Re-run with --daemon, or ship the daemon change via 'bun run release cli --daemon'." || error "Release blocked by diff check."
+
         set_pkg_version "${WORKTREE_DIR}" "${DESKTOP_DIR}" "${VERSION}"
         HOST_SERVICE_OLD=$(jq -r .version "packages/host-service/package.json")
         CLI_OLD=$(jq -r .version "packages/cli/package.json")
         sync_unified_versions "${WORKTREE_DIR}" "${VERSION}"
+
+        DAEMON_MSG=""
+        DAEMON_ADD=()
+        if [ "$WITH_DAEMON" = true ]; then
+            DAEMON_BUMP=$(bump_daemon_patch "${WORKTREE_DIR}")
+            DAEMON_MSG=", pty-daemon ${DAEMON_BUMP}"
+            DAEMON_ADD=(packages/pty-daemon/package.json)
+        fi
+
         refresh_lockfile "${WORKTREE_DIR}"
-        git add "${DESKTOP_DIR}/package.json" "packages/host-service/package.json" "packages/cli/package.json" bun.lock
-        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION})"
-        success "Committed version bump ${WORKTREE_VERSION} -> ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}) on top of ${SHORT_SHA}"
+        git add "${DESKTOP_DIR}/package.json" "packages/host-service/package.json" "packages/cli/package.json" "${DAEMON_ADD[@]}" bun.lock
+        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}${DAEMON_MSG})"
+        success "Committed version bump ${WORKTREE_VERSION} -> ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}${DAEMON_MSG}) on top of ${SHORT_SHA}"
     fi
 
     info "Pushing temp branch ${TEMP_BRANCH}..."
@@ -316,6 +333,11 @@ else
     if [ "${CURRENT_VERSION}" == "${VERSION}" ]; then
         warn "package.json already has version ${VERSION}"
     else
+        REPO_ROOT_FOR_HS=$(git rev-parse --show-toplevel)
+        info "Diffing against the previous release..."
+        release_diff_report "${REPO_ROOT_FOR_HS}" desktop
+        guard_daemon_bump "${REPO_ROOT_FOR_HS}" "${WITH_DAEMON}" "Re-run with --daemon, or ship the daemon change via 'bun run release cli --daemon'." || error "Release blocked by diff check."
+
         # Update the version using jq to handle workspace dependencies
         TMP_FILE=$(mktemp)
         jq ".version = \"${VERSION}\"" package.json > "${TMP_FILE}" && mv "${TMP_FILE}" package.json
@@ -326,19 +348,28 @@ else
         # Pin host-service and cli to the same desktop version so the whole
         # bundle ships one unified version. See
         # plans/20260709-unified-version-bumping.md.
-        REPO_ROOT_FOR_HS=$(git rev-parse --show-toplevel)
         HOST_SERVICE_OLD=$(jq -r .version "${REPO_ROOT_FOR_HS}/packages/host-service/package.json")
         CLI_OLD=$(jq -r .version "${REPO_ROOT_FOR_HS}/packages/cli/package.json")
         sync_unified_versions "${REPO_ROOT_FOR_HS}" "${VERSION}"
+
+        DAEMON_MSG=""
+        DAEMON_ADD=()
+        if [ "$WITH_DAEMON" = true ]; then
+            DAEMON_BUMP=$(bump_daemon_patch "${REPO_ROOT_FOR_HS}")
+            DAEMON_MSG=", pty-daemon ${DAEMON_BUMP}"
+            DAEMON_ADD=("${REPO_ROOT_FOR_HS}/packages/pty-daemon/package.json")
+        fi
+
         refresh_lockfile "${REPO_ROOT_FOR_HS}"
-        success "Synced host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}"
+        success "Synced host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}${DAEMON_MSG}"
 
         # Commit the version change
         git add package.json \
             "${REPO_ROOT_FOR_HS}/packages/host-service/package.json" \
             "${REPO_ROOT_FOR_HS}/packages/cli/package.json" \
+            "${DAEMON_ADD[@]}" \
             "${REPO_ROOT_FOR_HS}/bun.lock"
-        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION})"
+        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}${DAEMON_MSG})"
         success "Committed version change"
     fi
 
