@@ -39,6 +39,14 @@ describe("classifyTerminalFailure", () => {
 		expect(result.message).toContain("iad");
 	});
 
+	it("treats a 502/504 gateway status as a temporary relay failure, not host-offline", () => {
+		for (const status of [502, 504]) {
+			const result = classifyTerminalFailure({ status, region: null }, true);
+			expect(result.category).toBe("stream-blocked");
+			expect(result.message).toContain("temporary");
+		}
+	});
+
 	it("falls back to unknown for unexpected statuses", () => {
 		expect(
 			classifyTerminalFailure({ status: 500, region: null }, true),

@@ -416,10 +416,12 @@ export function connect(
 	// upgrade itself (browser sees 200 → 1006 close), but is on plain HTTP,
 	// so a quick GET avoids the connect → 1006 → reconnect flicker. Skip
 	// for non-/hosts URLs (tests, local dev) so connect stays synchronous.
-	// The probe result is also kept to explain a later failure (see close handler).
-	if (isRelayHostUrl(actualUrl)) {
+	// The probe result is also kept to explain a later failure (see close
+	// handler). Probe `wsUrl`, not `actualUrl`: the `_whoowns` endpoint has no
+	// use for the WS-only `replay` hint that `actualUrl` may carry.
+	if (isRelayHostUrl(wsUrl)) {
 		transport._lastProbe = null;
-		void primeRelayAffinity(actualUrl).then((probe) => {
+		void primeRelayAffinity(wsUrl).then((probe) => {
 			transport._lastProbe = probe;
 			openSocket();
 		});

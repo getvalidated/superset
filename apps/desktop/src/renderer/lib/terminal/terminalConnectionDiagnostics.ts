@@ -49,6 +49,15 @@ export function classifyTerminalFailure(
 			message: "You don't have access to this host.",
 		};
 	}
+	// Bad/absent gateway response: the relay couldn't reach the host right now.
+	// Usually transient (edge/routing), so don't assert the host is offline.
+	if (probe.status === 502 || probe.status === 504) {
+		return {
+			category: "stream-blocked",
+			message:
+				"The relay couldn't reach this host right now. This is usually temporary.",
+		};
+	}
 	if (probe.status === 200) {
 		const where = probe.region ? ` (region ${probe.region})` : "";
 		return {
