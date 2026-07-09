@@ -32,6 +32,16 @@ jobs:
       - name: Sherif
         run: bunx sherif
 
+  version-sync:
+    name: Version Sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Check unified versions (desktop == host-service == cli)
+        run: ./scripts/check-versions.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

@@ -87,17 +87,24 @@ increment_major() {
     echo "$((major + 1)).0.0"
 }
 
-# Patch-bump packages/host-service/package.json under the given repo root, echo new version.
-bump_host_service_patch() {
-    local repo_root="$1"
-    local pkg="${repo_root}/packages/host-service/package.json"
-    local current new tmp
-    current=$(jq -r .version "${pkg}")
-    new=$(increment_patch "${current}")
+# Set <pkg>/package.json version under the given repo root, then format it.
+set_pkg_version() {
+    local repo_root="$1" pkg="$2" version="$3"
+    local file="${repo_root}/${pkg}/package.json" tmp
     tmp=$(mktemp)
-    jq ".version = \"${new}\"" "${pkg}" > "${tmp}" && mv "${tmp}" "${pkg}"
-    (cd "${repo_root}" && bunx biome format --write "packages/host-service/package.json" >/dev/null)
-    echo "${new}"
+    jq ".version = \"${version}\"" "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+    (cd "${repo_root}" && bunx biome format --write "${pkg}/package.json" >/dev/null)
+}
+
+# Pin the CLI bundle (host-service + cli) to the desktop version so everything
+# ships one unified version, then refresh the lockfile. pty-daemon is
+# intentionally excluded for now (tracks its own version). See
+# plans/20260709-unified-version-bumping.md.
+sync_cli_side_versions() {
+    local repo_root="$1" version="$2"
+    set_pkg_version "${repo_root}" "packages/host-service" "${version}"
+    set_pkg_version "${repo_root}" "packages/cli" "${version}"
+    (cd "${repo_root}" && bun install --lockfile-only >/dev/null 2>&1 || true)
 }
 
 # Parse arguments
@@ -315,14 +322,13 @@ if [ -n "$COMMIT_INPUT" ]; then
     if [ "${WORKTREE_VERSION}" == "${VERSION}" ]; then
         warn "Commit ${SHORT_SHA} already has version ${VERSION}; skipping bump"
     else
-        TMP_FILE=$(mktemp)
-        jq ".version = \"${VERSION}\"" "${DESKTOP_DIR}/package.json" > "${TMP_FILE}" && mv "${TMP_FILE}" "${DESKTOP_DIR}/package.json"
-        bunx biome format --write "${DESKTOP_DIR}/package.json"
+        set_pkg_version "${WORKTREE_DIR}" "${DESKTOP_DIR}" "${VERSION}"
         HOST_SERVICE_OLD=$(jq -r .version "packages/host-service/package.json")
-        HOST_SERVICE_NEW=$(bump_host_service_patch "${WORKTREE_DIR}")
-        git add "${DESKTOP_DIR}/package.json" "packages/host-service/package.json"
-        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${HOST_SERVICE_NEW})"
-        success "Committed version bump ${WORKTREE_VERSION} -> ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${HOST_SERVICE_NEW}) on top of ${SHORT_SHA}"
+        CLI_OLD=$(jq -r .version "packages/cli/package.json")
+        sync_cli_side_versions "${WORKTREE_DIR}" "${VERSION}"
+        git add "${DESKTOP_DIR}/package.json" "packages/host-service/package.json" "packages/cli/package.json" bun.lock
+        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION})"
+        success "Committed version bump ${WORKTREE_VERSION} -> ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}) on top of ${SHORT_SHA}"
     fi
 
     info "Pushing temp branch ${TEMP_BRANCH}..."
@@ -352,16 +358,21 @@ else
         bunx biome format --write package.json
         success "Updated package.json from ${CURRENT_VERSION} to ${VERSION}"
 
-        # Patch-bump host-service alongside the desktop bump so detached
-        # host-service auto-updates ship with each desktop release.
+        # Pin host-service and cli to the same desktop version so the whole
+        # bundle ships one unified version. See
+        # plans/20260709-unified-version-bumping.md.
         REPO_ROOT_FOR_HS=$(git rev-parse --show-toplevel)
         HOST_SERVICE_OLD=$(jq -r .version "${REPO_ROOT_FOR_HS}/packages/host-service/package.json")
-        HOST_SERVICE_NEW=$(bump_host_service_patch "${REPO_ROOT_FOR_HS}")
-        success "Updated host-service from ${HOST_SERVICE_OLD} to ${HOST_SERVICE_NEW}"
+        CLI_OLD=$(jq -r .version "${REPO_ROOT_FOR_HS}/packages/cli/package.json")
+        sync_cli_side_versions "${REPO_ROOT_FOR_HS}" "${VERSION}"
+        success "Synced host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION}"
 
         # Commit the version change
-        git add package.json "${REPO_ROOT_FOR_HS}/packages/host-service/package.json"
-        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${HOST_SERVICE_NEW})"
+        git add package.json \
+            "${REPO_ROOT_FOR_HS}/packages/host-service/package.json" \
+            "${REPO_ROOT_FOR_HS}/packages/cli/package.json" \
+            "${REPO_ROOT_FOR_HS}/bun.lock"
+        git commit -m "chore(desktop): bump version to ${VERSION} (host-service ${HOST_SERVICE_OLD} -> ${VERSION}, cli ${CLI_OLD} -> ${VERSION})"
         success "Committed version change"
     fi
 
