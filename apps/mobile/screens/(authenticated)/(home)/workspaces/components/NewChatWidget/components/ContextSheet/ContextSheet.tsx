@@ -20,10 +20,15 @@ import { Text } from "@/components/ui/text";
 import { useTheme } from "@/hooks/useTheme";
 import { hslToHex } from "../../../../utils/hslToHex";
 import { PhotoCarousel } from "./components/PhotoCarousel";
+import { ScreenshotGrid } from "./components/ScreenshotGrid";
 
 // Pickers present their own view controller; wait for the sheet's
 // dismissal animation or iOS drops the second presentation.
 const SHEET_DISMISS_DELAY_MS = 400;
+const LARGE_DETENT_FRACTION = 0.88;
+
+type SheetView = "main" | "screenshots";
+type SheetDetent = "medium" | "large";
 
 export function ContextSheet({
 	isPresented,
@@ -33,14 +38,20 @@ export function ContextSheet({
 	onIsPresentedChange: (value: boolean) => void;
 }) {
 	const theme = useTheme();
-	const { width } = useWindowDimensions();
+	const { width, height } = useWindowDimensions();
 	const attachments = usePromptInputAttachments();
 	const [selected, setSelected] = useState<MediaLibrary.Asset[]>([]);
 	const [adding, setAdding] = useState(false);
+	const [view, setView] = useState<SheetView>("main");
+	const [detent, setDetent] = useState<SheetDetent>("medium");
 
 	const handlePresentedChange = useCallback(
 		(value: boolean) => {
-			if (!value) setSelected([]);
+			if (!value) {
+				setSelected([]);
+				setView("main");
+				setDetent("medium");
+			}
 			onIsPresentedChange(value);
 		},
 		[onIsPresentedChange],
@@ -57,6 +68,11 @@ export function ContextSheet({
 	const runAfterDismiss = (action: () => void) => {
 		handlePresentedChange(false);
 		setTimeout(action, SHEET_DISMISS_DELAY_MS);
+	};
+
+	const openScreenshots = () => {
+		setView("screenshots");
+		setDetent("large");
 	};
 
 	const openCamera = async () => {
@@ -111,23 +127,49 @@ export function ContextSheet({
 		}
 	};
 
-	const rows = [
+	const mainRows = [
 		{
 			icon: "images-outline" as const,
 			label: "Photos",
-			action: () => void attachments.openImagePicker(),
+			onPress: () => runAfterDismiss(() => void attachments.openImagePicker()),
+		},
+		{
+			icon: "scan-outline" as const,
+			label: "Screenshots",
+			onPress: openScreenshots,
+			showsChevron: true,
 		},
 		{
 			icon: "camera-outline" as const,
 			label: "Camera",
-			action: () => void openCamera(),
+			onPress: () => runAfterDismiss(() => void openCamera()),
 		},
 		{
 			icon: "document-outline" as const,
 			label: "Files",
-			action: () => void attachments.openFilePicker(),
+			onPress: () => runAfterDismiss(() => void attachments.openFilePicker()),
 		},
 	];
+
+	const addButton =
+		selected.length > 0 ? (
+			<View className="px-5 pt-2">
+				<Button
+					className="rounded-full"
+					disabled={adding}
+					onPress={() => void handleAddSelected()}
+					size="lg"
+				>
+					{adding ? (
+						<Spinner size="small" />
+					) : (
+						<Text>
+							{selected.length === 1 ? "Add" : `Add ${selected.length}`}
+						</Text>
+					)}
+				</Button>
+			</View>
+		) : null;
 
 	return (
 		<Host style={{ position: "absolute", width }}>
@@ -138,7 +180,14 @@ export function ContextSheet({
 				<Group
 					modifiers={[
 						environment("colorScheme", "dark"),
-						presentationDetents(["medium", "large"]),
+						presentationDetents(["medium", "large"], {
+							selection: detent,
+							onSelectionChange: (selection) => {
+								if (selection === "medium" || selection === "large") {
+									setDetent(selection);
+								}
+							},
+						}),
 						presentationDragIndicator("visible"),
 						background(theme.background),
 						presentationBackground(hslToHex(theme.background)),
@@ -146,66 +195,87 @@ export function ContextSheet({
 					]}
 				>
 					<RNHostView matchContents>
-						<View className="pb-6 pt-5">
-							<Text
-								className="mb-3 px-5 text-center text-lg font-semibold"
-								style={{ color: theme.foreground }}
+						{view === "screenshots" ? (
+							<View
+								className="pb-6 pt-5"
+								style={{ height: height * LARGE_DETENT_FRACTION }}
 							>
-								Context
-							</Text>
-							<PhotoCarousel
-								active={isPresented}
-								selected={selected}
-								onToggle={toggleAsset}
-							/>
-							<View className="px-5 pt-4">
-								<Text
-									className="mb-1 text-sm font-semibold"
-									style={{ color: theme.mutedForeground }}
-								>
-									Add
-								</Text>
-								{rows.map((row) => (
+								<View className="relative mb-3 items-center justify-center">
 									<Pressable
-										key={row.label}
-										onPress={() => runAfterDismiss(row.action)}
-										className="flex-row items-center gap-2.5 py-2.5"
+										accessibilityLabel="Back"
+										className="absolute left-4 size-9 items-center justify-center rounded-full bg-secondary"
+										onPress={() => setView("main")}
 									>
 										<Ionicons
-											name={row.icon}
-											size={24}
-											color={theme.mutedForeground}
+											name="chevron-back"
+											size={20}
+											color={theme.foreground}
 										/>
-										<Text
-											className="text-sm font-medium"
-											style={{ color: theme.foreground }}
-										>
-											{row.label}
-										</Text>
 									</Pressable>
-								))}
-							</View>
-							{selected.length > 0 ? (
-								<View className="px-5 pt-2">
-									<Button
-										className="rounded-full"
-										disabled={adding}
-										onPress={() => void handleAddSelected()}
-										size="lg"
+									<Text
+										className="text-center text-lg font-semibold"
+										style={{ color: theme.foreground }}
 									>
-										{adding ? (
-											<Spinner size="small" />
-										) : (
-											<Text>
-												{selected.length === 1
-													? "Add"
-													: `Add ${selected.length}`}
-											</Text>
-										)}
-									</Button>
+										Screenshots
+									</Text>
 								</View>
-							) : null}
-						</View>
+								<ScreenshotGrid
+									active={isPresented && view === "screenshots"}
+									selected={selected}
+									onToggle={toggleAsset}
+								/>
+								{addButton}
+							</View>
+						) : (
+							<View className="pb-6 pt-5">
+								<Text
+									className="mb-3 px-5 text-center text-lg font-semibold"
+									style={{ color: theme.foreground }}
+								>
+									Context
+								</Text>
+								<PhotoCarousel
+									active={isPresented}
+									selected={selected}
+									onToggle={toggleAsset}
+								/>
+								<View className="px-5 pt-4">
+									<Text
+										className="mb-1 text-sm font-semibold"
+										style={{ color: theme.mutedForeground }}
+									>
+										Add
+									</Text>
+									{mainRows.map((row) => (
+										<Pressable
+											key={row.label}
+											onPress={row.onPress}
+											className="flex-row items-center gap-2.5 py-2.5"
+										>
+											<Ionicons
+												name={row.icon}
+												size={24}
+												color={theme.mutedForeground}
+											/>
+											<Text
+												className="flex-1 text-sm font-medium"
+												style={{ color: theme.foreground }}
+											>
+												{row.label}
+											</Text>
+											{row.showsChevron ? (
+												<Ionicons
+													name="chevron-forward"
+													size={16}
+													color={theme.mutedForeground}
+												/>
+											) : null}
+										</Pressable>
+									))}
+								</View>
+								{addButton}
+							</View>
+						)}
 					</RNHostView>
 				</Group>
 			</BottomSheet>
