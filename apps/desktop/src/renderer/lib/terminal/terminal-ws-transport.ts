@@ -1,5 +1,10 @@
-import { primeRelayAffinity } from "@superset/workspace-client";
+import {
+	primeRelayAffinity,
+	type RelayAffinityProbe,
+} from "@superset/workspace-client";
 import type { Terminal as XTerm } from "@xterm/xterm";
+import { posthog } from "renderer/lib/posthog";
+import { classifyTerminalFailure } from "./terminalConnectionDiagnostics";
 import { createWriteCoalescer, type WriteCoalescer } from "./write-coalescer";
 
 export type ConnectionState = "disconnected" | "connecting" | "open" | "closed";
@@ -71,6 +76,13 @@ export interface TerminalTransport {
 	 * a parse/render cycle each and overwhelm the renderer (#2241, #2244).
 	 */
 	_writeCoalescer: WriteCoalescer | null;
+	/**
+	 * Internal: result of the most recent relay `_whoowns` preflight. The
+	 * WebSocket API hides the upgrade's HTTP status (a 502/503 surfaces only as
+	 * close code 1006), so this is the one client-visible signal for *why* a
+	 * failed connection failed. Used to classify the give-up message + telemetry.
+	 */
+	_lastProbe: RelayAffinityProbe | null;
 }
 
 const MAX_LOG_ENTRIES = 200;
@@ -171,6 +183,7 @@ export function createTransport(): TerminalTransport {
 		_lastLivenessTick: 0,
 		_resumeListener: null,
 		_writeCoalescer: null,
+		_lastProbe: null,
 	};
 }
 
@@ -308,6 +321,18 @@ function formatWsEndpoint(wsUrl: string | null): string {
 	}
 }
 
+// Relay-routed terminals live under `/hosts/<id>/...`; local/same-machine
+// terminals don't. Only the former go through the relay preflight and can be
+// classified with a probe status.
+function isRelayHostUrl(wsUrl: string | null): boolean {
+	if (!wsUrl) return false;
+	try {
+		return new URL(wsUrl).pathname.startsWith("/hosts/");
+	} catch {
+		return false;
+	}
+}
+
 function formatCloseDetails(event: CloseEvent): string {
 	const code = event.code || "unknown";
 	const reason = event.reason ? `, reason: ${event.reason}` : "";
@@ -395,14 +420,14 @@ export function connect(
 	// upgrade itself (browser sees 200 → 1006 close), but is on plain HTTP,
 	// so a quick GET avoids the connect → 1006 → reconnect flicker. Skip
 	// for non-/hosts URLs (tests, local dev) so connect stays synchronous.
-	let needsPreFlight = false;
-	try {
-		needsPreFlight = new URL(actualUrl).pathname.startsWith("/hosts/");
-	} catch {
-		needsPreFlight = false;
-	}
-	if (needsPreFlight) {
-		void primeRelayAffinity(actualUrl).then(openSocket);
+	// The probe result is also kept to explain a later failure (see close
+	// handler) since the WS API hides the upgrade's HTTP status.
+	if (isRelayHostUrl(actualUrl)) {
+		transport._lastProbe = null;
+		void primeRelayAffinity(actualUrl).then((probe) => {
+			transport._lastProbe = probe;
+			openSocket();
+		});
 	} else {
 		openSocket();
 	}
@@ -486,11 +511,36 @@ function attachSocketListeners(
 				!transport._reconnectTimer &&
 				Boolean(transport.currentUrl && transport._terminal) &&
 				transport._reconnectAttempt < MAX_RECONNECT_ATTEMPTS;
-			pushLog(
-				transport,
-				willReconnect ? "warn" : "error",
-				`WebSocket closed while connected to ${formatWsEndpoint(transport.currentUrl)} (${formatCloseDetails(event)}). ${willReconnect ? "Reconnecting..." : "Max reconnect attempts reached."}`,
-			);
+			const endpoint = formatWsEndpoint(transport.currentUrl);
+			if (willReconnect) {
+				pushLog(
+					transport,
+					"warn",
+					`WebSocket closed while connected to ${endpoint} (${formatCloseDetails(event)}). Reconnecting...`,
+				);
+			} else {
+				// Gave up. Classify *why* from the preflight probe (the WS close
+				// code alone can't tell host-offline from a relay routing failure)
+				// and record it so this failure mode is queryable, not silent.
+				const diagnosis = classifyTerminalFailure(
+					transport._lastProbe,
+					isRelayHostUrl(transport.currentUrl),
+				);
+				pushLog(
+					transport,
+					"error",
+					`WebSocket closed while connected to ${endpoint} (${formatCloseDetails(event)}). Max reconnect attempts reached. ${diagnosis.message}`,
+				);
+				posthog.capture("terminal_connect_failed", {
+					endpoint,
+					close_code: event.code,
+					close_reason: event.reason || undefined,
+					preflight_status: transport._lastProbe?.status ?? null,
+					tunnel_region: transport._lastProbe?.region ?? null,
+					reconnect_attempts: transport._reconnectAttempt,
+					category: diagnosis.category,
+				});
+			}
 		}
 		// Auto-reconnect on unexpected close (host-service restart, network blip)
 		scheduleReconnect(transport);
