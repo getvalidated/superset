@@ -21,7 +21,7 @@ export interface WorkspacesHost {
 
 const WORKSPACES_REFETCH_INTERVAL_MS = 30_000;
 
-function getHostWorkspacesQueryKey(
+export function getHostWorkspacesQueryKey(
 	machineId: string | null,
 	hostUrl: string | null,
 ) {

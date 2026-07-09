@@ -1,4 +1,5 @@
 export {
+	getHostWorkspacesQueryKey,
 	type HostWorkspaceItem,
 	type HostWorkspaceRow,
 	type HostWorkspacesCacheOps,
