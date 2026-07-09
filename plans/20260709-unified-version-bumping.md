@@ -74,6 +74,23 @@ excluded from `check-versions.sh`.
 Fails if base(host-service) ≠ desktop, base(cli) ≠ desktop, or host-service ≠ cli.
 Runs as its own `pull_request` job in `.github/workflows/ci.yml`.
 
+## Release-time diff check (the "ensure future changes bump" guarantee)
+
+Nudges/CI comments are skippable, so enforcement lives at the **release
+chokepoint** (`bun run release`, which can't be bypassed). Both flows:
+
+- **Report** what changed since the previous release of the stream
+  (`release_diff_report`), so you see what's shipping.
+- **Hard-block** if `pty-daemon/src` changed since its last version bump but the
+  release isn't bumping it (`guard_daemon_bump`) — otherwise old daemons never
+  go `updatePending` and the fix silently doesn't ship. Detection is
+  commit-based (`daemon_last_bump_commit`), so it's accurate regardless of tags.
+- `--daemon` (now on **both** `desktop` and `cli` flows) patch-bumps pty-daemon
+  and clears the guard.
+
+For a real guarantee, mark the CI **Version Sync** job as a *required* status
+check in branch protection — an advisory check is skippable.
+
 ## Risks / notes
 
 - **Homebrew:** `bump-homebrew.yml` already accepts `-<prerelease>` tags
