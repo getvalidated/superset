@@ -18,6 +18,15 @@ export default function HomeLayout() {
 					sheetGrabberVisible: true,
 				}}
 			/>
+			<Stack.Screen
+				name="new-chat"
+				options={{
+					presentation: "formSheet",
+					headerShown: false,
+					sheetAllowedDetents: [1.0],
+					sheetGrabberVisible: true,
+				}}
+			/>
 		</Stack>
 	);
 }

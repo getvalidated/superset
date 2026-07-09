@@ -1,5 +1,6 @@
 import { SUPERSET_CHAT_MODELS } from "@superset/shared/agent-models";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { ChevronDownIcon, PlusIcon } from "lucide-react-native";
 import { useState } from "react";
 import {
@@ -29,10 +30,7 @@ import { Text } from "@/components/ui/text";
 import type { HostWorkspaceItem } from "@/hooks/useHostWorkspaces";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
 import { ProjectAvatar } from "@/screens/(authenticated)/(home)/filter/components/ProjectAvatar";
-import { BranchPickerSheet } from "./components/BranchPickerSheet";
 import { ContextSheet } from "./components/ContextSheet";
-import { ModelPickerSheet } from "./components/ModelPickerSheet";
-import { TargetPickerSheet } from "./components/TargetPickerSheet";
 import { useCreateChatWorkspace } from "./hooks/useCreateChatWorkspace";
 import { useNewChatTargets } from "./hooks/useNewChatTargets";
 import { useNewChatPreferencesStore } from "./stores/newChatPreferencesStore";
@@ -56,28 +54,23 @@ function NewChatWidgetInner({
 }: {
 	workspaces: HostWorkspaceItem[];
 }) {
+	const router = useRouter();
 	const insets = useSafeAreaInsets();
 	const controller = usePromptInputController();
 
-	const [targetSheetOpen, setTargetSheetOpen] = useState(false);
-	const [branchSheetOpen, setBranchSheetOpen] = useState(false);
 	const [contextSheetOpen, setContextSheetOpen] = useState(false);
-	const [modelSheetOpen, setModelSheetOpen] = useState(false);
 	const [focused, setFocused] = useState(false);
-	const [explicitTargetKey, setExplicitTargetKey] = useState<string | null>(
-		null,
-	);
-	const [baseBranch, setBaseBranch] = useState<string | null>(null);
 
 	const modelId = useNewChatPreferencesStore((state) => state.modelId);
-	const setModelId = useNewChatPreferencesStore((state) => state.setModelId);
-	const setTargetKey = useNewChatPreferencesStore(
-		(state) => state.setTargetKey,
+	const targetKey = useNewChatPreferencesStore((state) => state.targetKey);
+	const baseBranch = useNewChatPreferencesStore((state) => state.baseBranch);
+	const setBaseBranch = useNewChatPreferencesStore(
+		(state) => state.setBaseBranch,
 	);
 
 	const { targets, defaultTarget } = useNewChatTargets(workspaces);
 	const selectedTarget =
-		targets.find((target) => target.key === explicitTargetKey) ?? defaultTarget;
+		targets.find((target) => target.key === targetKey) ?? defaultTarget;
 
 	const { data: branchData } = useQuery({
 		queryKey: [
@@ -143,7 +136,9 @@ function NewChatWidgetInner({
 								<Pressable
 									className="flex-row items-center gap-1.5"
 									disabled={targets.length === 0}
-									onPress={() => setTargetSheetOpen(true)}
+									onPress={() =>
+										router.push("/(authenticated)/(home)/new-chat/project")
+									}
 								>
 									<ProjectAvatar
 										name={selectedTarget?.projectName}
@@ -157,7 +152,9 @@ function NewChatWidgetInner({
 								<Pressable
 									className="flex-row items-center gap-1"
 									disabled={!selectedTarget}
-									onPress={() => setBranchSheetOpen(true)}
+									onPress={() =>
+										router.push("/(authenticated)/(home)/new-chat/branch")
+									}
 								>
 									<Text
 										className="text-muted-foreground text-sm"
@@ -192,7 +189,9 @@ function NewChatWidgetInner({
 									<Pressable
 										accessibilityLabel="Select a model"
 										className="flex-row items-center gap-1 rounded-lg px-2 py-1.5"
-										onPress={() => setModelSheetOpen(true)}
+										onPress={() =>
+											router.push("/(authenticated)/(home)/new-chat/model")
+										}
 									>
 										<Text className="text-foreground text-sm">
 											{selectedModel?.label ?? "Model"}
@@ -211,31 +210,6 @@ function NewChatWidgetInner({
 					</PromptInput>
 				</View>
 			</KeyboardAvoidingView>
-			<TargetPickerSheet
-				isPresented={targetSheetOpen}
-				onIsPresentedChange={setTargetSheetOpen}
-				targets={targets}
-				selectedKey={selectedTarget?.key ?? null}
-				onSelect={(target) => {
-					setExplicitTargetKey(target.key);
-					setTargetKey(target.key);
-					setBaseBranch(null);
-				}}
-			/>
-			<BranchPickerSheet
-				isPresented={branchSheetOpen}
-				onIsPresentedChange={setBranchSheetOpen}
-				hostUrl={selectedTarget?.hostUrl ?? null}
-				projectId={selectedTarget?.projectId ?? null}
-				selectedBranch={baseBranch}
-				onSelect={setBaseBranch}
-			/>
-			<ModelPickerSheet
-				isPresented={modelSheetOpen}
-				onIsPresentedChange={setModelSheetOpen}
-				selectedModelId={modelId}
-				onSelect={setModelId}
-			/>
 			<ContextSheet
 				isPresented={contextSheetOpen}
 				onIsPresentedChange={setContextSheetOpen}

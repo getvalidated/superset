@@ -10,8 +10,11 @@ interface NewChatPreferencesStore {
 	modelId: string;
 	/** "projectId:machineId" of the last used target. */
 	targetKey: string | null;
+	/** Draft base branch for the next chat; null = default branch. */
+	baseBranch: string | null;
 	setModelId: (modelId: string) => void;
 	setTargetKey: (targetKey: string) => void;
+	setBaseBranch: (baseBranch: string | null) => void;
 }
 
 export const useNewChatPreferencesStore = create<NewChatPreferencesStore>()(
@@ -19,12 +22,18 @@ export const useNewChatPreferencesStore = create<NewChatPreferencesStore>()(
 		(set) => ({
 			modelId: DEFAULT_MODEL_ID,
 			targetKey: null,
+			baseBranch: null,
 			setModelId: (modelId) => set({ modelId }),
-			setTargetKey: (targetKey) => set({ targetKey }),
+			setTargetKey: (targetKey) => set({ targetKey, baseBranch: null }),
+			setBaseBranch: (baseBranch) => set({ baseBranch }),
 		}),
 		{
 			name: "new-chat-preferences",
 			storage: createJSONStorage(() => AsyncStorage),
+			partialize: (state) => ({
+				modelId: state.modelId,
+				targetKey: state.targetKey,
+			}),
 		},
 	),
 );
