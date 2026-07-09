@@ -1,4 +1,3 @@
-import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { SUPERSET_CHAT_MODELS } from "@superset/shared/agent-models";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react-native";
@@ -11,15 +10,6 @@ import {
 	View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-	ModelSelector,
-	ModelSelectorContent,
-	ModelSelectorItem,
-	ModelSelectorList,
-	ModelSelectorName,
-	ModelSelectorTrigger,
-	ModelSelectorValue,
-} from "@/components/ai-elements/model-selector";
 import {
 	PromptInput,
 	PromptInputAttachments,
@@ -41,6 +31,7 @@ import { getHostServiceClientByUrl } from "@/lib/host-service/client";
 import { ProjectAvatar } from "@/screens/(authenticated)/(home)/filter/components/ProjectAvatar";
 import { BranchPickerSheet } from "./components/BranchPickerSheet";
 import { ContextSheet } from "./components/ContextSheet";
+import { ModelPickerSheet } from "./components/ModelPickerSheet";
 import { TargetPickerSheet } from "./components/TargetPickerSheet";
 import { useCreateChatWorkspace } from "./hooks/useCreateChatWorkspace";
 import { useNewChatTargets } from "./hooks/useNewChatTargets";
@@ -54,9 +45,7 @@ export function NewChatWidget({
 	return (
 		<View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
 			<PromptInputProvider>
-				<BottomSheetModalProvider>
-					<NewChatWidgetInner workspaces={workspaces} />
-				</BottomSheetModalProvider>
+				<NewChatWidgetInner workspaces={workspaces} />
 			</PromptInputProvider>
 		</View>
 	);
@@ -73,6 +62,7 @@ function NewChatWidgetInner({
 	const [targetSheetOpen, setTargetSheetOpen] = useState(false);
 	const [branchSheetOpen, setBranchSheetOpen] = useState(false);
 	const [contextSheetOpen, setContextSheetOpen] = useState(false);
+	const [modelSheetOpen, setModelSheetOpen] = useState(false);
 	const [focused, setFocused] = useState(false);
 	const [explicitTargetKey, setExplicitTargetKey] = useState<string | null>(
 		null,
@@ -199,25 +189,19 @@ function NewChatWidgetInner({
 									>
 										<Icon as={PlusIcon} className="size-4" />
 									</PromptInputButton>
-									<ModelSelector value={modelId} onValueChange={setModelId}>
-										<ModelSelectorTrigger size="sm" variant="ghost">
-											<ModelSelectorValue>
-												{selectedModel?.label}
-											</ModelSelectorValue>
-										</ModelSelectorTrigger>
-										<ModelSelectorContent title="Model">
-											<ModelSelectorList>
-												{SUPERSET_CHAT_MODELS.map((model) => (
-													<ModelSelectorItem key={model.id} value={model.id}>
-														<ModelSelectorName>{model.label}</ModelSelectorName>
-														<Text className="text-muted-foreground text-xs">
-															{model.provider}
-														</Text>
-													</ModelSelectorItem>
-												))}
-											</ModelSelectorList>
-										</ModelSelectorContent>
-									</ModelSelector>
+									<Pressable
+										accessibilityLabel="Select a model"
+										className="flex-row items-center gap-1 rounded-lg px-2 py-1.5"
+										onPress={() => setModelSheetOpen(true)}
+									>
+										<Text className="text-foreground text-sm">
+											{selectedModel?.label ?? "Model"}
+										</Text>
+										<Icon
+											as={ChevronDownIcon}
+											className="size-3.5 text-muted-foreground"
+										/>
+									</Pressable>
 								</PromptInputTools>
 								<PromptInputSubmit
 									status={createChatWorkspace.isPending ? "submitted" : "ready"}
@@ -228,8 +212,8 @@ function NewChatWidgetInner({
 				</View>
 			</KeyboardAvoidingView>
 			<TargetPickerSheet
-				open={targetSheetOpen}
-				onOpenChange={setTargetSheetOpen}
+				isPresented={targetSheetOpen}
+				onIsPresentedChange={setTargetSheetOpen}
 				targets={targets}
 				selectedKey={selectedTarget?.key ?? null}
 				onSelect={(target) => {
@@ -239,16 +223,22 @@ function NewChatWidgetInner({
 				}}
 			/>
 			<BranchPickerSheet
-				open={branchSheetOpen}
-				onOpenChange={setBranchSheetOpen}
+				isPresented={branchSheetOpen}
+				onIsPresentedChange={setBranchSheetOpen}
 				hostUrl={selectedTarget?.hostUrl ?? null}
 				projectId={selectedTarget?.projectId ?? null}
 				selectedBranch={baseBranch}
 				onSelect={setBaseBranch}
 			/>
+			<ModelPickerSheet
+				isPresented={modelSheetOpen}
+				onIsPresentedChange={setModelSheetOpen}
+				selectedModelId={modelId}
+				onSelect={setModelId}
+			/>
 			<ContextSheet
-				open={contextSheetOpen}
-				onOpenChange={setContextSheetOpen}
+				isPresented={contextSheetOpen}
+				onIsPresentedChange={setContextSheetOpen}
 			/>
 		</>
 	);

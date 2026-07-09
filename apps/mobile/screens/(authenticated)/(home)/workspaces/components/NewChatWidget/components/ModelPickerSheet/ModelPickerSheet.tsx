@@ -5,24 +5,21 @@ import {
 	presentationDragIndicator,
 } from "@expo/ui/swift-ui/modifiers";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { SUPERSET_CHAT_MODELS } from "@superset/shared/agent-models";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { useTheme } from "@/hooks/useTheme";
-import { ProjectAvatar } from "@/screens/(authenticated)/(home)/filter/components/ProjectAvatar";
-import type { NewChatTarget } from "../../hooks/useNewChatTargets";
 
-export function TargetPickerSheet({
+export function ModelPickerSheet({
 	isPresented,
 	onIsPresentedChange,
-	targets,
-	selectedKey,
+	selectedModelId,
 	onSelect,
 }: {
 	isPresented: boolean;
 	onIsPresentedChange: (value: boolean) => void;
-	targets: NewChatTarget[];
-	selectedKey: string | null;
-	onSelect: (target: NewChatTarget) => void;
+	selectedModelId: string;
+	onSelect: (modelId: string) => void;
 }) {
 	const theme = useTheme();
 	const { width } = useWindowDimensions();
@@ -47,46 +44,31 @@ export function TargetPickerSheet({
 								className="mb-2 text-sm font-semibold"
 								style={{ color: theme.mutedForeground }}
 							>
-								Projects
+								Model
 							</Text>
-							{targets.length === 0 ? (
-								<Text
-									className="py-4 text-center text-sm"
-									style={{ color: theme.mutedForeground }}
-								>
-									No projects on an online host
-								</Text>
-							) : null}
-							{targets.map((target) => {
-								const isSelected = target.key === selectedKey;
+							{SUPERSET_CHAT_MODELS.map((model) => {
+								const isSelected = model.id === selectedModelId;
 								return (
 									<Pressable
-										key={target.key}
+										key={model.id}
 										onPress={() => {
-											onSelect(target);
+											onSelect(model.id);
 											onIsPresentedChange(false);
 										}}
 										className="flex-row items-center gap-2.5 py-2.5"
 									>
-										<ProjectAvatar
-											name={target.projectName}
-											iconUrl={target.projectIconUrl}
-											size={32}
-										/>
-										<View className="flex-1">
-											<Text
-												className="text-sm font-medium"
-												style={{ color: theme.foreground }}
-											>
-												{target.projectName}
-											</Text>
-											<Text
-												className="text-xs"
-												style={{ color: theme.mutedForeground }}
-											>
-												{target.hostName}
-											</Text>
-										</View>
+										<Text
+											className="flex-1 text-sm font-medium"
+											style={{ color: theme.foreground }}
+										>
+											{model.label}
+										</Text>
+										<Text
+											className="text-xs"
+											style={{ color: theme.mutedForeground }}
+										>
+											{model.provider}
+										</Text>
 										{isSelected ? (
 											<Ionicons
 												name="checkmark-circle"
