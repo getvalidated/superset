@@ -1,21 +1,9 @@
 /**
- * Many WebSocket clients (browsers especially) don't transparently follow
- * fly-replay headers on the WS upgrade response — they see a non-101
- * status and fail the handshake with code 1006. To avoid that flicker, we
- * pre-flight a plain HTTP GET to the same /hosts/<id>/_whoowns endpoint
- * first. fly-replay is fully transparent for HTTP, and the GET locks fly's
- * edge affinity to the owning machine for subsequent requests, so the
- * follow-up WS upgrade lands on the right instance and gets a clean 101.
- *
- * The response also doubles as a cheap health probe: because the WS API
- * hides the upgrade's HTTP status (a 502/503 just surfaces as close code
- * 1006), the returned status is the only client-visible signal for *why* a
- * terminal/events stream can't connect. Callers use it to distinguish
- * host-offline (503) from a routing failure (200 but the WS still drops)
- * from an auth problem (401/403).
- *
- * Best-effort: if the probe fails or times out, we return null and still
- * try the WS — it just may briefly flicker during the implicit retry.
+ * Pre-flight GET to /hosts/<id>/_whoowns before the WS upgrade: browsers don't
+ * follow fly-replay on a WS upgrade (fails 1006) but do on HTTP, so this pins
+ * fly edge affinity to the owning machine. The status is also the only signal
+ * for *why* a stream fails (the WS API hides the upgrade status): 503 offline,
+ * 401/403 unauthorized, 200-but-drops routing. Best-effort; null on failure.
  */
 
 const PROBE_TIMEOUT_MS = 3_000;

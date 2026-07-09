@@ -14,16 +14,14 @@ export interface TerminalFailureClassification {
 }
 
 /**
- * Turn the `_whoowns` preflight result (see `primeRelayAffinity`) into a cause
- * for a failed terminal WS. The key case is `stream-blocked`: the host tunnel
- * is present (probe 200) yet the WS still drops — the fingerprint of a relay
- * routing problem (e.g. the cross-region 6PN path), not an offline host.
+ * Cause of a failed terminal WS from the `_whoowns` probe. `stream-blocked`
+ * (host present but WS drops) is the relay-routing fingerprint, e.g. cross-region.
  */
 export function classifyTerminalFailure(
 	probe: RelayAffinityProbe | null,
 	isHostUrl: boolean,
 ): TerminalFailureClassification {
-	// Local / same-machine terminals never hit the relay; don't guess a cause.
+	// Local terminals never hit the relay; don't guess a cause.
 	if (!isHostUrl) {
 		return {
 			category: "unknown",
@@ -49,8 +47,7 @@ export function classifyTerminalFailure(
 			message: "You don't have access to this host.",
 		};
 	}
-	// Bad/absent gateway response: the relay couldn't reach the host right now.
-	// Usually transient (edge/routing), so don't assert the host is offline.
+	// Bad gateway: relay couldn't reach the host now, usually transient.
 	if (probe.status === 502 || probe.status === 504) {
 		return {
 			category: "stream-blocked",

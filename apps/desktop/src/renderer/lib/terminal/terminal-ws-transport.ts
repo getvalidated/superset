@@ -76,8 +76,7 @@ export interface TerminalTransport {
 	 * a parse/render cycle each and overwhelm the renderer (#2241, #2244).
 	 */
 	_writeCoalescer: WriteCoalescer | null;
-	/** Internal: most recent relay `_whoowns` preflight result, used to explain
-	 * a failed connection (see `classifyTerminalFailure`). */
+	/** Internal: last `_whoowns` probe, used to explain a failed connection. */
 	_lastProbe: RelayAffinityProbe | null;
 }
 
@@ -317,9 +316,7 @@ function formatWsEndpoint(wsUrl: string | null): string {
 	}
 }
 
-// Relay-routed terminals live under `/hosts/<id>/...`; local/same-machine
-// terminals don't. Only the former go through the relay preflight and can be
-// classified with a probe status.
+// Relay-routed terminals live under `/hosts/<id>/...`; local ones don't.
 function isRelayHostUrl(wsUrl: string | null): boolean {
 	if (!wsUrl) return false;
 	try {
@@ -411,14 +408,9 @@ export function connect(
 		attachSocketListeners(transport, terminal, socket);
 	};
 
-	// Pre-flight an HTTP request to lock fly's edge affinity to the owning
-	// machine before the WS upgrade. fly-replay isn't transparent on the
-	// upgrade itself (browser sees 200 → 1006 close), but is on plain HTTP,
-	// so a quick GET avoids the connect → 1006 → reconnect flicker. Skip
-	// for non-/hosts URLs (tests, local dev) so connect stays synchronous.
-	// The probe result is also kept to explain a later failure (see close
-	// handler). Probe `wsUrl`, not `actualUrl`: the `_whoowns` endpoint has no
-	// use for the WS-only `replay` hint that `actualUrl` may carry.
+	// Pre-flight `_whoowns` to pin fly edge affinity before the WS upgrade (see
+	// primeRelayAffinity); skip for non-/hosts URLs. Probe `wsUrl`, not the
+	// `replay`-carrying `actualUrl`, and keep the result to explain a failure.
 	if (isRelayHostUrl(wsUrl)) {
 		transport._lastProbe = null;
 		void primeRelayAffinity(wsUrl).then((probe) => {
