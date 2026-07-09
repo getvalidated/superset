@@ -122,7 +122,9 @@ export const auth = betterAuth({
 		},
 	},
 	emailAndPassword: {
-		enabled: process.env.NODE_ENV === "development",
+		enabled:
+			process.env.NODE_ENV === "development" ||
+			process.env.ENABLE_TEST_AUTH === "1",
 		autoSignIn: true,
 	},
 	socialProviders: {

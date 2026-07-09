@@ -1,0 +1,6 @@
+appId: sh.superset.mobile
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Welcome to Superset"
+- assertVisible: "Sign in to get started"

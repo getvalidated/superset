@@ -1,0 +1,11 @@
+appId: sh.superset.mobile
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Welcome to Superset"
+- tapOn:
+    id: "dev-sign-in-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
