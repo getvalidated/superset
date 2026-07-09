@@ -31,7 +31,7 @@ export function targetKeyFor(projectId: string, machineId: string) {
  * pick: last used target, else the filtered project, else the most recently
  * updated workspace's target.
  */
-export function useNewChatTargets(workspaces: HostWorkspaceItem[]): {
+export function useNewChatTargets(workspaces: HostWorkspaceItem[] = []): {
 	targets: NewChatTarget[];
 	defaultTarget: NewChatTarget | null;
 } {

@@ -2,7 +2,6 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Stack, useRouter } from "expo-router";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "@/components/ui/text";
-import { useHostWorkspaces } from "@/hooks/useHostWorkspaces";
 import { useTheme } from "@/hooks/useTheme";
 import { ProjectAvatar } from "@/screens/(authenticated)/(home)/filter/components/ProjectAvatar";
 import { useNewChatTargets } from "@/screens/(authenticated)/(home)/workspaces/components/NewChatWidget/hooks/useNewChatTargets";
@@ -11,8 +10,7 @@ import { useNewChatPreferencesStore } from "@/screens/(authenticated)/(home)/wor
 export function ProjectPickerScreen() {
 	const router = useRouter();
 	const theme = useTheme();
-	const { workspaces } = useHostWorkspaces();
-	const { targets, defaultTarget } = useNewChatTargets(workspaces);
+	const { targets, defaultTarget } = useNewChatTargets();
 	const targetKey = useNewChatPreferencesStore((state) => state.targetKey);
 	const setTargetKey = useNewChatPreferencesStore(
 		(state) => state.setTargetKey,
