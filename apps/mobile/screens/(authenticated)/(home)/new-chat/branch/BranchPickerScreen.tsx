@@ -6,7 +6,6 @@ import { Pressable, ScrollView, View } from "react-native";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
-import { useHostWorkspaces } from "@/hooks/useHostWorkspaces";
 import { useTheme } from "@/hooks/useTheme";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
 import { useNewChatTargets } from "@/screens/(authenticated)/(home)/workspaces/components/NewChatWidget/hooks/useNewChatTargets";
@@ -42,8 +41,7 @@ export function BranchPickerScreen() {
 	const router = useRouter();
 	const theme = useTheme();
 	const [query, setQuery] = useState("");
-	const { workspaces } = useHostWorkspaces();
-	const { targets, defaultTarget } = useNewChatTargets(workspaces);
+	const { targets, defaultTarget } = useNewChatTargets();
 	const targetKey = useNewChatPreferencesStore((state) => state.targetKey);
 	const baseBranch = useNewChatPreferencesStore((state) => state.baseBranch);
 	const setBaseBranch = useNewChatPreferencesStore(
@@ -86,26 +84,34 @@ export function BranchPickerScreen() {
 	};
 
 	return (
-		<View className="bg-background flex-1 px-6 pt-3">
+		<>
 			<Stack.Toolbar placement="left">
 				<Stack.Toolbar.Button icon="xmark" onPress={() => router.back()} />
 			</Stack.Toolbar>
-			<View className="relative justify-center">
-				<View className="absolute left-3 z-10">
-					<Ionicons name="search" size={16} color={theme.mutedForeground} />
+			{/* The formSheet's content wrapper special-cases its direct subviews:
+			    it expects [header, ScrollView] and sizes the ScrollView to the
+			    remainder (react-native-screens RNSScreenContentWrapper). Any
+			    other shape gets the ScrollView pinned over the whole sheet. The
+			    header needs collapsable={false} so RN view flattening doesn't
+			    remove it from the native hierarchy. */}
+			<View collapsable={false} className="bg-background px-6 pb-2 pt-3">
+				<View className="relative justify-center">
+					<View className="absolute left-3 z-10">
+						<Ionicons name="search" size={16} color={theme.mutedForeground} />
+					</View>
+					<Input
+						autoCapitalize="none"
+						autoCorrect={false}
+						className="rounded-full pl-9"
+						onChangeText={setQuery}
+						placeholder="Branches..."
+						value={query}
+					/>
 				</View>
-				<Input
-					autoCapitalize="none"
-					autoCorrect={false}
-					className="rounded-full pl-9"
-					onChangeText={setQuery}
-					placeholder="Branches..."
-					value={query}
-				/>
 			</View>
 			<ScrollView
-				style={{ flex: 1 }}
-				contentContainerStyle={{ flexGrow: 1 }}
+				className="bg-background"
+				contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 24 }}
 				keyboardShouldPersistTaps="handled"
 			>
 				{defaultBranch ? (

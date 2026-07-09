@@ -15,8 +15,8 @@ export function ProjectFilterScreen() {
 	const router = useRouter();
 	const theme = useTheme();
 	const collections = useCollections();
-	const { workspaces } = useHostWorkspaces();
 	const selectedHost = useSelectedHost();
+	const { workspaces } = useHostWorkspaces(selectedHost);
 	const projectFilter = useWorkspacesFilterStore(
 		(store) => store.projectFilter,
 	);
@@ -37,14 +37,13 @@ export function ProjectFilterScreen() {
 	const workspaceCounts = useMemo(() => {
 		const counts = new Map<string, number>();
 		for (const workspace of workspaces) {
-			if (workspace.hostId !== selectedHost?.machineId) continue;
 			counts.set(
 				workspace.projectId,
 				(counts.get(workspace.projectId) ?? 0) + 1,
 			);
 		}
 		return counts;
-	}, [workspaces, selectedHost]);
+	}, [workspaces]);
 
 	const selectedProjectId = projectFilter ?? sortedProjects[0]?.id ?? null;
 
