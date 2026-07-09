@@ -1,21 +1,20 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { BottomSheet, Group, Host, RNHostView } from "@expo/ui/swift-ui";
 import {
-	BottomSheetBackdrop,
-	type BottomSheetBackdropProps,
-	BottomSheetModal,
-	BottomSheetView,
-} from "@gorhom/bottom-sheet";
+	background,
+	environment,
+	presentationDragIndicator,
+} from "@expo/ui/swift-ui/modifiers";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library/legacy";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCallback, useState } from "react";
+import { Alert, Pressable, useWindowDimensions, View } from "react-native";
 import { usePromptInputAttachments } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
-import { THEME } from "@/lib/theme";
+import { useTheme } from "@/hooks/useTheme";
 import { PhotoCarousel } from "./components/PhotoCarousel";
 
 // Pickers present their own view controller; wait for the sheet's
@@ -23,30 +22,25 @@ import { PhotoCarousel } from "./components/PhotoCarousel";
 const SHEET_DISMISS_DELAY_MS = 400;
 
 export function ContextSheet({
-	open,
-	onOpenChange,
+	isPresented,
+	onIsPresentedChange,
 }: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
+	isPresented: boolean;
+	onIsPresentedChange: (value: boolean) => void;
 }) {
-	const insets = useSafeAreaInsets();
+	const theme = useTheme();
+	const { width } = useWindowDimensions();
 	const attachments = usePromptInputAttachments();
-	const modalRef = useRef<BottomSheetModal>(null);
 	const [selected, setSelected] = useState<MediaLibrary.Asset[]>([]);
 	const [adding, setAdding] = useState(false);
 
-	useEffect(() => {
-		if (open) {
-			modalRef.current?.present();
-		} else {
-			modalRef.current?.dismiss();
-		}
-	}, [open]);
-
-	const handleDismiss = useCallback(() => {
-		setSelected([]);
-		onOpenChange(false);
-	}, [onOpenChange]);
+	const handlePresentedChange = useCallback(
+		(value: boolean) => {
+			if (!value) setSelected([]);
+			onIsPresentedChange(value);
+		},
+		[onIsPresentedChange],
+	);
 
 	const toggleAsset = useCallback((asset: MediaLibrary.Asset) => {
 		setSelected((previous) =>
@@ -57,7 +51,7 @@ export function ContextSheet({
 	}, []);
 
 	const runAfterDismiss = (action: () => void) => {
-		onOpenChange(false);
+		handlePresentedChange(false);
 		setTimeout(action, SHEET_DISMISS_DELAY_MS);
 	};
 
@@ -102,8 +96,7 @@ export function ContextSheet({
 				}),
 			);
 			attachments.add(items);
-			setSelected([]);
-			onOpenChange(false);
+			handlePresentedChange(false);
 		} catch (error) {
 			Alert.alert(
 				"Could not add photos",
@@ -132,85 +125,80 @@ export function ContextSheet({
 		},
 	];
 
-	const renderBackdrop = useCallback(
-		(backdropProps: BottomSheetBackdropProps) => (
-			<BottomSheetBackdrop
-				{...backdropProps}
-				appearsOnIndex={0}
-				disappearsOnIndex={-1}
-				pressBehavior="close"
-			/>
-		),
-		[],
-	);
-
 	return (
-		<BottomSheetModal
-			accessibilityLabel="Add context"
-			backdropComponent={renderBackdrop}
-			backgroundStyle={{
-				backgroundColor: THEME.dark.popover,
-				borderColor: THEME.dark.border,
-				borderWidth: 1,
-			}}
-			handleIndicatorStyle={{ backgroundColor: THEME.dark.mutedForeground }}
-			onDismiss={handleDismiss}
-			ref={modalRef}
-		>
-			<BottomSheetView style={{ paddingBottom: insets.bottom + 12 }}>
-				<View className="relative items-center justify-center pb-4 pt-1">
-					<Pressable
-						accessibilityLabel="Close"
-						className="absolute left-4 size-9 items-center justify-center rounded-full bg-secondary"
-						onPress={() => onOpenChange(false)}
-					>
-						<Ionicons name="close" size={20} color={THEME.dark.foreground} />
-					</Pressable>
-					<Text className="font-semibold text-foreground text-lg">Context</Text>
-				</View>
-				<PhotoCarousel
-					active={open}
-					selected={selected}
-					onToggle={toggleAsset}
-				/>
-				<View className="px-5 pt-4">
-					<Text className="mb-1 text-muted-foreground text-sm font-semibold">
-						Add
-					</Text>
-					{rows.map((row) => (
-						<Pressable
-							key={row.label}
-							onPress={() => runAfterDismiss(row.action)}
-							className="flex-row items-center gap-2.5 py-2.5"
-						>
-							<Ionicons
-								name={row.icon}
-								size={24}
-								color={THEME.dark.mutedForeground}
-							/>
-							<Text className="text-foreground text-sm font-medium">
-								{row.label}
+		<Host style={{ position: "absolute", width }}>
+			<BottomSheet
+				isPresented={isPresented}
+				onIsPresentedChange={handlePresentedChange}
+				fitToContents
+			>
+				<Group
+					modifiers={[
+						environment("colorScheme", "dark"),
+						presentationDragIndicator("visible"),
+						background(theme.background),
+					]}
+				>
+					<RNHostView matchContents>
+						<View className="pb-6 pt-5">
+							<Text
+								className="mb-3 px-5 text-center text-lg font-semibold"
+								style={{ color: theme.foreground }}
+							>
+								Context
 							</Text>
-						</Pressable>
-					))}
-				</View>
-				{selected.length > 0 ? (
-					<View className="px-5 pt-2">
-						<Button
-							className="rounded-full"
-							disabled={adding}
-							onPress={() => void handleAddSelected()}
-							size="lg"
-						>
-							{adding ? (
-								<Spinner size="small" />
-							) : (
-								<Text>{`Add ${selected.length}`}</Text>
-							)}
-						</Button>
-					</View>
-				) : null}
-			</BottomSheetView>
-		</BottomSheetModal>
+							<PhotoCarousel
+								active={isPresented}
+								selected={selected}
+								onToggle={toggleAsset}
+							/>
+							<View className="px-5 pt-4">
+								<Text
+									className="mb-1 text-sm font-semibold"
+									style={{ color: theme.mutedForeground }}
+								>
+									Add
+								</Text>
+								{rows.map((row) => (
+									<Pressable
+										key={row.label}
+										onPress={() => runAfterDismiss(row.action)}
+										className="flex-row items-center gap-2.5 py-2.5"
+									>
+										<Ionicons
+											name={row.icon}
+											size={24}
+											color={theme.mutedForeground}
+										/>
+										<Text
+											className="text-sm font-medium"
+											style={{ color: theme.foreground }}
+										>
+											{row.label}
+										</Text>
+									</Pressable>
+								))}
+							</View>
+							{selected.length > 0 ? (
+								<View className="px-5 pt-2">
+									<Button
+										className="rounded-full"
+										disabled={adding}
+										onPress={() => void handleAddSelected()}
+										size="lg"
+									>
+										{adding ? (
+											<Spinner size="small" />
+										) : (
+											<Text>{`Add ${selected.length}`}</Text>
+										)}
+									</Button>
+								</View>
+							) : null}
+						</View>
+					</RNHostView>
+				</Group>
+			</BottomSheet>
+		</Host>
 	);
 }
