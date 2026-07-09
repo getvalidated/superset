@@ -48,7 +48,7 @@ const MAX_ATTACHMENTS = 10;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024; // 200MB total decoded size
 const MAX_SINGLE_FILE_BYTES = 50 * 1024 * 1024; // 50MB per file
 
-async function writeAttachmentFiles(
+export async function writeAttachmentFiles(
 	workspaceId: string,
 	files: Array<{ data: string; mediaType: string; filename?: string }>,
 ): Promise<string[]> {
@@ -114,6 +114,10 @@ async function writeAttachmentFiles(
 	await electronTrpcClient.filesystem.createDirectory.mutate({
 		workspaceId,
 		absolutePath: attachmentsDirectory,
+		// `.superset/attachments` is two levels deep and the parent `.superset`
+		// folder may not exist yet in a freshly created worktree, so create the
+		// tree recursively to avoid an ENOENT on the missing parent (see #5554).
+		recursive: true,
 	});
 
 	// Track all used filenames to prevent collisions (includes user and generated names)
