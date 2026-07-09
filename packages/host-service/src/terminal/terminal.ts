@@ -991,6 +991,7 @@ export async function createTerminalSessionInternal({
 		cwd,
 		terminalId,
 		workspaceId,
+		workspaceName: workspace.name,
 		workspacePath: workspace.worktreePath,
 		rootPath,
 		hostServiceVersion: process.env.HOST_SERVICE_VERSION || "unknown",

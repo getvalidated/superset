@@ -124,6 +124,7 @@ interface BuildV2TerminalEnvParams {
 	cwd: string;
 	terminalId: string;
 	workspaceId: string;
+	workspaceName: string;
 	workspacePath: string;
 	rootPath: string;
 	hostServiceVersion: string;
@@ -153,6 +154,7 @@ export function buildV2TerminalEnv(
 		cwd,
 		terminalId,
 		workspaceId,
+		workspaceName,
 		workspacePath,
 		rootPath,
 		hostServiceVersion,
@@ -189,6 +191,10 @@ export function buildV2TerminalEnv(
 
 	env.SUPERSET_TERMINAL_ID = terminalId;
 	env.SUPERSET_WORKSPACE_ID = workspaceId;
+	// Re-injected after the strip pass: the shell snapshot's stale
+	// SUPERSET_WORKSPACE_NAME is stripped as legacy v1 metadata, so setup scripts
+	// and terminals need the current workspace name set back explicitly. (#5539)
+	env.SUPERSET_WORKSPACE_NAME = workspaceName;
 	env.SUPERSET_WORKSPACE_PATH = workspacePath;
 	env.SUPERSET_ROOT_PATH = rootPath;
 	env.SUPERSET_ENV = supersetEnv;

@@ -408,6 +408,7 @@ describe("buildV2TerminalEnv", () => {
 		cwd: "/tmp/workspace",
 		terminalId: "term-1",
 		workspaceId: "ws-1",
+		workspaceName: "workspace-one",
 		workspacePath: "/tmp/workspace",
 		rootPath: "/tmp/repo",
 		hostServiceVersion: "2.0.0",
@@ -426,6 +427,7 @@ describe("buildV2TerminalEnv", () => {
 			PWD: "/tmp/workspace",
 			SUPERSET_TERMINAL_ID: "term-1",
 			SUPERSET_WORKSPACE_ID: "ws-1",
+			SUPERSET_WORKSPACE_NAME: "workspace-one",
 			SUPERSET_WORKSPACE_PATH: "/tmp/workspace",
 			SUPERSET_ROOT_PATH: "/tmp/repo",
 			SUPERSET_ENV: "production",
@@ -435,6 +437,19 @@ describe("buildV2TerminalEnv", () => {
 		expect(env.TERM_PROGRAM).toBe("kitty");
 		expect(env.SHELL).toBe("/bin/zsh");
 		expect(env.LANG).toContain("UTF-8");
+	});
+
+	test("injects SUPERSET_WORKSPACE_NAME from the workspace name (regression #5539)", () => {
+		const env = buildV2TerminalEnv({
+			...baseParams,
+			workspaceName: "my-feature-branch",
+		});
+		expect(env.SUPERSET_WORKSPACE_NAME).toBe("my-feature-branch");
+	});
+
+	test("SUPERSET_WORKSPACE_NAME defaults to empty string when no name is available", () => {
+		const env = buildV2TerminalEnv({ ...baseParams, workspaceName: "" });
+		expect(env.SUPERSET_WORKSPACE_NAME).toBe("");
 	});
 
 	test("sets SHELL to the selected launch shell even when base env was stale", () => {
@@ -502,7 +517,9 @@ describe("buildV2TerminalEnv", () => {
 				SUPERSET_TAB_ID: "tab-1",
 				SUPERSET_PORT: "51741",
 				SUPERSET_HOOK_VERSION: "2",
-				SUPERSET_WORKSPACE_NAME: "my-workspace",
+				// Stale value from the shell snapshot: must be replaced by the
+				// injected workspace name, not leaked through. (#5539)
+				SUPERSET_WORKSPACE_NAME: "stale-workspace",
 				NVM_DIR: "/Users/test/.nvm",
 				SSH_AUTH_SOCK: "/tmp/ssh.sock",
 			},
@@ -511,7 +528,7 @@ describe("buildV2TerminalEnv", () => {
 		expect(env.SUPERSET_TAB_ID).toBeUndefined();
 		expect(env.SUPERSET_PORT).toBeUndefined();
 		expect(env.SUPERSET_HOOK_VERSION).toBeUndefined();
-		expect(env.SUPERSET_WORKSPACE_NAME).toBeUndefined();
+		expect(env.SUPERSET_WORKSPACE_NAME).toBe("workspace-one");
 		expect(env.NVM_DIR).toBe("/Users/test/.nvm");
 		expect(env.SSH_AUTH_SOCK).toBe("/tmp/ssh.sock");
 	});
@@ -541,6 +558,7 @@ describe("v2 env contract boundary", () => {
 			cwd: "/tmp/ws",
 			terminalId: "t-1",
 			workspaceId: "w-1",
+			workspaceName: "w-1-name",
 			workspacePath: "/tmp/ws",
 			rootPath: "",
 			hostServiceVersion: "2.0.0",
