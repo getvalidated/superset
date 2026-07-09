@@ -2,6 +2,8 @@ import { BottomSheet, Group, Host, RNHostView } from "@expo/ui/swift-ui";
 import {
 	background,
 	environment,
+	frame,
+	presentationDetents,
 	presentationDragIndicator,
 } from "@expo/ui/swift-ui/modifiers";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -130,13 +132,14 @@ export function ContextSheet({
 			<BottomSheet
 				isPresented={isPresented}
 				onIsPresentedChange={handlePresentedChange}
-				fitToContents
 			>
 				<Group
 					modifiers={[
 						environment("colorScheme", "dark"),
+						presentationDetents(["medium", "large"]),
 						presentationDragIndicator("visible"),
 						background(theme.background),
+						frame({ maxHeight: 10_000, alignment: "top" }),
 					]}
 				>
 					<RNHostView matchContents>
@@ -190,7 +193,11 @@ export function ContextSheet({
 										{adding ? (
 											<Spinner size="small" />
 										) : (
-											<Text>{`Add ${selected.length}`}</Text>
+											<Text>
+												{selected.length === 1
+													? "Add"
+													: `Add ${selected.length}`}
+											</Text>
 										)}
 									</Button>
 								</View>
