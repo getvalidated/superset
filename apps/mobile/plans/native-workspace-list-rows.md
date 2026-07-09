@@ -11,97 +11,67 @@
 
 Each row is wrapped in expo-router `Link` + `Link.Trigger` + `Link.Menu`
 (`screens/(authenticated)/(home)/workspaces/components/WorkspaceRow/components/WorkspaceRowMenu/WorkspaceRowMenu.tsx`).
-`Link.Menu` attaches a native `UIContextMenuInteraction` per row. Inside
-LegendList (virtualized, `recycleItems: false` → rows constantly unmount and
-remount) some interactions come back mis-wired, and the RN `Pressable` and the
-native long-press recognizer race each other — RN commits the navigation press
-while UIKit commits the menu. Same failure class we already hit with per-row
-`@expo/ui` ContextMenus (see memory of the stuck press-highlight platter);
-per-row native interactions and RN list virtualization don't mix.
+`Link.Menu` attaches a native `UIContextMenuInteraction` per row. Inside a
+virtualized list (LegendList, `recycleItems: false` → cells constantly unmount
+and remount) some interactions come back mis-wired, and the RN `Pressable` and
+the native long-press recognizer race — RN commits the navigation press while
+UIKit commits the menu. This is a property of per-row native interactions ×
+cell churn, NOT a LegendList bug: FlatList would show it at lower frequency,
+and FlashList (true cell recycling) would be worse. A SwiftUI `List`
+(@expo/ui) was considered and spiked viable, but couples list fixes to native
+releases — rejected to protect OTA iteration.
 
-## Step 0 — confirm on device (fast A/B)
+## Decision: drop virtualization — plain ScrollView
 
-Local Release build on the iPhone: `bunx expo run:ios --device --configuration Release`.
-Then delete the `<Link.Menu>…</Link.Menu>` block from WorkspaceRowMenu and
-rebuild. If every row taps reliably and nothing double-fires, root cause is
-confirmed. Keep the A build around for comparison.
+The list is now scoped to one host + one project; realistic row counts are
+tens, worst case ~200. That doesn't need virtualization: a `ScrollView` +
+`rows.map(...)` mounts every row once, giving each `Link.Menu` a stable native
+view (bug class gone), keeps the native context menus + preview, scrolls with
+zero per-frame mount work, and stays 100% JS/OTA-updatable. A ~200-row mount
+costs a few hundred ms once, off the interaction path.
 
-## Fix options (in order of effort)
+## Step 0 — confirm on device first
 
-### Option A — drop per-row native menus, keep LegendList (small, do this first)
+Local Release build (`bunx expo run:ios --device --configuration Release`),
+A/B with the `<Link.Menu>` block deleted, to confirm the root cause before
+restructuring. Keep both observations in the PR description.
 
-- WorkspaceRowMenu: remove `Link.Menu`; keep plain `Link`/`Link.Trigger` for
-  navigation (or a plain `Pressable` + `router.push`).
-- Row actions move to `onLongPress` → a route-presented sheet, exactly like the
-  existing filter sheet (`app/(authenticated)/(home)/filter` formSheet pattern):
-  `app/(authenticated)/(home)/workspace-actions?workspaceId=…` with
-  Rename / Delete / Copy ID / Share rows (reuse `ListRow` primitives from
-  `screens/(authenticated)/components/`). The rename/delete handlers already
-  live in WorkspaceRowMenu — lift them into the sheet screen; they need
-  `useHostWorkspaces(selectedHost).cache` + `getHostServiceClientByUrl`.
-- Cost: loses the iOS context-menu preview flourish. Gains: deterministic
-  gestures, no native interaction per cell.
+## Implementation
 
-### Option B — native SwiftUI List (the platform-correct version)
+`screens/(authenticated)/(home)/workspaces/WorkspacesScreen.tsx`:
 
-Validated by a 184-row spike earlier this week: `@expo/ui/swift-ui` `List`
-with `RNHostView` rows renders and scrolls fine.
+1. Replace `LegendList` with `ScrollView` (keep `contentInsetAdjustmentBehavior`,
+   `contentContainerStyle` incl. the `minHeight` used to keep the offline/empty
+   states filling the viewport, and `refreshControl` — all supported).
+2. Render `visibleWorkspaces.map((item) => <WorkspaceRow key={item.id} … />)`.
+   `renderItem`, `extraData`, `keyExtractor`, `viewabilityConfig`,
+   `onViewableItemsChanged`, `ListEmptyComponent` go away; empty state becomes
+   a conditional above/instead of the map.
+3. Diff stats: `useVisibleDiffStats` loses `onViewableItemsChanged`. Replace
+   the viewport gate with a simple cap: fetch `git.getStatus` for the first
+   `N = 30` rows of the sorted list (they're what's on/near screen given sort
+   by recency), keep the existing query keys, staleTime, and the
+   read-from-whole-cache map so previously fetched rows keep their numbers.
+   Rename the hook accordingly (e.g. `useWorkspaceDiffStats`).
+4. `WorkspaceRowMenu` stays exactly as is (Link + Trigger + Menu) — the point
+   of this change is that it becomes reliable on stable views.
 
-Structure per row:
+Keep LegendList out of the workspaces screen only — other screens are
+unaffected.
 
-```tsx
-import { ContextMenu, Host, List, RNHostView, Button, Submenu } from "@expo/ui/swift-ui";
+## If jank survives on stable views (fallback)
 
-<Host style={{ flex: 1 }}>
-  <List /* listStyle plain */>
-    {rows.map((w) => (
-      <ContextMenu key={w.id}>
-        <ContextMenu.Items>
-          <Button onPress={rename}>Rename</Button>
-          <Button role="destructive" onPress={destroy}>Delete</Button>
-        </ContextMenu.Items>
-        <ContextMenu.Trigger>
-          <RNHostView style={{ height: 64 }}>
-            {/* existing WorkspaceRow body (Pressable onPress → router.push) */}
-          </RNHostView>
-        </ContextMenu.Trigger>
-      </ContextMenu>
-    ))}
-  </List>
-</Host>
-```
+Then the menus themselves are the problem regardless of mounting: remove
+`Link.Menu` and move actions to long-press → a route-presented formSheet
+(same pattern as `app/(authenticated)/(home)/filter`, reusing `ListRow`
+primitives). Fully deterministic, still OTA-safe.
 
-Hard-won constraints (all verified, don't rediscover them):
-- `RNHostView` rows inside a native `List` work; **use fixed height** —
-  `matchContents` never settles in virtualized cells.
-- SwiftUI `Text` in @expo/ui has NO color/font styling — keep all row content
-  as RN views inside RNHostView; use SwiftUI only for List/ContextMenu chrome.
-- Per-row `Host` in RN scroll views glitches — that's the inverse embedding;
-  it does not apply to RNHostView-inside-List.
-- List chrome (separators/insets) differs from the current design; budget a
-  styling pass (`listRowInsets`, `listStyle` modifiers).
+## Verification (Release build on device)
 
-Consequences to handle:
-- **Pull-to-refresh**: List has no RN `refreshControl`; keep the
-  `useFocusEffect` invalidation and drop pull-to-refresh, or check @expo/ui
-  List `refreshable` support.
-- **Viewport-bounded diff stats**: `useVisibleDiffStats` keys off LegendList's
-  `onViewableItemsChanged`, which List doesn't expose. The list view is now
-  single-host + single-project, so row counts are modest: fetch diff stats for
-  the first N (~30) visible-sorted rows instead, or all rows with a cap —
-  keep `staleTime`/cache semantics from
-  `screens/(authenticated)/(home)/workspaces/hooks/useVisibleDiffStats/`.
-- Empty/offline states (`HostOfflineView`, empty text) render outside the List.
-
-## Recommendation
-
-Ship Option A now (unblocks prod testing, ~1 hour). Spike Option B behind the
-same screen afterwards; keep it only if the native feel wins and the diff-stats
-and styling consequences are acceptable.
-
-## Verification
-
-- Release build on device: tap 30+ rows across several scroll passes — zero
-  dead rows; long-press opens actions without navigating; rename/delete still
-  round-trip through the host (`workspace.update` / `workspaceCleanup.destroy`).
-- Regression: workspace push still lands on chat; diff stats still appear.
+- Tap 30+ rows across several scroll passes — zero dead rows.
+- Long-press opens the context menu WITHOUT navigating; menu preview shows;
+  Rename / Delete / Copy ID / Share all work (rename+delete round-trip
+  through the owning host).
+- Project with many workspaces (e.g. Superset, 100+): initial render latency
+  acceptable on device; scrolling smooth.
+- Diff stats appear for the top rows and survive scroll away/back.
