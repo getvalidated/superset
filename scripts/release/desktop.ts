@@ -253,7 +253,7 @@ async function releaseFromHead(
 			Number((await $`git rev-list --count ${"main..HEAD"}`.nothrow().text()).trim()) > 0
 		) {
 			const r =
-				await $`gh pr create --title ${`chore(desktop): bump version to ${version}`} --body ${"Automated by scripts/release-tools/desktop.ts."} --base main --head ${branch}`
+				await $`gh pr create --title ${`chore(desktop): bump version to ${version}`} --body ${"Automated by scripts/release/desktop.ts."} --base main --head ${branch}`
 					.nothrow()
 					.text();
 			const m = r.match(/\/(\d+)\s*$/);

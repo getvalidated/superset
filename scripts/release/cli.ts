@@ -113,7 +113,7 @@ export async function runCli(argv: string[]): Promise<void> {
 				.text()
 		).trim();
 		if (!existing) {
-			const body = `Interim CLI release ${newVersion} (cli + host-service). Under desktop ${desktop}.\n\nCreated by scripts/release-tools/cli.ts.`;
+			const body = `Interim CLI release ${newVersion} (cli + host-service). Under desktop ${desktop}.\n\nCreated by scripts/release/cli.ts.`;
 			const r =
 				await $`gh pr create --title ${`chore(cli): release ${newVersion}`} --body ${body} --base main --head ${branch}`
 					.nothrow()
