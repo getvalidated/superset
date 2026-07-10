@@ -27,8 +27,7 @@ jobs:
       build_id: ${{ needs.build_ios_e2e.outputs.build_id }}
       retries: 2
       flow_path:
-        - .maestro/flows/00-smoke.yml
-        - .maestro/flows/01-dev-sign-in.yml
+        - .maestro/flows/sign-in.yml
     hooks:
       before_maestro_tests:
         - name: Wait for preview API
