@@ -542,7 +542,7 @@ describe("v2 env contract boundary", () => {
 			workspaceId: "w-1",
 			workspacePath: "/tmp/ws",
 			rootPath: "",
-				supersetEnv: "production",
+			supersetEnv: "production",
 			agentHookPort: "51741",
 			agentHookVersion: "2",
 		});
