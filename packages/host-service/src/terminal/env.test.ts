@@ -410,7 +410,6 @@ describe("buildV2TerminalEnv", () => {
 		workspaceId: "ws-1",
 		workspacePath: "/tmp/workspace",
 		rootPath: "/tmp/repo",
-		hostServiceVersion: "2.0.0",
 		supersetEnv: "production" as const,
 		agentHookPort: "51741",
 		agentHookVersion: "2",
@@ -543,8 +542,7 @@ describe("v2 env contract boundary", () => {
 			workspaceId: "w-1",
 			workspacePath: "/tmp/ws",
 			rootPath: "",
-			hostServiceVersion: "2.0.0",
-			supersetEnv: "production",
+				supersetEnv: "production",
 			agentHookPort: "51741",
 			agentHookVersion: "2",
 		});

@@ -1,12 +1,12 @@
 # Migrate terminal TERM_PROGRAM masquerade: kitty → vscode
 
-Branch: `debug-terminal-scrollback`. Status: planned, not yet implemented.
+Branch: `debug-terminal-scrollback` (PR #5563). Status: implemented and verified — manual pass and CDP pass both complete.
 
 ## Why
 
-Superset terminals claim `TERM_PROGRAM=kitty` (host-service `env.ts:177`) so agent
-TUIs parse kitty CSI-u key encodings — originally for Shift+Enter. That claim now
-causes real harm and its original benefit no longer depends on it:
+Superset terminals previously claimed `TERM_PROGRAM=kitty` (host-service `env.ts`) so agent
+TUIs parse kitty CSI-u key encodings — originally for Shift+Enter. That claim caused
+real harm and its original benefit no longer depended on it:
 
 - **Scroll bug (measured):** Claude Code keys its wheel-scroll compensation on
   `TERM_PROGRAM`. Kitty-class terminals are assumed to amplify wheel events
@@ -14,8 +14,9 @@ causes real harm and its original benefit no longer depends on it:
   emulator is xterm.js, which sends ~one throttled scroll report per notch (same
   as VS Code — Claude's docs name it). Net: Claude transcript scrolling ran at
   ~1/3 speed (flick: 32 lines vs 300+ in VS Code, identical report streams
-  verified via `cat -v`). Setting `TERM_PROGRAM=vscode` in a live session fixes
-  scrolling outright (user-verified + CDP-measured).
+  verified via `cat -v`). Setting `TERM_PROGRAM=vscode` in a live session fixed
+  scrolling outright (verified manually during investigation, re-verified by
+  the post-implementation CDP pass below).
 - **Shift+Enter is already kitty-independent:** `line-edit-translations.ts:44`
   translates Shift+Enter / Cmd+Enter renderer-side to `ESC+CR` (the sequence
   Claude's `/terminal-setup` installs; Codex/Gemini/OpenCode parse it as
@@ -84,10 +85,26 @@ methodology in memory `claude-scrollback-root-cause`):
 - `printf '\x1b[?1000h\x1b[?1006h'; script -q /tmp/cap.txt cat -v` report-count
   check unchanged (~1/notch) — proves the delta is claude-side compensation.
 
+### Results (2026-07-09, claude v2.1.173)
+
+- Env in fresh PTY: `TERM_PROGRAM=vscode`, `TERM_PROGRAM_VERSION=1.128.0`,
+  `CLAUDE_CODE_SCROLL_SPEED` unset. ✓
+- Flick: jumped ~353 lines to transcript top (kitty baseline: 32). ✓
+- Slow notches: 14 lines — identical to the real VS Code terminal's measured 14
+  for the same pattern (the ≥40 targets above were miscalibrated against the
+  superseded `CLAUDE_CODE_SCROLL_SPEED=3` variant; the correct reference is
+  VS Code parity, which this matches exactly). ✓
+- Shift+Enter: multiline input, no submit. ✓
+- Shift+Tab: cycles accept-edits → plan → auto → default. ✓
+- Double-Esc: clears input (claude's standard arm-then-clear). ✓
+
 ## Risks / rollback
 
 - Some TUI we haven't tested branches on kitty-class TERM_PROGRAM for a feature
-  we rely on. Mitigation: manual sweep above; rollback is a one-string revert.
+  we rely on. Mitigation: manual sweep above. Rollback = revert the shared
+  `TERMINAL_TERM_PROGRAM*` constants (both env builders consume them); note
+  existing PTYs keep their env until the session is recreated, so a rollback
+  (like the rollout) only affects newly spawned terminals.
 - Claude may change vscode-gated behavior in future versions (e.g. deferring
   more to a VS Code extension that isn't present). Watch release notes; the
   identity can be revisited per-agent via wrapper scripts if needed.

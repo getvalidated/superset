@@ -20,6 +20,10 @@ export {
 import fs from "node:fs";
 import os from "node:os";
 import {
+	TERMINAL_TERM_PROGRAM,
+	TERMINAL_TERM_PROGRAM_VERSION,
+} from "@superset/shared/constants";
+import {
 	augmentPathForMacOS,
 	clearStrictShellEnvCache,
 	getStrictShellEnvironment,
@@ -126,7 +130,6 @@ interface BuildV2TerminalEnvParams {
 	workspaceId: string;
 	workspacePath: string;
 	rootPath: string;
-	hostServiceVersion: string;
 	supersetEnv: "development" | "production";
 	agentHookPort: string;
 	agentHookVersion: string;
@@ -169,20 +172,12 @@ export function buildV2TerminalEnv(
 
 	env.TERM = "xterm-256color";
 	env.SHELL = shell;
-	// Identify as the VS Code integrated terminal: agent TUIs (claude-code
-	// especially) tune wheel-scroll compensation, link handling, and selection
-	// hints per TERM_PROGRAM, and every assumption they make for vscode holds
-	// for our xterm.js-based terminal — notably that it sends ~one throttled
-	// scroll event per wheel notch, so claude applies its own scroll multiplier
-	// and acceleration. The previous "kitty" claim suppressed that compensation
-	// and made claude transcript scrolling crawl at ~1/3 speed. Shift+Enter does
-	// NOT depend on this: line-edit-translations.ts sends ESC+CR directly.
-	// Kitty *keyboard protocol* support is separate — TUIs detect it via the
-	// CSI-u capability probe, which xterm's vtExtensions still answers.
-	env.TERM_PROGRAM = "vscode";
-	// Claude version-gates terminal quirks against real VS Code releases, so
-	// send a plausible VS Code version rather than the host-service one.
-	env.TERM_PROGRAM_VERSION = "1.128.0";
+	// See TERMINAL_TERM_PROGRAM for why we identify as vscode. The previous
+	// "kitty" claim made claude-code suppress its wheel-scroll compensation and
+	// transcript scrolling crawled at ~1/3 speed. Shift+Enter does NOT depend
+	// on this: line-edit-translations.ts sends ESC+CR directly.
+	env.TERM_PROGRAM = TERMINAL_TERM_PROGRAM;
+	env.TERM_PROGRAM_VERSION = TERMINAL_TERM_PROGRAM_VERSION;
 	env.COLORTERM = "truecolor";
 	env.COLORFGBG = themeType === "light" ? "0;15" : "15;0";
 	// TERM_THEME is an explicit light/dark hint that cursor-agent (and other
