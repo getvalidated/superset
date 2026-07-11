@@ -119,7 +119,7 @@ export function WorkspaceRow({
 				</View>
 				<Button
 					accessibilityLabel={`New chat in ${workspace.name}`}
-					variant="secondary"
+					variant="ghost"
 					size="icon"
 					disabled={!canChat}
 					onPress={() =>
@@ -131,7 +131,7 @@ export function WorkspaceRow({
 						})
 					}
 				>
-					<Icon as={Plus} className="text-foreground size-4" />
+					<Icon as={Plus} className="text-muted-foreground size-5" />
 				</Button>
 			</PressableScale>
 		</WorkspaceRowMenu>
