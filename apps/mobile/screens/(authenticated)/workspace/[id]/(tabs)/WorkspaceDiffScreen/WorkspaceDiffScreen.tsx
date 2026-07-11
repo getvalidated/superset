@@ -3,9 +3,9 @@ import { View } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 
-export function DiffPlaceholder() {
+export function WorkspaceDiffScreen() {
 	return (
-		<View className="flex-1 items-center justify-center gap-2 px-10 pb-16">
+		<View className="bg-background flex-1 items-center justify-center gap-2 px-10">
 			<Icon
 				as={FileDiff}
 				className="text-muted-foreground/50 size-10"
