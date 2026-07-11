@@ -16,7 +16,6 @@ const glassHeaderOptions = {
 	headerLargeTitle: false,
 	headerBackButtonDisplayMode: "minimal",
 	headerShadowVisible: false,
-	headerBlurEffect: "systemUltraThinMaterial",
 	headerStyle: { backgroundColor: "transparent" },
 } as const;
 
