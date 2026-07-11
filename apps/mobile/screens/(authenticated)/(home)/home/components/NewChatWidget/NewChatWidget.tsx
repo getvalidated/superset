@@ -66,10 +66,8 @@ const EXPAND_SPRING = Animation.spring({ duration: 0.35 });
 
 export function NewChatWidget({
 	workspaces,
-	resolveHostUrl,
 }: {
 	workspaces: HostWorkspaceItem[];
-	resolveHostUrl: (hostId: string) => string | null;
 }) {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
@@ -127,7 +125,7 @@ export function NewChatWidget({
 
 	const chatTarget = useChatTargetStore((state) => state.target);
 	const clearChatTarget = useChatTargetStore((state) => state.clearTarget);
-	const startWorkspaceChat = useStartWorkspaceChat(resolveHostUrl);
+	const startWorkspaceChat = useStartWorkspaceChat(workspaces);
 
 	// Collapse whenever the keyboard is away — a draft just clamps to one line.
 	// A workspace target keeps the composer open so its chip stays visible.

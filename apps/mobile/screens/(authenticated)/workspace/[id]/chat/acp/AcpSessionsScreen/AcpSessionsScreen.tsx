@@ -50,7 +50,7 @@ export function AcpSessionsScreen() {
 	const load = useCallback(async () => {
 		if (!routingKey || !id) return;
 		try {
-			const page = await listAcpSessions(routingKey, id);
+			const page = await listAcpSessions(routingKey, { workspaceId: id });
 			setSessions(page.items);
 			setEnabled(page.enabled);
 			setError(null);
