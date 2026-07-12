@@ -682,9 +682,6 @@ export function FilesChangedScreen() {
 			}
 		},
 		[
-			changeset.additions,
-			changeset.deletions,
-			changeset.files.length,
 			toggleCollapsed,
 			openFileMenu,
 			toggleViewed,
