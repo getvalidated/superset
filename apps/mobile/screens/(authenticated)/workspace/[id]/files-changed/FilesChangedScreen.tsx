@@ -41,7 +41,6 @@ import { DiffLineRow } from "./components/DiffLineRow";
 import { ExpanderRow } from "./components/ExpanderRow";
 import { FileHeaderRow } from "./components/FileHeaderRow";
 import { ReviewOverlay } from "./components/ReviewOverlay";
-import { SummaryRow } from "./components/SummaryRow";
 import { useViewedFilesStore } from "./stores/viewedFilesStore";
 import { buildDisplayRows } from "./utils/buildDisplayRows";
 import {
@@ -66,7 +65,6 @@ const LOADING_PLACEHOLDER_HEIGHT = 64;
 type LineRow = Extract<DiffRow, { kind: "line" }>;
 
 type ListItem =
-	| { kind: "summary" }
 	| { kind: "file"; file: ChangesetFile; expanded: boolean; viewed: boolean }
 	| { kind: "diff-row"; path: string; row: DiffRow }
 	| {
@@ -84,8 +82,6 @@ type ListItem =
 
 function itemKey(item: ListItem): string {
 	switch (item.kind) {
-		case "summary":
-			return "summary";
 		case "file":
 			return `file:${item.file.path}`;
 		case "diff-row":
@@ -227,7 +223,7 @@ export function FilesChangedScreen() {
 	}, [comments]);
 
 	const items = useMemo<ListItem[]>(() => {
-		const result: ListItem[] = [{ kind: "summary" }];
+		const result: ListItem[] = [];
 		const placedCommentIds = new Set<string>();
 		for (const file of changeset.files) {
 			const expanded = isExpanded(file);
@@ -602,14 +598,6 @@ export function FilesChangedScreen() {
 	const renderItem = useCallback(
 		({ item }: { item: ListItem }) => {
 			switch (item.kind) {
-				case "summary":
-					return (
-						<SummaryRow
-							additions={changeset.additions}
-							deletions={changeset.deletions}
-							fileCount={changeset.files.length}
-						/>
-					);
 				case "file":
 					return (
 						<FileHeaderRow
