@@ -11,6 +11,7 @@ import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 import { PressableScale } from "@/screens/(authenticated)/components/PressableScale";
 import type { ChangesetFile } from "../../../hooks/useWorkspaceChangeset";
+import { FILE_HEADER_HEIGHT } from "../../utils/diffMetrics";
 
 function splitPath(path: string): { name: string; dir: string | null } {
 	const separator = path.lastIndexOf("/");
@@ -36,7 +37,8 @@ export function FileHeaderRow({
 	const { name, dir } = splitPath(file.path);
 	return (
 		<PressableScale
-			className="bg-background border-border/60 flex-row items-center gap-2.5 border-t px-4 py-3"
+			className="bg-background border-border/60 flex-row items-center gap-2.5 border-t px-4"
+			style={{ height: FILE_HEADER_HEIGHT }}
 			onPress={() => onToggle(file.path)}
 			onLongPress={() => onMenu(file)}
 		>

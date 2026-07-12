@@ -5,6 +5,7 @@ import { Text } from "@/components/ui/text";
 import { PressableScale } from "@/screens/(authenticated)/components/PressableScale";
 import type { DiffRow } from "../../utils/computeFileDiff";
 import { EXPAND_CHUNK_LINES } from "../../utils/computeFileDiff";
+import { EXPANDER_ROW_HEIGHT } from "../../utils/diffMetrics";
 
 type ExpanderDiffRow = Extract<DiffRow, { kind: "expander" }>;
 
@@ -20,7 +21,8 @@ export function ExpanderRow({
 	if (hidden <= EXPAND_CHUNK_LINES) {
 		return (
 			<PressableScale
-				className="bg-sky-500/10 border-sky-500/15 flex-row items-center gap-2 border-y px-4 py-2"
+				className="bg-sky-500/10 border-sky-500/15 flex-row items-center gap-2 border-y px-4"
+				style={{ height: EXPANDER_ROW_HEIGHT }}
 				onPress={() => onExpand(row.path, [newStart, newEnd])}
 			>
 				<Icon as={ChevronsUpDown} className="text-sky-400 size-4" />
@@ -31,7 +33,10 @@ export function ExpanderRow({
 		);
 	}
 	return (
-		<View className="bg-sky-500/10 border-sky-500/15 flex-row items-center border-y">
+		<View
+			className="bg-sky-500/10 border-sky-500/15 flex-row items-center border-y"
+			style={{ height: EXPANDER_ROW_HEIGHT }}
+		>
 			<PressableScale
 				accessibilityLabel="Show lines after the change above"
 				className="flex-row items-center gap-2 px-4 py-2"

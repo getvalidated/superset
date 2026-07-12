@@ -53,14 +53,23 @@ import {
 import {
 	CharWidthProbe,
 	contentWidthForChars,
+	DIFF_LINE_HEIGHT,
 	ESTIMATED_CHAR_WIDTH,
+	EXPANDER_ROW_HEIGHT,
+	FILE_HEADER_HEIGHT,
 	GUTTER_WIDTH,
+	HUNK_ROW_HEIGHT,
+	NOTE_ROW_HEIGHT,
 	SIGN_WIDTH,
 } from "./utils/diffMetrics";
 
 const MAX_HIGHLIGHT_BYTES = 200_000;
 const NO_VIEWED_PATHS: string[] = [];
-const LOADING_PLACEHOLDER_HEIGHT = 64;
+// Whole diff loads at mount through a small pipeline (GitHub-style: everything
+// in memory, no load-as-you-scroll) without stampeding the relay.
+const FETCH_PIPELINE_START = 6;
+const FETCH_PIPELINE_STEP = 4;
+const FETCH_PIPELINE_LOOKAHEAD = 2;
 
 type LineRow = Extract<DiffRow, { kind: "line" }>;
 
@@ -78,7 +87,14 @@ type ListItem =
 			path: string;
 			key: string;
 			note: "loading" | "error" | "binary";
+			height: number;
 	  };
+
+/** Loading placeholders occupy ~their final height so nothing shifts. */
+function placeholderHeight(file: ChangesetFile): number {
+	const lines = file.additions + file.deletions + 8;
+	return Math.min(Math.max(lines * DIFF_LINE_HEIGHT, NOTE_ROW_HEIGHT), 2_400);
+}
 
 function itemKey(item: ListItem): string {
 	switch (item.kind) {
@@ -108,9 +124,10 @@ export function FilesChangedScreen() {
 	);
 	const [refreshing, setRefreshing] = useState(false);
 	const [charWidth, setCharWidth] = useState(ESTIMATED_CHAR_WIDTH);
-	const [fetchEnabledPaths, setFetchEnabledPaths] = useState<
-		ReadonlySet<string>
-	>(new Set());
+	const [enabledCount, setEnabledCount] = useState(FETCH_PIPELINE_START);
+	const [priorityPaths, setPriorityPaths] = useState<ReadonlySet<string>>(
+		new Set(),
+	);
 
 	const viewedPaths = useViewedFilesStore(
 		(state) => state.viewedByWorkspace[workspaceId ?? ""] ?? NO_VIEWED_PATHS,
@@ -157,7 +174,7 @@ export function FilesChangedScreen() {
 	);
 
 	const diffQueries = useQueries({
-		queries: fetchableFiles.map((file) => ({
+		queries: fetchableFiles.map((file, index) => ({
 			queryKey: [
 				"workspace-file-diff-data",
 				workspaceId,
@@ -166,7 +183,9 @@ export function FilesChangedScreen() {
 				file.additions,
 				file.deletions,
 			] as const,
-			enabled: changeset.hostUrl !== null && fetchEnabledPaths.has(file.path),
+			enabled:
+				changeset.hostUrl !== null &&
+				(index < enabledCount || priorityPaths.has(file.path)),
 			staleTime: Number.POSITIVE_INFINITY,
 			retry: 1,
 			networkMode: "always" as const,
@@ -196,6 +215,23 @@ export function FilesChangedScreen() {
 			},
 		})),
 	});
+
+	// Advance the fetch pipeline as in-flight queries settle.
+	const settledCount = diffQueries.reduce(
+		(count, query, index) =>
+			index < enabledCount && (query.isSuccess || query.isError)
+				? count + 1
+				: count,
+		0,
+	);
+	useEffect(() => {
+		if (enabledCount >= fetchableFiles.length) return;
+		if (enabledCount - settledCount <= FETCH_PIPELINE_LOOKAHEAD) {
+			setEnabledCount((current) =>
+				Math.min(fetchableFiles.length, current + FETCH_PIPELINE_STEP),
+			);
+		}
+	}, [settledCount, enabledCount, fetchableFiles.length]);
 
 	const dataByPath = useMemo(() => {
 		const map = new Map<
@@ -252,16 +288,19 @@ export function FilesChangedScreen() {
 					path: file.path,
 					key: `${file.path}:binary`,
 					note: "binary",
+					height: NOTE_ROW_HEIGHT,
 				});
 				continue;
 			}
 			const entry = dataByPath.get(file.path);
 			if (!entry?.data) {
+				const isError = entry?.isError ?? false;
 				result.push({
 					kind: "note",
 					path: file.path,
-					key: `${file.path}:${entry?.isError ? "error" : "loading"}`,
-					note: entry?.isError ? "error" : "loading",
+					key: `${file.path}:${isError ? "error" : "loading"}`,
+					note: isError ? "error" : "loading",
+					height: isError ? NOTE_ROW_HEIGHT : placeholderHeight(file),
 				});
 				for (const comment of fileComments) {
 					placedCommentIds.add(comment.id);
@@ -336,46 +375,6 @@ export function FilesChangedScreen() {
 				return indices;
 			}, []),
 		[items],
-	);
-
-	// Viewport-driven fetch gating: grow-only, with one-file lookahead so the
-	// loading row rarely flashes into view.
-	const onViewableItemsChanged = useCallback(
-		({
-			viewableItems,
-		}: {
-			viewableItems: Array<{ item: ListItem; isViewable: boolean }>;
-		}) => {
-			setFetchEnabledPaths((previous) => {
-				let next: Set<string> | null = null;
-				const enable = (path: string | null) => {
-					if (!path || previous.has(path) || next?.has(path)) return;
-					next ??= new Set(previous);
-					next.add(path);
-				};
-				let lastFilePath: string | null = null;
-				for (const viewable of viewableItems) {
-					if (!viewable.isViewable) continue;
-					const item = viewable.item;
-					if (item.kind === "file") {
-						enable(item.file.path);
-						lastFilePath = item.file.path;
-					} else if (item.kind === "diff-row" || item.kind === "note") {
-						enable(item.path);
-						lastFilePath = item.path;
-					}
-				}
-				if (lastFilePath) {
-					const index = fetchableFiles.findIndex(
-						(file) => file.path === lastFilePath,
-					);
-					const lookahead = fetchableFiles[index + 1];
-					if (lookahead) enable(lookahead.path);
-				}
-				return next ?? previous;
-			});
-		},
-		[fetchableFiles],
 	);
 
 	// Horizontal pan: one shared value, per-row clamping in DiffLineRow.
@@ -560,7 +559,7 @@ export function FilesChangedScreen() {
 	useEffect(() => {
 		if (!jumpTarget) return;
 		const { path } = jumpTarget;
-		setFetchEnabledPaths((previous) => {
+		setPriorityPaths((previous) => {
 			if (previous.has(path)) return previous;
 			const next = new Set(previous);
 			next.add(path);
@@ -615,7 +614,10 @@ export function FilesChangedScreen() {
 					const row = item.row;
 					if (row.kind === "hunk") {
 						return (
-							<View className="bg-sky-500/10 px-3 py-1.5">
+							<View
+								className="bg-sky-500/10 justify-center px-3"
+								style={{ height: HUNK_ROW_HEIGHT }}
+							>
 								<Text className="text-sky-300/80 font-mono text-[12px]">
 									{row.header}
 								</Text>
@@ -666,7 +668,7 @@ export function FilesChangedScreen() {
 					return (
 						<View
 							className="items-center justify-center px-4 py-4"
-							style={{ minHeight: LOADING_PLACEHOLDER_HEIGHT }}
+							style={{ height: item.height }}
 						>
 							{item.note === "loading" ? (
 								<ActivityIndicator />
@@ -749,11 +751,22 @@ export function FilesChangedScreen() {
 					renderItem={renderItem}
 					stickyHeaderIndices={stickyHeaderIndices}
 					maintainVisibleContentPosition
-					viewabilityConfig={{
-						itemVisiblePercentThreshold: 10,
-						minimumViewTime: 150,
+					getItemType={(item) => item.kind}
+					getFixedItemSize={(item) => {
+						switch (item.kind) {
+							case "file":
+								return FILE_HEADER_HEIGHT;
+							case "note":
+								return item.height;
+							case "diff-row":
+								if (item.row.kind === "line") return DIFF_LINE_HEIGHT;
+								if (item.row.kind === "hunk") return HUNK_ROW_HEIGHT;
+								if (item.row.kind === "expander") return EXPANDER_ROW_HEIGHT;
+								return undefined;
+							default:
+								return undefined;
+						}
 					}}
-					onViewableItemsChanged={onViewableItemsChanged}
 					refreshControl={
 						<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
 					}
