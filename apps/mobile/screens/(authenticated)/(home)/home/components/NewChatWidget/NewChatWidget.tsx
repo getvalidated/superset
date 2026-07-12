@@ -57,6 +57,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePromptInputController } from "@/components/ai-elements/prompt-input";
 import type { HostWorkspaceItem } from "@/hooks/useHostWorkspaces";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
+import { cn } from "@/lib/utils";
 import { useAfterTransitionEnd } from "@/screens/(authenticated)/(home)/hooks/useAfterTransitionEnd";
 import {
 	type ChatTarget,
@@ -343,7 +344,13 @@ export function NewChatWidget({
 			    those jumps instead of teleporting against the pill's top edge. */}
 					{above ? (
 						<Animated.View layout={LinearTransition.springify().duration(350)}>
-							<View className="flex-row pb-2.5 pl-1">{above}</View>
+							{/* Extra clearance while expanded: the settled glass renders a
+						    touch taller than the frame matchContents reports. */}
+							<View
+								className={cn("flex-row pl-1", expanded ? "pb-4" : "pb-2.5")}
+							>
+								{above}
+							</View>
 						</Animated.View>
 					) : null}
 					<Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
