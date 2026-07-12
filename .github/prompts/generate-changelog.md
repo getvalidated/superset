@@ -87,7 +87,7 @@ Brief description of the feature and its benefit to users.
    - **Show CLI/SDK features as code** - a short copy-pasteable snippet beats prose about flags
    - **Ground abstract features in use cases** - platform-y features (automations, SDKs) get 2-4 "typical uses" bullets
    - **Link the docs** when a docs.superset.sh page exists for the feature
-   - **Credit external contributors** - "contributed by the Mistral team"
+   - **Credit external contributors by GitHub handle** - grab the author via `gh pr view <n> --json author` and link it: "contributed by [@ThomsenDrake](https://github.com/ThomsenDrake) from the Mistral team". Fall back to the company/team name only if the handle is unavailable. In the launch thread, don't @-mention GitHub handles (they ping the wrong account on X); use the team name there
    - **Cap the entry at ~80 lines** - cut harder rather than run long; only a multi-week entry may open with a 2-3 sentence overview paragraph before the first section
 
 ## Content hierarchy
