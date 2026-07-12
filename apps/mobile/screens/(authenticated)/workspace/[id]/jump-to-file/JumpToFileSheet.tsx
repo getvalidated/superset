@@ -3,8 +3,8 @@ import { CheckCircle2, MessageSquare } from "lucide-react-native";
 import { FlatList, View } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
 import { PressableScale } from "@/screens/(authenticated)/components/PressableScale";
+import { FileStatusBadge } from "../components/FileStatusBadge";
 import { useViewedFilesStore } from "../files-changed/stores/viewedFilesStore";
 import {
 	type ChangesetFile,
@@ -16,17 +16,9 @@ import {
 	useDraftCommentsStore,
 } from "../stores/draftCommentsStore";
 
-const STATUS_SQUARE: Record<string, { label: string; className: string }> = {
-	added: { label: "+", className: "border-green-500 text-green-500" },
-	untracked: { label: "+", className: "border-green-500 text-green-500" },
-	deleted: { label: "−", className: "border-red-500 text-red-500" },
-	renamed: { label: "→", className: "border-purple-400 text-purple-400" },
-	copied: { label: "→", className: "border-purple-400 text-purple-400" },
-};
-const DEFAULT_SQUARE = {
-	label: "±",
-	className: "border-amber-500 text-amber-500",
-};
+// Stable fallback: an inline `?? []` makes the zustand snapshot a fresh array
+// every read, which useSyncExternalStore treats as an endless store change.
+const NO_VIEWED_PATHS: string[] = [];
 
 function splitPath(path: string): { name: string; dir: string | null } {
 	const separator = path.lastIndexOf("/");
@@ -45,7 +37,7 @@ export function JumpToFileSheet() {
 		(state) => state.commentsByWorkspace[workspaceId] ?? NO_COMMENTS,
 	);
 	const viewedPaths = useViewedFilesStore(
-		(state) => state.viewedByWorkspace[workspaceId] ?? [],
+		(state) => state.viewedByWorkspace[workspaceId] ?? NO_VIEWED_PATHS,
 	);
 
 	const commentCounts = new Map<string, number>();
@@ -77,23 +69,13 @@ export function JumpToFileSheet() {
 				keyExtractor={(file) => file.path}
 				renderItem={({ item: file }) => {
 					const { name, dir } = splitPath(file.path);
-					const square = STATUS_SQUARE[file.status] ?? DEFAULT_SQUARE;
 					const commentCount = commentCounts.get(file.path) ?? 0;
 					return (
 						<PressableScale
 							className="border-border/50 flex-row items-center gap-3 border-b px-4 py-3"
 							onPress={() => jump(file)}
 						>
-							<View
-								className={cn(
-									"size-5 items-center justify-center rounded border-[1.5px]",
-									square.className,
-								)}
-							>
-								<Text className={cn("text-[11px] font-bold", square.className)}>
-									{square.label}
-								</Text>
-							</View>
+							<FileStatusBadge status={file.status} />
 							<View className="min-w-0 flex-1">
 								<Text className="font-semibold text-[14px]" numberOfLines={1}>
 									{name}
@@ -107,27 +89,29 @@ export function JumpToFileSheet() {
 									</Text>
 								) : null}
 							</View>
-							{commentCount > 0 ? (
-								<View className="bg-card border-border flex-row items-center gap-1 rounded-full border px-2 py-0.5">
-									<Icon
-										as={MessageSquare}
-										className="text-muted-foreground size-3"
-									/>
-									<Text className="text-muted-foreground text-[11px] font-semibold">
-										{commentCount}
-									</Text>
-								</View>
-							) : null}
 							{viewedSet.has(file.path) ? (
 								<Icon as={CheckCircle2} className="text-green-500 size-4" />
 							) : null}
-							<View className="flex-row items-center gap-1">
-								<Text className="text-green-500 font-medium text-[12px]">
-									+{file.additions}
-								</Text>
-								<Text className="text-red-500 font-medium text-[12px]">
-									−{file.deletions}
-								</Text>
+							<View className="items-end gap-1">
+								<View className="flex-row items-center gap-1">
+									<Text className="text-green-500 font-medium text-[12px]">
+										+{file.additions}
+									</Text>
+									<Text className="text-red-500 font-medium text-[12px]">
+										−{file.deletions}
+									</Text>
+								</View>
+								{commentCount > 0 ? (
+									<View className="flex-row items-center gap-1">
+										<Icon
+											as={MessageSquare}
+											className="text-muted-foreground size-3"
+										/>
+										<Text className="text-muted-foreground font-semibold text-[11px]">
+											{commentCount}
+										</Text>
+									</View>
+								) : null}
 							</View>
 						</PressableScale>
 					);
