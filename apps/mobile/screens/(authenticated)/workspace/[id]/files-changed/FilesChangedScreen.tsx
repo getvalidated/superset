@@ -1,4 +1,5 @@
-import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
+import type { LegendListRef } from "@legendapp/list/react-native";
+import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { useQueries } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -16,11 +17,7 @@ import {
 	View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, {
-	clamp,
-	useSharedValue,
-	withDecay,
-} from "react-native-reanimated";
+import { clamp, useSharedValue, withDecay } from "react-native-reanimated";
 import { tokenizeCode } from "@/components/ai-elements/code-block";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -750,7 +747,7 @@ export function FilesChangedScreen() {
 			</Stack.Screen>
 			<CharWidthProbe onMeasure={setCharWidth} />
 			<GestureDetector gesture={panGesture}>
-				<LegendList
+				<AnimatedLegendList
 					ref={listRef}
 					className="flex-1"
 					contentInsetAdjustmentBehavior="automatic"
@@ -760,7 +757,6 @@ export function FilesChangedScreen() {
 					keyExtractor={itemKey}
 					renderItem={renderItem}
 					stickyHeaderIndices={stickyHeaderIndices}
-					renderScrollComponent={(props) => <Animated.ScrollView {...props} />}
 					maintainVisibleContentPosition
 					viewabilityConfig={{
 						itemVisiblePercentThreshold: 10,
