@@ -1,0 +1,73 @@
+import { useLiveQuery } from "@tanstack/react-db";
+import { Image } from "expo-image";
+import { useMemo, useState } from "react";
+import { View } from "react-native";
+import { Text } from "@/components/ui/text";
+import { useCollections } from "@/screens/(authenticated)/providers/CollectionsProvider";
+
+// GitHub noreply addresses encode the account: `<id>+<login>@` (current) or
+// `<login>@` (legacy) — both resolve to an avatar URL without any lookup.
+const GITHUB_NOREPLY =
+	/^(?:(\d+)\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com$/;
+
+function githubAvatarUrl(email: string): string | null {
+	const match = GITHUB_NOREPLY.exec(email);
+	if (!match) return null;
+	const [, id, login] = match;
+	return id
+		? `https://avatars.githubusercontent.com/u/${id}?s=72`
+		: `https://github.com/${login}.png?size=72`;
+}
+
+/**
+ * Commit-author avatar resolved from the author email: an org member's
+ * Superset avatar first, then GitHub noreply-derived URLs, else an initial.
+ */
+export function AuthorAvatar({
+	name,
+	email,
+	size = 18,
+}: {
+	name: string;
+	// Optional at runtime: hosts older than the authorEmail field omit it.
+	email: string | undefined;
+	size?: number;
+}) {
+	const collections = useCollections();
+	const { data: users } = useLiveQuery(
+		(q) => q.from({ users: collections.users }),
+		[collections],
+	);
+	const [failed, setFailed] = useState(false);
+
+	const url = useMemo(() => {
+		const normalized = (email ?? "").trim().toLowerCase();
+		if (!normalized) return null;
+		const member = (users ?? []).find(
+			(user) => user.email.toLowerCase() === normalized,
+		);
+		return member?.image ?? githubAvatarUrl(normalized);
+	}, [users, email]);
+
+	const dimensions = { width: size, height: size, borderRadius: size / 2 };
+
+	if (!url || failed) {
+		return (
+			<View className="bg-muted items-center justify-center" style={dimensions}>
+				<Text
+					className="text-muted-foreground font-semibold"
+					style={{ fontSize: size * 0.55, lineHeight: size }}
+				>
+					{(name.trim()[0] ?? "?").toUpperCase()}
+				</Text>
+			</View>
+		);
+	}
+	return (
+		<Image
+			source={{ uri: url }}
+			style={dimensions}
+			onError={() => setFailed(true)}
+		/>
+	);
+}
