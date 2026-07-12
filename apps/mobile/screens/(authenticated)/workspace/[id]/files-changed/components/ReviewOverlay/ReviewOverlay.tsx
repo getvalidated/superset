@@ -14,9 +14,11 @@ const GLASS = isLiquidGlassAvailable();
 function GlassPill({
 	children,
 	className,
+	tintColor,
 }: {
 	children: ReactNode;
 	className?: string;
+	tintColor?: string;
 }) {
 	if (!GLASS) {
 		return (
@@ -25,6 +27,7 @@ function GlassPill({
 					"bg-card border-border overflow-hidden rounded-full border",
 					className,
 				)}
+				style={tintColor ? { backgroundColor: tintColor } : undefined}
 			>
 				{children}
 			</View>
@@ -37,6 +40,7 @@ function GlassPill({
 			colorScheme="dark"
 			glassEffectStyle="regular"
 			isInteractive
+			tintColor={tintColor}
 			style={{ borderRadius: 999, overflow: "hidden" }}
 		>
 			{children}
@@ -54,9 +58,11 @@ export function ReviewOverlay({
 	onJumpToFile: () => void;
 }) {
 	const insets = useSafeAreaInsets();
+	// Right-aligned thumb cluster: the CTA sits beside the jump button, not
+	// centered across the screen.
 	return (
 		<View
-			className="absolute right-0 left-0 items-center"
+			className="absolute right-0 left-0 flex-row items-center justify-end gap-2.5 pr-3"
 			pointerEvents="box-none"
 			style={{ bottom: Math.max(insets.bottom, 12) + 4 }}
 		>
@@ -65,14 +71,16 @@ export function ReviewOverlay({
 					entering={FadeIn.duration(150)}
 					exiting={FadeOut.duration(120)}
 				>
-					<GlassPill>
+					<GlassPill tintColor="#16a34a">
 						<PressableScale
-							className="flex-row items-center gap-2 px-4 py-2.5"
+							className="h-12 flex-row items-center gap-2 px-4"
 							onPress={onFinishReview}
 						>
-							<Text className="font-semibold text-[13.5px]">Finish review</Text>
-							<View className="bg-foreground rounded-full px-1.5 py-0.5">
-								<Text className="text-background text-[10.5px] font-bold">
+							<Text className="font-semibold text-[14px] text-white">
+								Finish review
+							</Text>
+							<View className="rounded-full bg-white/90 px-1.5 py-0.5">
+								<Text className="font-bold text-[10.5px] text-green-700">
 									{draftCount}
 								</Text>
 							</View>
@@ -80,17 +88,15 @@ export function ReviewOverlay({
 					</GlassPill>
 				</Animated.View>
 			) : null}
-			<View className="absolute right-3" style={{ bottom: 0 }}>
-				<GlassPill>
-					<PressableScale
-						accessibilityLabel="Jump to file"
-						className="size-10 items-center justify-center"
-						onPress={onJumpToFile}
-					>
-						<Icon as={ListOrdered} className="text-foreground size-4.5" />
-					</PressableScale>
-				</GlassPill>
-			</View>
+			<GlassPill>
+				<PressableScale
+					accessibilityLabel="Jump to file"
+					className="size-12 items-center justify-center"
+					onPress={onJumpToFile}
+				>
+					<Icon as={ListOrdered} className="text-foreground size-5" />
+				</PressableScale>
+			</GlassPill>
 		</View>
 	);
 }
