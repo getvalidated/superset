@@ -3,7 +3,11 @@ import { getCellDimensions } from "./cell-dimensions";
 
 // Escape hatch: revert to stock xterm wheel handling without a rebuild.
 // Run in DevTools console: localStorage.setItem('SUPERSET_TERMINAL_STOCK_WHEEL', '1')
-function isStockWheelForced(): boolean {
+// Checked per wheel event (localStorage reads are sub-microsecond in
+// Chromium) because terminal instances are parked and reused across React
+// mounts — an install-time check would require a full window reload to
+// take effect.
+export function isStockWheelForced(): boolean {
 	try {
 		return localStorage.getItem("SUPERSET_TERMINAL_STOCK_WHEEL") === "1";
 	} catch {
@@ -200,6 +204,8 @@ export function createTerminalWheelEventHandler(
 	const state = createWheelLineState();
 
 	return (event: WheelEvent): boolean => {
+		if (isStockWheelForced()) return true;
+
 		// Shift is xterm's mouse-capture bypass (selection); keep stock behavior.
 		if (event.deltaY === 0 || event.shiftKey) return true;
 
@@ -269,8 +275,6 @@ export function createTerminalWheelEventHandler(
  * uninstaller; xterm.dispose() also cleans everything up implicitly.
  */
 export function installTerminalWheelEventHandler(xterm: XTerm): () => void {
-	if (isStockWheelForced()) return () => {};
-
 	const sgrTracker = createSgrMouseModeTracker(xterm);
 	xterm.attachCustomWheelEventHandler(
 		createTerminalWheelEventHandler(xterm, sgrTracker.isActive),

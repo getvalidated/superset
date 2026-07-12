@@ -303,4 +303,27 @@ describe("createTerminalWheelEventHandler", () => {
 		const handler = createTerminalWheelEventHandler(terminal, isSgrActive);
 		expect(handler(wheelEvent(40))).toBe(true);
 	});
+
+	it("honors the stock-wheel escape hatch per event, without reinstall", () => {
+		const globals = globalThis as { localStorage?: Pick<Storage, "getItem"> };
+		const original = globals.localStorage;
+		try {
+			globals.localStorage = {
+				getItem: (key) =>
+					key === "SUPERSET_TERMINAL_STOCK_WHEEL" ? "1" : null,
+			};
+			const { terminal, input } = makeFakeTerminal();
+			const handler = createTerminalWheelEventHandler(terminal, isSgrActive);
+			expect(handler(wheelEvent(51))).toBe(true);
+			expect(input).not.toHaveBeenCalled();
+
+			// Clearing the flag re-enables the handler on the very next event —
+			// parked/reused terminal instances must not need a window reload.
+			globals.localStorage = { getItem: () => null };
+			expect(handler(wheelEvent(51))).toBe(false);
+			expect(input).toHaveBeenCalled();
+		} finally {
+			globals.localStorage = original;
+		}
+	});
 });
