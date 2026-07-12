@@ -334,7 +334,16 @@ export function NewChatWidget({
 					className="px-3"
 					style={{ paddingBottom: focused ? 8 : insets.bottom + 8 }}
 				>
-					{above ? <View className="flex-row pb-2 pl-1">{above}</View> : null}
+					{/* Hidden while expanded: the chip would ride (and jitter against)
+			    the pill's native resize animation and crowd its top edge. */}
+					{above && !expanded ? (
+						<Animated.View
+							entering={FadeIn.duration(150)}
+							exiting={FadeOut.duration(120)}
+						>
+							<View className="flex-row pb-2 pl-1">{above}</View>
+						</Animated.View>
+					) : null}
 					<Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
 						<VStack
 							spacing={0}
