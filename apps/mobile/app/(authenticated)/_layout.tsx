@@ -30,7 +30,10 @@ export default function AuthenticatedLayout() {
 		<CollectionsProvider>
 			<PromptInputProvider>
 				<Stack screenOptions={{ headerShown: false }}>
-					<Stack.Screen name="(home)" />
+					{/* Root headers are hidden — `title` here only names routes in
+				    back-button long-press menus (otherwise raw route names leak,
+				    e.g. "(home)"). */}
+					<Stack.Screen name="(home)" options={{ title: "Home" }} />
 					<Stack.Screen
 						name="settings/index"
 						options={settingsScreenOptions("Settings")}
@@ -53,11 +56,11 @@ export default function AuthenticatedLayout() {
 					/>
 					<Stack.Screen
 						name="workspace/[id]/chat/[sessionId]"
-						options={{ ...glassHeaderOptions, title: "" }}
+						options={{ ...glassHeaderOptions, title: "Chat" }}
 					/>
 					<Stack.Screen
 						name="workspace/[id]/chat/acp/[sessionId]"
-						options={{ ...glassHeaderOptions, title: "" }}
+						options={{ ...glassHeaderOptions, title: "Chat" }}
 					/>
 					<Stack.Screen
 						name="workspace/[id]/diff"
