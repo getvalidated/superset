@@ -52,6 +52,18 @@ export function expandTabs(contents: string): string {
 	return contents.includes("\t") ? contents.replaceAll("\t", "    ") : contents;
 }
 
+const NON_PRINTABLE_ASCII = /[^ -~]/;
+const WIDE_CHAR =
+	/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|\p{Extended_Pictographic}/u;
+
+/** Monospace cells per line — CJK and emoji glyphs render two cells wide. */
+function lineWidthChars(text: string): number {
+	if (!NON_PRINTABLE_ASCII.test(text)) return text.length;
+	let units = 0;
+	for (const char of text) units += WIDE_CHAR.test(char) ? 2 : 1;
+	return units;
+}
+
 export function computeFileDiff(
 	path: string,
 	oldContents: string,
@@ -97,7 +109,8 @@ export function computeFileDiff(
 			if (marker === "\\") continue;
 			const key = `${path}@@${hunk.oldStart}:${hunk.newStart}:${index}`;
 			const text = line.slice(1);
-			if (text.length > maxLineChars) maxLineChars = text.length;
+			const width = lineWidthChars(text);
+			if (width > maxLineChars) maxLineChars = width;
 			if (marker === "+") {
 				rows.push({
 					kind: "line",
@@ -139,8 +152,11 @@ export function computeFileDiff(
 	}
 
 	const newLines = newContents.length === 0 ? [] : newContents.split("\n");
+	// split("\n") leaves a phantom empty line for newline-terminated files.
+	if (newContents.endsWith("\n")) newLines.pop();
 	for (const line of newLines) {
-		if (line.length > maxLineChars) maxLineChars = line.length;
+		const width = lineWidthChars(line);
+		if (width > maxLineChars) maxLineChars = width;
 	}
 
 	return {

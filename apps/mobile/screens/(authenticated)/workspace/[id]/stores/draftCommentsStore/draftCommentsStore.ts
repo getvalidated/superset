@@ -1,6 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type {
+	DiffLineType,
+	DiffToken,
+} from "../../files-changed/utils/computeFileDiff";
 
 export interface DraftComment {
 	id: string;
@@ -9,6 +13,9 @@ export interface DraftComment {
 	/** 0 = file-level comment. */
 	line: number;
 	lineText: string;
+	/** Absent on drafts persisted before line types were stored. */
+	lineType?: DiffLineType | "file";
+	tokens?: DiffToken[];
 	body: string;
 	createdAt: number;
 }

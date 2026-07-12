@@ -1,7 +1,8 @@
-import { StyleSheet, Text } from "react-native";
+import { Text } from "react-native";
 import { DIFF_FONT_SIZE } from "./diffMetrics";
 
-const PROBE_CHARS = 100;
+// Must fit the narrowest iPhone width, or the layout clamps the measurement.
+const PROBE_CHARS = 30;
 
 /** Renders one invisible monospace line to measure the real char advance. */
 export function CharWidthProbe({
@@ -17,10 +18,13 @@ export function CharWidthProbe({
 				const width = event.nativeEvent.layout.width;
 				if (width > 0) onMeasure(width / PROBE_CHARS);
 			}}
-			style={[
-				StyleSheet.absoluteFill,
-				{ fontSize: DIFF_FONT_SIZE, opacity: 0 },
-			]}
+			style={{
+				position: "absolute",
+				top: 0,
+				left: 0,
+				opacity: 0,
+				fontSize: DIFF_FONT_SIZE,
+			}}
 		>
 			{"0".repeat(PROBE_CHARS)}
 		</Text>

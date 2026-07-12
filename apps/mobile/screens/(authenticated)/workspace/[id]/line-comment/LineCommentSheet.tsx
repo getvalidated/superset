@@ -29,6 +29,8 @@ export function LineCommentSheet() {
 				side: anchor.side,
 				line: anchor.line,
 				lineText: anchor.lineText,
+				lineType: anchor.lineType,
+				tokens: anchor.tokens,
 				body: trimmed,
 				createdAt: Date.now(),
 			});

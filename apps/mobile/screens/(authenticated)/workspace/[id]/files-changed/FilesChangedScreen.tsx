@@ -1,5 +1,5 @@
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -70,6 +70,7 @@ export function FilesChangedScreen() {
 	const workspaceId = id ?? null;
 	const { width: windowWidth } = useWindowDimensions();
 	const headerInset = useHeaderHeight();
+	const queryClient = useQueryClient();
 
 	const changeset = useWorkspaceChangeset(workspaceId);
 	const { workspace } = useWorkspaceHost(workspaceId);
@@ -123,6 +124,22 @@ export function FilesChangedScreen() {
 			return next;
 		});
 	}, []);
+
+	// The toggle bit is relative to the viewed baseline — reset it when the
+	// baseline flips, or marking a collapsed file viewed would re-expand it.
+	const onToggleViewed = useCallback(
+		(path: string) => {
+			if (!workspaceId) return;
+			toggleViewed(workspaceId, path);
+			setCollapsedToggles((previous) => {
+				if (!previous.has(path)) return previous;
+				const next = new Set(previous);
+				next.delete(path);
+				return next;
+			});
+		},
+		[workspaceId, toggleViewed],
+	);
 
 	const fetchableFiles = useMemo(
 		() => changeset.files.filter((file) => file.isBinary !== true),
@@ -217,8 +234,8 @@ export function FilesChangedScreen() {
 	const maxScrollX = useSharedValue(0);
 	const codeViewportWidth = windowWidth - GUTTER_WIDTH;
 
-	const contentWidthByPath = useMemo(() => {
-		const map = new Map<string, number>();
+	const contentWidths = useMemo(() => {
+		const byPath = new Map<string, number>();
 		let maxOffset = 0;
 		for (const [path, entry] of dataByPath) {
 			if (!entry.data) continue;
@@ -226,12 +243,18 @@ export function FilesChangedScreen() {
 				entry.data.maxLineChars + 2,
 				charWidth,
 			);
-			map.set(path, width);
+			byPath.set(path, width);
 			maxOffset = Math.max(maxOffset, width - codeViewportWidth);
 		}
-		maxScrollX.value = Math.max(0, maxOffset);
-		return map;
-	}, [dataByPath, charWidth, codeViewportWidth, maxScrollX]);
+		return { byPath, maxOffset: Math.max(0, maxOffset) };
+	}, [dataByPath, charWidth, codeViewportWidth]);
+	const contentWidthByPath = contentWidths.byPath;
+	useEffect(() => {
+		maxScrollX.value = contentWidths.maxOffset;
+		if (scrollX.value > contentWidths.maxOffset) {
+			scrollX.value = contentWidths.maxOffset;
+		}
+	}, [contentWidths.maxOffset, maxScrollX, scrollX]);
 
 	const panStartX = useRef(0);
 	const panResponder = useMemo(
@@ -295,7 +318,14 @@ export function FilesChangedScreen() {
 							side: comment.side,
 							line: comment.line,
 							lineText: comment.lineText,
-							lineType: comment.line === 0 ? "file" : "context",
+							lineType:
+								comment.lineType ??
+								(comment.line === 0
+									? "file"
+									: comment.side === "old"
+										? "del"
+										: "context"),
+							tokens: comment.tokens,
 							editingDraftId: comment.id,
 							initialBody: comment.body,
 						});
@@ -399,14 +429,17 @@ export function FilesChangedScreen() {
 			next.add(path);
 			return next;
 		});
-		if (viewedSet.has(path)) {
-			setCollapsedToggles((previous) => {
-				if (previous.has(path)) return previous;
-				const next = new Set(previous);
-				next.add(path);
-				return next;
-			});
-		}
+		// Force the target expanded whatever its resting state: viewed files
+		// need the toggle bit set, manually-collapsed unviewed files need it
+		// cleared.
+		setCollapsedToggles((previous) => {
+			const expandToggle = viewedSet.has(path);
+			if (previous.has(path) === expandToggle) return previous;
+			const next = new Set(previous);
+			if (expandToggle) next.add(path);
+			else next.delete(path);
+			return next;
+		});
 		const index = items.findIndex(
 			(item) => item.kind === "file" && item.file.path === path,
 		);
@@ -420,14 +453,21 @@ export function FilesChangedScreen() {
 		clearJump();
 	}, [jumpTarget, items, viewedSet, clearJump, headerInset]);
 
+	// The per-file diff queries key on +/− counts with infinite staleTime, so a
+	// same-count content change needs an explicit invalidation to show up.
 	const onRefresh = useCallback(async () => {
 		setRefreshing(true);
 		try {
-			await changeset.refetch();
+			await Promise.all([
+				changeset.refetch(),
+				queryClient.invalidateQueries({
+					queryKey: ["workspace-file-diff-data", workspaceId],
+				}),
+			]);
 		} finally {
 			setRefreshing(false);
 		}
-	}, [changeset.refetch]);
+	}, [changeset.refetch, queryClient, workspaceId]);
 
 	const renderItem = useCallback(
 		({ item }: { item: ListItem }) => {
@@ -440,9 +480,7 @@ export function FilesChangedScreen() {
 							viewed={item.viewed}
 							onToggle={toggleCollapsed}
 							onMenu={openFileMenu}
-							onToggleViewed={(path) => {
-								if (workspaceId) toggleViewed(workspaceId, path);
-							}}
+							onToggleViewed={onToggleViewed}
 						/>
 					);
 				case "hunk":
@@ -516,7 +554,7 @@ export function FilesChangedScreen() {
 		[
 			toggleCollapsed,
 			openFileMenu,
-			toggleViewed,
+			onToggleViewed,
 			workspaceId,
 			contentWidthByPath,
 			codeViewportWidth,
@@ -584,7 +622,11 @@ export function FilesChangedScreen() {
 					}}
 					scrollIndicatorInsets={{ top: headerInset }}
 					refreshControl={
-						<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+						<RefreshControl
+							refreshing={refreshing}
+							onRefresh={onRefresh}
+							progressViewOffset={headerInset}
+						/>
 					}
 					ListFooterComponent={
 						changeset.isReady && changeset.files.length === 0 ? (
