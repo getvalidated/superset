@@ -2,6 +2,11 @@ import { structuredPatch } from "diff";
 
 export type DiffLineType = "add" | "del" | "context";
 
+export interface DiffToken {
+	content: string;
+	color?: string;
+}
+
 export type DiffRow =
 	| { kind: "hunk"; key: string; header: string }
 	| {
@@ -11,6 +16,7 @@ export type DiffRow =
 			oldLineNumber: number | null;
 			newLineNumber: number | null;
 			text: string;
+			tokens?: DiffToken[];
 	  }
 	| { kind: "truncated"; key: string; hiddenCount: number };
 
@@ -93,4 +99,31 @@ export function computeFileDiff(
 		});
 	}
 	return rows;
+}
+
+/**
+ * Attach per-line syntax tokens from whole-file tokenizations of each side.
+ * Del lines read from the old side; add/context lines from the new side.
+ */
+export function attachDiffTokens(
+	rows: DiffRow[],
+	oldLines: Array<Array<{ content: string; color?: string }>> | null,
+	newLines: Array<Array<{ content: string; color?: string }>> | null,
+): DiffRow[] {
+	if (!oldLines && !newLines) return rows;
+	return rows.map((row) => {
+		if (row.kind !== "line") return row;
+		const source =
+			row.type === "del"
+				? (oldLines?.[(row.oldLineNumber ?? 0) - 1] ?? null)
+				: (newLines?.[(row.newLineNumber ?? 0) - 1] ?? null);
+		if (!source) return row;
+		return {
+			...row,
+			tokens: source.map((token) => ({
+				content: token.content,
+				color: token.color,
+			})),
+		};
+	});
 }

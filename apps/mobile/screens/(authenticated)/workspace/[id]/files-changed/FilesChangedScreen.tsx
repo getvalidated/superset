@@ -18,6 +18,7 @@ import {
 	RefreshControl,
 	View,
 } from "react-native";
+import { tokenizeCode } from "@/components/ai-elements/code-block";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import type { HostWorkspaceItem } from "@/hooks/useHostWorkspaces";
@@ -30,10 +31,17 @@ import {
 	type ChangesetFile,
 	useWorkspaceChangeset,
 } from "../hooks/useWorkspaceChangeset";
+import { languageForPath } from "../utils/languageForPath";
 import { useViewedFilesStore } from "./stores/viewedFilesStore";
-import { computeFileDiff, type DiffRow } from "./utils/computeFileDiff";
+import {
+	attachDiffTokens,
+	computeFileDiff,
+	type DiffRow,
+} from "./utils/computeFileDiff";
 
 const AUTO_EXPAND_MAX_FILES = 15;
+
+const MAX_HIGHLIGHT_BYTES = 200_000;
 
 // Stable fallback: an inline `?? []` makes the zustand snapshot a fresh array
 // every read, which useSyncExternalStore treats as an endless store change.
@@ -68,12 +76,20 @@ function splitPath(path: string): { name: string; dir: string | null } {
 }
 
 const LINE_TEXT_CLASS = {
-	add: "text-green-500",
-	del: "text-red-500",
+	add: "text-green-400",
+	del: "text-red-400",
 	context: "text-foreground/80",
 } as const;
 
-const LINE_BG_CLASS = {
+// GitHub's dual-tone rows: the number gutter carries a stronger tint than the
+// code area so the add/del bands read at a glance.
+const GUTTER_BG_CLASS = {
+	add: "bg-green-500/25",
+	del: "bg-red-500/25",
+	context: undefined,
+} as const;
+
+const CODE_BG_CLASS = {
 	add: "bg-green-500/10",
 	del: "bg-red-500/10",
 	context: undefined,
@@ -81,11 +97,17 @@ const LINE_BG_CLASS = {
 
 const LINE_SIGN = { add: "+", del: "−", context: " " } as const;
 
+const SIGN_CLASS = {
+	add: "text-green-400",
+	del: "text-red-400",
+	context: "text-transparent",
+} as const;
+
 function DiffRowView({ row }: { row: DiffRow }) {
 	if (row.kind === "hunk") {
 		return (
-			<View className="bg-muted/40 px-3 py-1">
-				<Text className="text-muted-foreground font-mono text-[11px]">
+			<View className="bg-sky-500/10 px-3 py-1.5">
+				<Text className="text-sky-300/80 font-mono text-[11px]">
 					{row.header}
 				</Text>
 			</View>
@@ -101,27 +123,53 @@ function DiffRowView({ row }: { row: DiffRow }) {
 		);
 	}
 	return (
-		<View className={cn("flex-row", LINE_BG_CLASS[row.type])}>
-			<Text className="text-muted-foreground/50 w-10 pr-1.5 text-right font-mono text-[11px] leading-5">
-				{row.newLineNumber ?? row.oldLineNumber ?? ""}
-			</Text>
-			<Text
+		<View className="flex-row">
+			<View
 				className={cn(
-					"w-3.5 font-mono text-[11px] leading-5",
-					LINE_TEXT_CLASS[row.type],
+					"w-10 flex-none justify-start",
+					GUTTER_BG_CLASS[row.type],
 				)}
 			>
-				{LINE_SIGN[row.type]}
-			</Text>
-			<Text
-				className={cn(
-					"flex-1 pr-2 font-mono text-[11px] leading-5",
-					LINE_TEXT_CLASS[row.type],
-				)}
-				numberOfLines={1}
-			>
-				{row.text}
-			</Text>
+				<Text
+					className={cn(
+						"pr-1.5 text-right font-mono text-[11px] leading-[19px]",
+						row.type === "context"
+							? "text-muted-foreground/50"
+							: "text-foreground/70",
+					)}
+				>
+					{row.newLineNumber ?? row.oldLineNumber ?? ""}
+				</Text>
+			</View>
+			<View className={cn("flex-1 flex-row", CODE_BG_CLASS[row.type])}>
+				<Text
+					className={cn(
+						"w-4 pl-1 font-mono text-[11px] leading-[19px]",
+						SIGN_CLASS[row.type],
+					)}
+				>
+					{LINE_SIGN[row.type]}
+				</Text>
+				<Text
+					className={cn(
+						"flex-1 pr-2 font-mono text-[11px] leading-[19px]",
+						row.tokens ? "text-foreground/90" : LINE_TEXT_CLASS[row.type],
+					)}
+				>
+					{row.tokens
+						? row.tokens.map((token, index) => (
+								<Text
+									className="font-mono text-[11px] leading-[19px]"
+									// biome-ignore lint/suspicious/noArrayIndexKey: tokens are static per row
+									key={index}
+									style={token.color ? { color: token.color } : undefined}
+								>
+									{token.content}
+								</Text>
+							))
+						: row.text}
+				</Text>
+			</View>
 		</View>
 	);
 }
@@ -206,11 +254,20 @@ export function FilesChangedScreen() {
 					path: file.path,
 					category: file.source,
 				});
-				return computeFileDiff(
-					file.path,
-					pair.oldFile.contents ?? "",
-					pair.newFile.contents ?? "",
-				);
+				const oldContents = pair.oldFile.contents ?? "";
+				const newContents = pair.newFile.contents ?? "";
+				const rows = computeFileDiff(file.path, oldContents, newContents);
+				if (
+					oldContents.length > MAX_HIGHLIGHT_BYTES ||
+					newContents.length > MAX_HIGHLIGHT_BYTES
+				) {
+					return rows;
+				}
+				const [oldLines, newLines] = await Promise.all([
+					tokenizeCode(oldContents, languageForPath(file.path)),
+					tokenizeCode(newContents, languageForPath(file.path)),
+				]);
+				return attachDiffTokens(rows, oldLines, newLines);
 			},
 		})),
 	});
