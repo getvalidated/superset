@@ -48,7 +48,11 @@ import {
 	StyleSheet,
 	View,
 } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, {
+	FadeIn,
+	FadeOut,
+	LinearTransition,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePromptInputController } from "@/components/ai-elements/prompt-input";
 import type { HostWorkspaceItem } from "@/hooks/useHostWorkspaces";
@@ -334,14 +338,12 @@ export function NewChatWidget({
 					className="px-3"
 					style={{ paddingBottom: focused ? 8 : insets.bottom + 8 }}
 				>
-					{/* Hidden while expanded: the chip would ride (and jitter against)
-			    the pill's native resize animation and crowd its top edge. */}
-					{above && !expanded ? (
-						<Animated.View
-							entering={FadeIn.duration(150)}
-							exiting={FadeOut.duration(120)}
-						>
-							<View className="flex-row pb-2 pl-1">{above}</View>
+					{/* The pill resizes natively (SwiftUI spring) while RN relayouts land
+			    in discrete jumps — the layout spring makes the chip glide between
+			    those jumps instead of teleporting against the pill's top edge. */}
+					{above ? (
+						<Animated.View layout={LinearTransition.springify().duration(350)}>
+							<View className="flex-row pb-2.5 pl-1">{above}</View>
 						</Animated.View>
 					) : null}
 					<Host matchContents={{ vertical: true }} style={{ width: "100%" }}>
