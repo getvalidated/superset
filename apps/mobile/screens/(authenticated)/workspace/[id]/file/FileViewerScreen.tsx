@@ -58,9 +58,11 @@ export function FileViewerScreen() {
 	const category = (source ?? "unstaged") as ChangesetSource;
 
 	const query = useQuery({
-		queryKey: ["workspace-file-diff", id ?? null, category, path] as const,
+		// Distinct from the files-changed screen's diff-row cache: same procedure,
+		// different cached shape (raw file pair vs computed rows).
+		queryKey: ["workspace-file-contents", id ?? null, category, path] as const,
 		enabled: hostUrl !== null && !!id && !!path,
-		staleTime: Number.POSITIVE_INFINITY,
+		staleTime: 15_000,
 		retry: 1,
 		networkMode: "always" as const,
 		queryFn: () =>

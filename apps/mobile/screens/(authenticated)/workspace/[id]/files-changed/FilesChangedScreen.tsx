@@ -33,6 +33,8 @@ import {
 import { useViewedFilesStore } from "./stores/viewedFilesStore";
 import { computeFileDiff, type DiffRow } from "./utils/computeFileDiff";
 
+const AUTO_EXPAND_MAX_FILES = 15;
+
 type ListItem =
 	| { kind: "summary" }
 	| { kind: "file"; file: ChangesetFile; expanded: boolean; viewed: boolean }
@@ -153,14 +155,19 @@ export function FilesChangedScreen() {
 		});
 	}, []);
 
+	// Above this, every expanded file firing a full-contents git.getDiff on
+	// first open stampedes the relay; large changesets rest collapsed instead.
+	const autoCollapse = changeset.files.length > AUTO_EXPAND_MAX_FILES;
+
 	const isExpanded = useCallback(
 		(file: ChangesetFile) => {
-			// Viewed files rest collapsed; a manual toggle overrides either way.
-			const restingCollapsed = viewedSet.has(file.path);
+			// Viewed files (and every file of a large changeset) rest collapsed; a
+			// manual toggle overrides either way.
+			const restingCollapsed = autoCollapse || viewedSet.has(file.path);
 			const toggled = collapsedPaths.has(file.path);
 			return restingCollapsed ? toggled : !toggled;
 		},
-		[viewedSet, collapsedPaths],
+		[autoCollapse, viewedSet, collapsedPaths],
 	);
 
 	const expandedFiles = useMemo(
@@ -173,11 +180,15 @@ export function FilesChangedScreen() {
 
 	const diffQueries = useQueries({
 		queries: expandedFiles.map((file) => ({
+			// The per-file stats change with the file's contents, so a fresh edit
+			// busts the otherwise-immortal cache entry.
 			queryKey: [
-				"workspace-file-diff",
+				"workspace-file-diff-rows",
 				workspaceId,
 				file.source,
 				file.path,
+				file.additions,
+				file.deletions,
 			] as const,
 			enabled: changeset.hostUrl !== null,
 			staleTime: Number.POSITIVE_INFINITY,
