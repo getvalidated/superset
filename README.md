@@ -78,6 +78,14 @@ Superset works with any CLI-based coding agent, including:
 
 If it runs in a terminal, it runs on Superset
 
+Agents get more than a terminal:
+
+- **Model picker**: choose a model and reasoning effort when you launch an agent
+- **Per-agent settings**: tune launch commands, prompt templates, and model overrides in Settings → Agents
+- **Custom agents**: add any terminal agent with its own icon and it works like a built-in
+- **Status and notifications**: working indicators, completion chimes, and dock badges when an agent needs you
+- **Built-in chat**: talk to models in a chat pane, with inline tool approvals and plan review
+
 ## More Than a Desktop App
 
 Every surface talks to the same workspaces, so you can start a task in the app and check on it from anywhere.
