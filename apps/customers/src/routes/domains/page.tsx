@@ -11,6 +11,7 @@ import {
 } from "@superset/ui/select";
 import { toast } from "@superset/ui/sonner";
 import { Switch } from "@superset/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@superset/ui/tabs";
 import {
 	keepPreviousData,
 	useMutation,
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/domains/")({
 function DomainsPage() {
 	const trpc = useTRPC();
 
+	const [view, setView] = useState<"all" | "pinned">("all");
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [minUsers, setMinUsers] = useState(2);
@@ -113,127 +115,150 @@ function DomainsPage() {
 				</div>
 			</div>
 
-			<div className="flex flex-wrap items-center gap-6">
-				<div className="relative">
-					<LuSearch className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-					<Input
-						value={search}
-						onChange={(event) => setSearch(event.target.value)}
-						placeholder="Search domains"
-						className="w-56 pl-8"
-					/>
-				</div>
+			<Tabs
+				value={view}
+				onValueChange={(value) => setView(value as "all" | "pinned")}
+			>
+				<TabsList>
+					<TabsTrigger value="all">All domains</TabsTrigger>
+					<TabsTrigger value="pinned">
+						Pinned{" "}
+						{pinnedSet.size > 0 && (
+							<span className="text-muted-foreground">({pinnedSet.size})</span>
+						)}
+					</TabsTrigger>
+				</TabsList>
+			</Tabs>
 
-				<div className="flex items-center gap-2">
-					<Label htmlFor="min-users" className="text-muted-foreground text-sm">
-						Min users
-					</Label>
+			{view === "all" && (
+				<div className="flex flex-wrap items-center gap-6">
+					<div className="relative">
+						<LuSearch className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+						<Input
+							value={search}
+							onChange={(event) => setSearch(event.target.value)}
+							placeholder="Search domains"
+							className="w-56 pl-8"
+						/>
+					</div>
+
+					<div className="flex items-center gap-2">
+						<Label
+							htmlFor="min-users"
+							className="text-muted-foreground text-sm"
+						>
+							Min users
+						</Label>
+						<Select
+							value={String(minUsers)}
+							onValueChange={(value) => setMinUsers(Number(value))}
+						>
+							<SelectTrigger id="min-users" className="w-20">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{[1, 2, 3, 5, 10].map((count) => (
+									<SelectItem key={count} value={String(count)}>
+										{count}+
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+
 					<Select
-						value={String(minUsers)}
-						onValueChange={(value) => setMinUsers(Number(value))}
+						value={health}
+						onValueChange={(value) =>
+							setHealth(value as NonNullable<DomainRollupInput["health"]>)
+						}
 					>
-						<SelectTrigger id="min-users" className="w-20">
-							<SelectValue />
+						<SelectTrigger className="w-36">
+							<SelectValue placeholder="Health" />
 						</SelectTrigger>
 						<SelectContent>
-							{[1, 2, 3, 5, 10].map((count) => (
-								<SelectItem key={count} value={String(count)}>
-									{count}+
-								</SelectItem>
-							))}
+							<SelectItem value="all">All health</SelectItem>
+							<SelectItem value="active">Active</SelectItem>
+							<SelectItem value="idle">Idle</SelectItem>
+							<SelectItem value="cooling">Cooling</SelectItem>
+							<SelectItem value="dormant">Dormant</SelectItem>
+							<SelectItem value="churnRisk">Churn risk</SelectItem>
 						</SelectContent>
 					</Select>
-				</div>
 
-				<Select
-					value={health}
-					onValueChange={(value) =>
-						setHealth(value as NonNullable<DomainRollupInput["health"]>)
-					}
-				>
-					<SelectTrigger className="w-36">
-						<SelectValue placeholder="Health" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="all">All health</SelectItem>
-						<SelectItem value="active">Active</SelectItem>
-						<SelectItem value="idle">Idle</SelectItem>
-						<SelectItem value="cooling">Cooling</SelectItem>
-						<SelectItem value="dormant">Dormant</SelectItem>
-						<SelectItem value="churnRisk">Churn risk</SelectItem>
-					</SelectContent>
-				</Select>
-
-				<Select
-					value={trend}
-					onValueChange={(value) =>
-						setTrend(value as NonNullable<DomainRollupInput["trend"]>)
-					}
-				>
-					<SelectTrigger className="w-36">
-						<SelectValue placeholder="Trend" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="all">All trends</SelectItem>
-						<SelectItem value="growing">Growing</SelectItem>
-						<SelectItem value="declining">Declining</SelectItem>
-					</SelectContent>
-				</Select>
-
-				<Select
-					value={sort}
-					onValueChange={(value) =>
-						setSort(value as NonNullable<DomainRollupInput["sort"]>)
-					}
-				>
-					<SelectTrigger className="w-44">
-						<SelectValue placeholder="Sort" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="users">Most users</SelectItem>
-						<SelectItem value="events30d">Most events (30d)</SelectItem>
-						<SelectItem value="lastActive">Last active</SelectItem>
-						<SelectItem value="trend">Best trend</SelectItem>
-					</SelectContent>
-				</Select>
-
-				<div className="flex items-center gap-2">
-					<Switch
-						id="include-freemail"
-						checked={includeFreemail}
-						onCheckedChange={setIncludeFreemail}
-					/>
-					<Label
-						htmlFor="include-freemail"
-						className="text-muted-foreground text-sm"
+					<Select
+						value={trend}
+						onValueChange={(value) =>
+							setTrend(value as NonNullable<DomainRollupInput["trend"]>)
+						}
 					>
-						Include freemail (gmail, outlook, …)
-					</Label>
+						<SelectTrigger className="w-36">
+							<SelectValue placeholder="Trend" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All trends</SelectItem>
+							<SelectItem value="growing">Growing</SelectItem>
+							<SelectItem value="declining">Declining</SelectItem>
+						</SelectContent>
+					</Select>
+
+					<Select
+						value={sort}
+						onValueChange={(value) =>
+							setSort(value as NonNullable<DomainRollupInput["sort"]>)
+						}
+					>
+						<SelectTrigger className="w-44">
+							<SelectValue placeholder="Sort" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="users">Most users</SelectItem>
+							<SelectItem value="events30d">Most events (30d)</SelectItem>
+							<SelectItem value="lastActive">Last active</SelectItem>
+							<SelectItem value="trend">Best trend</SelectItem>
+						</SelectContent>
+					</Select>
+
+					<div className="flex items-center gap-2">
+						<Switch
+							id="include-freemail"
+							checked={includeFreemail}
+							onCheckedChange={setIncludeFreemail}
+						/>
+						<Label
+							htmlFor="include-freemail"
+							className="text-muted-foreground text-sm"
+						>
+							Include freemail (gmail, outlook, …)
+						</Label>
+					</div>
 				</div>
-			</div>
+			)}
 
-			<DomainsTable
-				heading="Pinned"
-				rows={pinned.data?.rows}
-				total={pinned.data?.rows.length}
-				isLoading={pinned.isLoading}
-				isFetching={pinned.isFetching}
-				error={null}
-				pinnedDomains={pinnedSet}
-				onTogglePin={handleTogglePin}
-			/>
+			{view === "pinned" ? (
+				<DomainsTable
+					rows={pinned.data?.rows}
+					total={pinned.data?.rows.length}
+					isLoading={pinned.isLoading}
+					isFetching={pinned.isFetching}
+					error={null}
+					pinnedDomains={pinnedSet}
+					onTogglePin={handleTogglePin}
+					emptyTitle="No pinned domains"
+					emptyHint="Star a domain in the list or on its page to bookmark it here"
+				/>
+			) : (
+				<DomainsTable
+					rows={data?.rows}
+					total={data?.total}
+					isLoading={isLoading}
+					isFetching={isFetching}
+					error={error}
+					pinnedDomains={pinnedSet}
+					onTogglePin={handleTogglePin}
+				/>
+			)}
 
-			<DomainsTable
-				rows={data?.rows}
-				total={data?.total}
-				isLoading={isLoading}
-				isFetching={isFetching}
-				error={error}
-				pinnedDomains={pinnedSet}
-				onTogglePin={handleTogglePin}
-			/>
-
-			{data && data.total > PAGE_SIZE && (
+			{view === "all" && data && data.total > PAGE_SIZE && (
 				<div className="flex items-center justify-end gap-3">
 					<span className="text-muted-foreground text-sm">
 						Page {page} of {totalPages}

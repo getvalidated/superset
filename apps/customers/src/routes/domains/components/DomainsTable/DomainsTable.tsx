@@ -30,8 +30,8 @@ export interface DomainsTableProps {
 	error: { message: string } | null;
 	pinnedDomains: Set<string>;
 	onTogglePin: (domain: string, pinned: boolean) => void;
-	/** Renders as a titled section (e.g. "Pinned") that hides when empty. */
-	heading?: string;
+	emptyTitle?: string;
+	emptyHint?: string;
 }
 
 const numberFormat = new Intl.NumberFormat("en-US", {
@@ -47,10 +47,9 @@ export function DomainsTable({
 	error,
 	pinnedDomains,
 	onTogglePin,
-	heading,
+	emptyTitle = "No domains match",
+	emptyHint = "Lower the minimum user count or include freemail domains",
 }: DomainsTableProps) {
-	if (heading && (!rows || rows.length === 0)) return null;
-
 	if (isLoading && !rows) {
 		return (
 			<Card>
@@ -79,10 +78,8 @@ export function DomainsTable({
 			<Card>
 				<CardContent className="flex flex-col items-center justify-center py-12 text-center">
 					<LuAtSign className="text-muted-foreground mb-4 size-12" />
-					<p className="text-lg font-medium">No domains match</p>
-					<p className="text-muted-foreground text-sm">
-						Lower the minimum user count or include freemail domains
-					</p>
+					<p className="text-lg font-medium">{emptyTitle}</p>
+					<p className="text-muted-foreground text-sm">{emptyHint}</p>
 				</CardContent>
 			</Card>
 		);
@@ -96,8 +93,7 @@ export function DomainsTable({
 				}
 			>
 				<p className="text-muted-foreground flex items-center gap-2 pb-3 text-sm">
-					{heading ??
-						`${total?.toLocaleString()} domain${total === 1 ? "" : "s"}`}
+					{total?.toLocaleString()} domain{total === 1 ? "" : "s"}
 					{isFetching && <LuLoaderCircle className="size-3.5 animate-spin" />}
 				</p>
 				<Table>
