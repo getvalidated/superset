@@ -1,5 +1,7 @@
 import { Badge } from "@superset/ui/badge";
+import { Button } from "@superset/ui/button";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { IconType } from "react-icons";
 import {
 	LuBriefcase,
@@ -7,6 +9,7 @@ import {
 	LuGlobe,
 	LuLinkedin,
 	LuLoaderCircle,
+	LuSparkles,
 	LuTwitter,
 } from "react-icons/lu";
 
@@ -42,12 +45,22 @@ function SocialLink({
 /** Job title + public social profiles researched by AI, cached 30 days. */
 export function UserRoleLine({ userId }: UserRoleLineProps) {
 	const trpc = useTRPC();
+	const [requested, setRequested] = useState(false);
 	const role = useQuery(
 		trpc.customers.userRoleEnrichment.queryOptions(
 			{ userId },
-			{ staleTime: Number.POSITIVE_INFINITY, retry: false },
+			{ staleTime: Number.POSITIVE_INFINITY, retry: false, enabled: requested },
 		),
 	);
+
+	if (!requested) {
+		return (
+			<Button variant="outline" size="sm" onClick={() => setRequested(true)}>
+				<LuSparkles />
+				Research role & socials
+			</Button>
+		);
+	}
 
 	if (role.isLoading) {
 		return (

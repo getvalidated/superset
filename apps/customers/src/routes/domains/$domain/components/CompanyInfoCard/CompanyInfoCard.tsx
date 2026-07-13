@@ -1,4 +1,5 @@
 import { Badge } from "@superset/ui/badge";
+import { Button } from "@superset/ui/button";
 import {
 	Card,
 	CardContent,
@@ -9,7 +10,8 @@ import {
 import { Skeleton } from "@superset/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { LuGlobe } from "react-icons/lu";
+import { useState } from "react";
+import { LuGlobe, LuSparkles } from "react-icons/lu";
 
 import { useTRPC } from "@/trpc/react";
 
@@ -29,10 +31,11 @@ export interface CompanyInfoCardProps {
 /** Firmographics researched by Claude + web search, cached 30 days. */
 export function CompanyInfoCard({ domain }: CompanyInfoCardProps) {
 	const trpc = useTRPC();
+	const [requested, setRequested] = useState(false);
 	const enrichment = useQuery(
 		trpc.customers.domainEnrichment.queryOptions(
 			{ domain },
-			{ staleTime: Number.POSITIVE_INFINITY, retry: false },
+			{ staleTime: Number.POSITIVE_INFINITY, retry: false, enabled: requested },
 		),
 	);
 
@@ -52,17 +55,28 @@ export function CompanyInfoCard({ domain }: CompanyInfoCardProps) {
 					{data?.companyName ?? "Company"}
 				</CardTitle>
 				<CardDescription>
-					{enrichment.isLoading
-						? "Researching on the web — first visit takes ~30s"
-						: `AI-researched · ${data?.confidence ?? "low"} confidence${
-								data
-									? ` · ${formatDistanceToNow(new Date(data.fetchedAt), { addSuffix: true })}`
-									: ""
-							}`}
+					{!requested
+						? "Firmographics researched with AI, on demand"
+						: enrichment.isLoading
+							? "Researching on the web — first run takes ~30s"
+							: `AI-researched · ${data?.confidence ?? "low"} confidence${
+									data
+										? ` · ${formatDistanceToNow(new Date(data.fetchedAt), { addSuffix: true })}`
+										: ""
+								}`}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-2">
-				{enrichment.isLoading ? (
+				{!requested ? (
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => setRequested(true)}
+					>
+						<LuSparkles />
+						Research company
+					</Button>
+				) : enrichment.isLoading ? (
 					<>
 						<Skeleton className="h-4 w-full" />
 						<Skeleton className="h-4 w-3/4" />
