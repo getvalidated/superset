@@ -959,23 +959,6 @@ export const customersRouter = {
 				input.page * input.pageSize,
 			);
 
-			const MAX_ORGS_PER_DOMAIN = 6;
-			const pageOrgIds = [
-				...new Set(
-					pageEntries.flatMap((entry) =>
-						[...entry.orgIds].slice(0, MAX_ORGS_PER_DOMAIN),
-					),
-				),
-			];
-			const orgRows =
-				pageOrgIds.length > 0
-					? await db
-							.select({ id: organizations.id, name: organizations.name })
-							.from(organizations)
-							.where(inArray(organizations.id, pageOrgIds))
-					: [];
-			const orgById = new Map(orgRows.map((row) => [row.id, row]));
-
 			return {
 				total,
 				snapshotAt: snapshot.fetchedAt,
@@ -992,12 +975,6 @@ export const customersRouter = {
 					churnRisk: entry.churnRisk,
 					totalOrgCount: entry.orgIds.size,
 					payingOrgCount: entry.payingOrgCount,
-					orgs: [...entry.orgIds]
-						.slice(0, MAX_ORGS_PER_DOMAIN)
-						.flatMap((orgId) => {
-							const org = orgById.get(orgId);
-							return org ? [{ id: org.id, name: org.name }] : [];
-						}),
 				})),
 			};
 		}),

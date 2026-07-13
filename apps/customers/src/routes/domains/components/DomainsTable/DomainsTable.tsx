@@ -97,7 +97,6 @@ export function DomainsTable({
 							<TableHead>Active (7d)</TableHead>
 							<TableHead>Events (30d)</TableHead>
 							<TableHead>Trend (30d)</TableHead>
-							<TableHead>Orgs</TableHead>
 							<TableHead>Paying orgs</TableHead>
 							<TableHead>Last active</TableHead>
 							<TableHead>Health</TableHead>
@@ -135,29 +134,6 @@ export function DomainsTable({
 										events30d={row.events30d}
 										events30dPrev={row.events30dPrev}
 									/>
-								</TableCell>
-								<TableCell>
-									<div className="flex max-w-96 flex-wrap gap-1">
-										{row.orgs.map((org) => (
-											<Link
-												key={org.id}
-												to="/companies/$orgId"
-												params={{ orgId: org.id }}
-											>
-												<Badge
-													variant="outline"
-													className="hover:bg-accent max-w-40 truncate"
-												>
-													{org.name}
-												</Badge>
-											</Link>
-										))}
-										{row.totalOrgCount > row.orgs.length && (
-											<Badge variant="outline">
-												+{row.totalOrgCount - row.orgs.length} more
-											</Badge>
-										)}
-									</div>
 								</TableCell>
 								<TableCell>
 									{row.payingOrgCount > 0 ? (
