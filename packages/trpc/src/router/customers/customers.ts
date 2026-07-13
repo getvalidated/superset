@@ -27,7 +27,7 @@ import {
 	type UserActivity,
 	WEEKLY_ACTIVITY_IDS_CAP,
 } from "./activity-snapshot";
-
+import { startDomainResearchBatch } from "./batch-research";
 import { COMPANY_DOMAIN, domainSchema, FREEMAIL_DOMAINS } from "./domain-utils";
 import {
 	getCachedDomainEnrichment,
@@ -37,6 +37,7 @@ import {
 	getPersonEnrichment,
 } from "./enrichment";
 import {
+	getDomainResearchProgress,
 	getDomainResearchSettings,
 	setDomainResearchSettings,
 } from "./research-settings";
@@ -521,6 +522,25 @@ export const customersRouter = {
 				shownUsers.map((user) => user.userId),
 			);
 
+			// Auto-research catch-up: anyone new (no cached research yet) at an
+			// auto-enabled domain gets researched in the background, once.
+			if (researchSettings.autoResearch) {
+				const uncovered = shownUsers.filter(
+					(user) => !cachedResearch.has(user.userId),
+				);
+				if (uncovered.length > 0) {
+					startDomainResearchBatch({
+						domain: input.domain,
+						users: uncovered.map((user) => ({
+							id: user.userId,
+							name: user.name,
+							email: user.email,
+						})),
+						includeCompany: false,
+					});
+				}
+			}
+
 			// Hydrate org names for the chips and the shown users' org lists.
 			const allOrgIds = [
 				...new Set(memberRows.map((row) => row.organizationId)),
@@ -745,31 +765,17 @@ export const customersRouter = {
 				)
 				.slice(0, DOMAIN_USERS_SHOWN_CAP);
 
-			// Fire-and-forget with bounded concurrency; every result lands in
-			// the enrichment cache. (Runs within this server process — on
-			// serverless it may be cut short; a QStash job is the durable
-			// upgrade if that becomes a problem.)
-			void (async () => {
-				await getDomainEnrichment(input.domain).catch(() => {});
-				const queue = [...targets];
-				await Promise.all(
-					Array.from({ length: 3 }, async () => {
-						for (;;) {
-							const user = queue.shift();
-							if (!user) return;
-							const userDomain = user.email.split("@")[1]?.toLowerCase() ?? "";
-							await getPersonEnrichment({
-								cacheKey: user.id,
-								name: user.name,
-								domain: userDomain,
-							}).catch(() => {});
-						}
-					}),
-				);
-			})();
-
-			return { queued: targets.length };
+			const queued = startDomainResearchBatch({
+				domain: input.domain,
+				users: targets,
+				includeCompany: true,
+			});
+			return { queued };
 		}),
+
+	domainResearchProgress: adminProcedure
+		.input(z.object({ domain: domainSchema }))
+		.query(({ input }) => getDomainResearchProgress(input.domain)),
 
 	userRoleEnrichment: adminProcedure
 		.input(z.object({ userId: z.string().uuid() }))

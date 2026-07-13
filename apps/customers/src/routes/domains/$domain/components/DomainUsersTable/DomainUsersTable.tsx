@@ -97,17 +97,14 @@ export function DomainUsersTable({ users, totalUsers }: DomainUsersTableProps) {
 												<span className="text-muted-foreground text-xs">
 													{user.email}
 												</span>
-												{user.research &&
-													(user.research.title ||
-														user.research.linkedinUrl ||
-														user.research.twitterUrl ||
-														user.research.githubUrl ||
-														user.research.websiteUrl) && (
-														<span className="text-muted-foreground flex items-center gap-2 text-xs">
-															{user.research.title}
-															<SocialLinks {...user.research} />
-														</span>
-													)}
+												{user.research && (
+													<span className="text-muted-foreground flex items-center gap-2 text-xs">
+														{user.research.title ?? (
+															<span className="italic">Role unknown</span>
+														)}
+														<SocialLinks {...user.research} />
+													</span>
+												)}
 											</div>
 										</div>
 									</TableCell>

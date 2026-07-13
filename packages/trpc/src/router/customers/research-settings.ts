@@ -46,3 +46,48 @@ export async function setDomainResearchSettings(
 	}
 	memorySettings.set(domain, settings);
 }
+
+/** Live status of a domain's background research batch. */
+export interface DomainResearchProgress {
+	total: number;
+	done: number;
+	startedAt: string;
+	finishedAt: string | null;
+}
+
+const PROGRESS_PREFIX = `customers:research-progress:${env.NODE_ENV}:domain:`;
+const PROGRESS_TTL_SECONDS = 24 * 60 * 60;
+const memoryProgress = new Map<string, DomainResearchProgress>();
+
+export async function getDomainResearchProgress(
+	domain: string,
+): Promise<DomainResearchProgress | null> {
+	if (isKVConfigured) {
+		try {
+			const stored = await kv.get<DomainResearchProgress>(
+				`${PROGRESS_PREFIX}${domain}`,
+			);
+			if (stored) return stored;
+		} catch {
+			// Fall through to memory on KV error
+		}
+	}
+	return memoryProgress.get(domain) ?? null;
+}
+
+export async function setDomainResearchProgress(
+	domain: string,
+	progress: DomainResearchProgress,
+): Promise<void> {
+	if (isKVConfigured) {
+		try {
+			await kv.set(`${PROGRESS_PREFIX}${domain}`, progress, {
+				ex: PROGRESS_TTL_SECONDS,
+			});
+			return;
+		} catch {
+			// Fall through to memory on KV error
+		}
+	}
+	memoryProgress.set(domain, progress);
+}

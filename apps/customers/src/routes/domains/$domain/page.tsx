@@ -1,13 +1,14 @@
 import { Badge } from "@superset/ui/badge";
 import { Card, CardContent } from "@superset/ui/card";
 import { Label } from "@superset/ui/label";
+import { Progress } from "@superset/ui/progress";
 import { Skeleton } from "@superset/ui/skeleton";
 import { toast } from "@superset/ui/sonner";
 import { Switch } from "@superset/ui/switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuArrowLeft, LuCircleDollarSign } from "react-icons/lu";
 
 import { ActivityChart } from "@/components/ActivityChart";
@@ -49,11 +50,38 @@ function DomainDetailPage() {
 		trpc.customers.domainActivityTimeseries.queryOptions({ domain, weeks }),
 	);
 
+	const researchProgress = useQuery(
+		trpc.customers.domainResearchProgress.queryOptions(
+			{ domain },
+			{
+				refetchInterval: (query) => {
+					const progress = query.state.data;
+					return progress && !progress.finishedAt ? 2000 : false;
+				},
+			},
+		),
+	);
+	const progress = researchProgress.data;
+	const isResearchRunning = Boolean(progress && !progress.finishedAt);
+
+	// When a batch finishes, refresh the table so titles/socials appear.
+	const finishedAt = progress?.finishedAt;
+	useEffect(() => {
+		if (finishedAt) {
+			queryClient.invalidateQueries({
+				queryKey: trpc.customers.domainDetail.queryKey({ domain }),
+			});
+		}
+	}, [finishedAt, queryClient, trpc, domain]);
+
 	const setResearchMode = useMutation(
 		trpc.customers.setDomainResearchMode.mutationOptions({
 			onSuccess: (result, variables) => {
 				queryClient.invalidateQueries({
 					queryKey: trpc.customers.domainDetail.queryKey({ domain }),
+				});
+				queryClient.invalidateQueries({
+					queryKey: trpc.customers.domainResearchProgress.queryKey({ domain }),
 				});
 				toast.success(
 					variables.autoResearch
@@ -123,7 +151,7 @@ function DomainDetailPage() {
 						<Switch
 							id="auto-research"
 							checked={data.autoResearch}
-							disabled={setResearchMode.isPending}
+							disabled={setResearchMode.isPending || isResearchRunning}
 							onCheckedChange={(checked) =>
 								setResearchMode.mutate({ domain, autoResearch: checked })
 							}
@@ -135,6 +163,20 @@ function DomainDetailPage() {
 							Auto-research everyone
 						</Label>
 					</div>
+					{isResearchRunning && progress && (
+						<div className="flex w-56 flex-col gap-1">
+							<Progress
+								value={
+									progress.total > 0
+										? (progress.done / progress.total) * 100
+										: 0
+								}
+							/>
+							<span className="text-muted-foreground text-right text-xs">
+								Researching people… {progress.done}/{progress.total}
+							</span>
+						</div>
+					)}
 				</div>
 			</div>
 
