@@ -1,5 +1,6 @@
 import type { RouterInputs } from "@superset/trpc";
 import { Button } from "@superset/ui/button";
+import { Input } from "@superset/ui/input";
 import { Label } from "@superset/ui/label";
 import {
 	Select,
@@ -12,6 +13,7 @@ import { Switch } from "@superset/ui/switch";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { LuSearch } from "react-icons/lu";
 
 import { SnapshotNote } from "@/components/SnapshotNote";
 import { useTRPC } from "@/trpc/react";
@@ -29,6 +31,8 @@ export const Route = createFileRoute("/domains/")({
 function DomainsPage() {
 	const trpc = useTRPC();
 
+	const [search, setSearch] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [minUsers, setMinUsers] = useState(2);
 	const [includeFreemail, setIncludeFreemail] = useState(false);
 	const [health, setHealth] = useState<DomainRollupInput["health"]>("all");
@@ -36,16 +40,22 @@ function DomainsPage() {
 	const [sort, setSort] = useState<DomainRollupInput["sort"]>("users");
 	const [page, setPage] = useState(1);
 
+	useEffect(() => {
+		const timeout = setTimeout(() => setDebouncedSearch(search), 300);
+		return () => clearTimeout(timeout);
+	}, [search]);
+
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination whenever a filter changes
 	useEffect(() => {
 		setPage(1);
-	}, [minUsers, includeFreemail, health, trend, sort]);
+	}, [debouncedSearch, minUsers, includeFreemail, health, trend, sort]);
 
 	const { data, isLoading, error } = useQuery(
 		trpc.customers.domainRollup.queryOptions(
 			{
 				page,
 				pageSize: PAGE_SIZE,
+				search: debouncedSearch || undefined,
 				minUsers,
 				includeFreemail,
 				health,
@@ -72,6 +82,16 @@ function DomainsPage() {
 			</div>
 
 			<div className="flex flex-wrap items-center gap-6">
+				<div className="relative">
+					<LuSearch className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+					<Input
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						placeholder="Search domains"
+						className="w-56 pl-8"
+					/>
+				</div>
+
 				<div className="flex items-center gap-2">
 					<Label htmlFor="min-users" className="text-muted-foreground text-sm">
 						Min users

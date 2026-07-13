@@ -799,6 +799,7 @@ export const customersRouter = {
 			z.object({
 				page: z.number().int().min(1).default(1),
 				pageSize: z.number().int().min(1).max(100).default(50),
+				search: z.string().trim().max(200).optional(),
 				minUsers: z.number().int().min(1).default(2),
 				includeFreemail: z.boolean().default(false),
 				health: healthFilterSchema.default("all"),
@@ -884,8 +885,13 @@ export const customersRouter = {
 				);
 			};
 
+			const searchTerm = input.search?.toLowerCase();
 			const entries = [...byDomain.values()]
-				.filter((entry) => entry.userCount >= input.minUsers)
+				.filter(
+					(entry) =>
+						entry.userCount >= input.minUsers &&
+						(!searchTerm || entry.domain.includes(searchTerm)),
+				)
 				.map((entry) => {
 					const health = healthFromLastActive(entry.lastActiveAt);
 					const payingOrgCount = [...entry.orgIds].filter(isPayingOrg).length;
