@@ -1,6 +1,14 @@
 import { Badge } from "@superset/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { LuBriefcase, LuLoaderCircle } from "react-icons/lu";
+import type { IconType } from "react-icons";
+import {
+	LuBriefcase,
+	LuGithub,
+	LuGlobe,
+	LuLinkedin,
+	LuLoaderCircle,
+	LuTwitter,
+} from "react-icons/lu";
 
 import { useTRPC } from "@/trpc/react";
 
@@ -8,7 +16,30 @@ export interface UserRoleLineProps {
 	userId: string;
 }
 
-/** Job title researched by Claude + web search, cached 30 days. */
+function SocialLink({
+	href,
+	label,
+	icon: Icon,
+}: {
+	href: string;
+	label: string;
+	icon: IconType;
+}) {
+	return (
+		<a
+			href={href}
+			target="_blank"
+			rel="noreferrer"
+			aria-label={label}
+			title={label}
+			className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+		>
+			<Icon className="size-3.5" />
+		</a>
+	);
+}
+
+/** Job title + public social profiles researched by AI, cached 30 days. */
 export function UserRoleLine({ userId }: UserRoleLineProps) {
 	const trpc = useTRPC();
 	const role = useQuery(
@@ -22,12 +53,21 @@ export function UserRoleLine({ userId }: UserRoleLineProps) {
 		return (
 			<p className="text-muted-foreground flex items-center gap-1.5 text-sm">
 				<LuLoaderCircle className="size-3.5 animate-spin" />
-				Researching role on the web…
+				Researching role & profiles on the web…
 			</p>
 		);
 	}
 
-	if (role.error || !role.data?.title) {
+	const data = role.data;
+	const hasAnything =
+		data &&
+		(data.title ||
+			data.linkedinUrl ||
+			data.twitterUrl ||
+			data.githubUrl ||
+			data.websiteUrl);
+
+	if (role.error || !hasAnything) {
 		return (
 			<p className="text-muted-foreground flex items-center gap-1.5 text-sm">
 				<LuBriefcase className="size-3.5" />
@@ -37,25 +77,37 @@ export function UserRoleLine({ userId }: UserRoleLineProps) {
 	}
 
 	return (
-		<p className="flex items-center gap-2 text-sm">
-			<LuBriefcase className="text-muted-foreground size-3.5" />
-			<span>{role.data.title}</span>
-			{role.data.seniority && (
-				<Badge variant="outline">{role.data.seniority}</Badge>
-			)}
-			{role.data.linkedinUrl && (
-				<a
-					href={role.data.linkedinUrl}
-					target="_blank"
-					rel="noreferrer"
-					className="text-muted-foreground hover:text-foreground underline"
-				>
-					LinkedIn
-				</a>
-			)}
-			<span className="text-muted-foreground text-xs">
-				AI-researched · {role.data.confidence} confidence
+		<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+			<span className="flex items-center gap-1.5">
+				<LuBriefcase className="text-muted-foreground size-3.5" />
+				{data.title ?? "Role unknown"}
 			</span>
-		</p>
+			{data.seniority && <Badge variant="outline">{data.seniority}</Badge>}
+			<span className="flex items-center gap-2">
+				{data.linkedinUrl && (
+					<SocialLink
+						href={data.linkedinUrl}
+						label="LinkedIn"
+						icon={LuLinkedin}
+					/>
+				)}
+				{data.twitterUrl && (
+					<SocialLink
+						href={data.twitterUrl}
+						label="Twitter / X"
+						icon={LuTwitter}
+					/>
+				)}
+				{data.githubUrl && (
+					<SocialLink href={data.githubUrl} label="GitHub" icon={LuGithub} />
+				)}
+				{data.websiteUrl && (
+					<SocialLink href={data.websiteUrl} label="Website" icon={LuGlobe} />
+				)}
+			</span>
+			<span className="text-muted-foreground text-xs">
+				AI-researched · {data.confidence} confidence
+			</span>
+		</div>
 	);
 }

@@ -18,6 +18,8 @@ import { FREEMAIL_DOMAINS } from "./domain-utils";
  */
 
 const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** Empty results are often search variance — retry them much sooner. */
+const EMPTY_RESULT_TTL_SECONDS = 24 * 60 * 60;
 const CACHE_PREFIX = `customers:enrich:${env.NODE_ENV}:`;
 const isKVConfigured = Boolean(env.KV_REST_API_URL && env.KV_REST_API_TOKEN);
 
@@ -39,11 +41,15 @@ async function getCached<T>(key: string): Promise<T | null> {
 	return entry.data as T;
 }
 
-async function setCache<T>(key: string, data: T): Promise<void> {
+async function setCache<T>(
+	key: string,
+	data: T,
+	ttlSeconds: number,
+): Promise<void> {
 	const cacheKey = `${CACHE_PREFIX}${key}`;
 	if (isKVConfigured) {
 		try {
-			await kv.set(cacheKey, data, { ex: CACHE_TTL_SECONDS });
+			await kv.set(cacheKey, data, { ex: ttlSeconds });
 			return;
 		} catch {
 			// Fall through to memory cache on KV error
@@ -51,18 +57,22 @@ async function setCache<T>(key: string, data: T): Promise<void> {
 	}
 	memoryCache.set(cacheKey, {
 		data,
-		expiresAt: Date.now() + CACHE_TTL_SECONDS * 1000,
+		expiresAt: Date.now() + ttlSeconds * 1000,
 	});
 }
 
-function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+function cached<T>(
+	key: string,
+	fn: () => Promise<T>,
+	ttlFor?: (value: T) => number,
+): Promise<T> {
 	const existing = inFlight.get(key);
 	if (existing) return existing as Promise<T>;
 	const promise = (async () => {
 		const hit = await getCached<T>(key);
 		if (hit != null) return hit;
 		const fresh = await fn();
-		await setCache(key, fresh);
+		await setCache(key, fresh, ttlFor?.(fresh) ?? CACHE_TTL_SECONDS);
 		return fresh;
 	})().finally(() => {
 		inFlight.delete(key);
@@ -265,36 +275,38 @@ const EXA_DOMAIN_SCHEMA = {
 };
 
 export function getDomainEnrichment(domain: string): Promise<DomainEnrichment> {
-	return cached(`domain:${domain}`, async () => {
-		const base = { domain, fetchedAt: new Date().toISOString() };
-		if (FREEMAIL_DOMAINS.has(domain)) {
-			return {
-				...base,
-				...EMPTY_DOMAIN_FIELDS,
-				confidence: "low" as const,
-				sources: [],
-			};
-		}
+	return cached(
+		`domain:${domain}`,
+		async () => {
+			const base = { domain, fetchedAt: new Date().toISOString() };
+			if (FREEMAIL_DOMAINS.has(domain)) {
+				return {
+					...base,
+					...EMPTY_DOMAIN_FIELDS,
+					confidence: "low" as const,
+					sources: [],
+				};
+			}
 
-		if (env.EXA_API_KEY) {
-			const result = await exaStructuredSearch({
-				query: `company with the website domain ${domain}`,
-				category: "company",
-				systemPrompt:
-					"Identify the company that owns the given domain. Prefer official sources (the company's own site, LinkedIn company page, Crunchbase). Only report facts you can verify from the sources; omit anything uncertain.",
-				outputSchema: EXA_DOMAIN_SCHEMA,
-			});
-			const fields = domainFieldsSchema.safeParse(result?.content ?? {});
-			return {
-				...base,
-				...(fields.success ? fields.data : EMPTY_DOMAIN_FIELDS),
-				confidence: result?.confidence ?? "low",
-				sources: result?.sources ?? [],
-			};
-		}
+			if (env.EXA_API_KEY) {
+				const result = await exaStructuredSearch({
+					query: `company with the website domain ${domain}`,
+					category: "company",
+					systemPrompt:
+						"Identify the company that owns the given domain. Prefer official sources (the company's own site, LinkedIn company page, Crunchbase). Only report facts you can verify from the sources; omit anything uncertain.",
+					outputSchema: EXA_DOMAIN_SCHEMA,
+				});
+				const fields = domainFieldsSchema.safeParse(result?.content ?? {});
+				return {
+					...base,
+					...(fields.success ? fields.data : EMPTY_DOMAIN_FIELDS),
+					confidence: result?.confidence ?? "low",
+					sources: result?.sources ?? [],
+				};
+			}
 
-		const text = await runResearch(
-			`Research the company that owns the domain "${domain}". Use web search.
+			const text = await runResearch(
+				`Research the company that owns the domain "${domain}". Use web search.
 
 Respond with ONLY a single JSON object — no markdown fences, no prose before or after — with exactly these fields:
 {
@@ -308,21 +320,30 @@ Respond with ONLY a single JSON object — no markdown fences, no prose before o
   "sources": string[]                  // up to 3 source URLs
 }
 Use null for anything you cannot verify. If the domain is a personal email provider, parked, or unidentifiable, return all-null fields with confidence "low".`,
-		);
+			);
 
-		const parsed = domainFieldsSchema
-			.extend({
-				confidence: confidenceSchema.catch("low"),
-				sources: z.array(z.string()).catch([]),
-			})
-			.safeParse(extractJson(text));
-		return {
-			...base,
-			...(parsed.success
-				? parsed.data
-				: { ...EMPTY_DOMAIN_FIELDS, confidence: "low" as const, sources: [] }),
-		};
-	});
+			const parsed = domainFieldsSchema
+				.extend({
+					confidence: confidenceSchema.catch("low"),
+					sources: z.array(z.string()).catch([]),
+				})
+				.safeParse(extractJson(text));
+			return {
+				...base,
+				...(parsed.success
+					? parsed.data
+					: {
+							...EMPTY_DOMAIN_FIELDS,
+							confidence: "low" as const,
+							sources: [],
+						}),
+			};
+		},
+		(value) =>
+			value.companyName || value.description
+				? CACHE_TTL_SECONDS
+				: EMPTY_RESULT_TTL_SECONDS,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +357,9 @@ const personFieldsSchema = z.object({
 		.nullable()
 		.catch(null),
 	linkedinUrl: z.string().nullable().catch(null),
+	twitterUrl: z.string().nullable().catch(null),
+	githubUrl: z.string().nullable().catch(null),
+	websiteUrl: z.string().nullable().catch(null),
 });
 
 export type PersonEnrichment = z.infer<typeof personFieldsSchema> & {
@@ -348,6 +372,9 @@ const EMPTY_PERSON_FIELDS: z.infer<typeof personFieldsSchema> = {
 	title: null,
 	seniority: null,
 	linkedinUrl: null,
+	twitterUrl: null,
+	githubUrl: null,
+	websiteUrl: null,
 };
 
 const EXA_PERSON_SCHEMA = {
@@ -368,6 +395,18 @@ const EXA_PERSON_SCHEMA = {
 			type: "string",
 			description: "URL of their LinkedIn profile",
 		},
+		twitterUrl: {
+			type: "string",
+			description: "URL of their Twitter/X profile",
+		},
+		githubUrl: {
+			type: "string",
+			description: "URL of their GitHub profile",
+		},
+		websiteUrl: {
+			type: "string",
+			description: "URL of their personal website or blog",
+		},
 	},
 };
 
@@ -376,58 +415,77 @@ export function getPersonEnrichment(options: {
 	name: string;
 	domain: string;
 }): Promise<PersonEnrichment> {
-	return cached(`person:${options.cacheKey}`, async () => {
-		const base = { fetchedAt: new Date().toISOString() };
-		const isFreemail = FREEMAIL_DOMAINS.has(options.domain);
+	// v2: added twitter/github/website fields — old cache entries lack them.
+	return cached(
+		`person:v2:${options.cacheKey}`,
+		async () => {
+			const base = { fetchedAt: new Date().toISOString() };
+			const isFreemail = FREEMAIL_DOMAINS.has(options.domain);
 
-		if (env.EXA_API_KEY) {
-			const result = await exaStructuredSearch({
-				query: isFreemail
-					? `${options.name}, software professional`
-					: `${options.name}, who works at the company with the domain ${options.domain}`,
-				category: "people",
-				systemPrompt:
-					"Identify this specific person — the name (and employer domain, when given) must match. Prefer LinkedIn profiles, company team pages, and GitHub. If you cannot confidently match this exact person, return an empty object; never report another person's details.",
-				outputSchema: EXA_PERSON_SCHEMA,
-			});
-			const fields = personFieldsSchema.safeParse(result?.content ?? {});
-			return {
-				...base,
-				...(fields.success ? fields.data : EMPTY_PERSON_FIELDS),
-				confidence: result?.confidence ?? "low",
-				sources: result?.sources ?? [],
-			};
-		}
+			if (env.EXA_API_KEY) {
+				const result = await exaStructuredSearch({
+					query: isFreemail
+						? `${options.name}, software professional`
+						: `${options.name}, who works at the company with the domain ${options.domain}`,
+					category: "people",
+					systemPrompt:
+						"Identify this specific person — the name (and employer domain, when given) must match. Prefer LinkedIn profiles, company team pages, and GitHub. Include their social profiles (LinkedIn, Twitter/X, GitHub, personal site) when clearly theirs. If you cannot confidently match this exact person, return an empty object; never report another person's details.",
+					outputSchema: EXA_PERSON_SCHEMA,
+				});
+				const fields = personFieldsSchema.safeParse(result?.content ?? {});
+				return {
+					...base,
+					...(fields.success ? fields.data : EMPTY_PERSON_FIELDS),
+					confidence: result?.confidence ?? "low",
+					sources: result?.sources ?? [],
+				};
+			}
 
-		const companyHint = isFreemail
-			? "Their email is on a personal provider, so no company is known."
-			: `They signed up with an email at "${options.domain}", so they likely work at the company owning that domain.`;
+			const companyHint = isFreemail
+				? "Their email is on a personal provider, so no company is known."
+				: `They signed up with an email at "${options.domain}", so they likely work at the company owning that domain.`;
 
-		const text = await runResearch(
-			`Find the current job title of a software professional named "${options.name}". ${companyHint} Use web search (LinkedIn, company team pages, GitHub, conference bios).
+			const text = await runResearch(
+				`Find the current job title and public social profiles of a software professional named "${options.name}". ${companyHint} Use web search (LinkedIn, Twitter/X, GitHub, company team pages, conference bios).
 
 Respond with ONLY a single JSON object — no markdown fences, no prose — with exactly these fields:
 {
   "title": string | null,              // e.g. "CTO", "Senior Software Engineer"
   "seniority": "founder" | "exec" | "manager" | "ic" | null,
-  "linkedinUrl": string | null,
+  "linkedinUrl": string | null,        // their LinkedIn profile URL
+  "twitterUrl": string | null,         // their Twitter/X profile URL
+  "githubUrl": string | null,          // their GitHub profile URL
+  "websiteUrl": string | null,         // their personal website or blog
   "confidence": "high" | "medium" | "low",
   "sources": string[]                  // up to 3 source URLs
 }
-Only report a title if you are reasonably sure it is THIS person (name AND company/domain match). If you cannot confidently identify them, return all-null fields with confidence "low". Never guess.`,
-		);
+Only report fields you are reasonably sure belong to THIS person (name AND company/domain match). If you cannot confidently identify them, return all-null fields with confidence "low". Never guess or attribute another person's profiles.`,
+			);
 
-		const parsed = personFieldsSchema
-			.extend({
-				confidence: confidenceSchema.catch("low"),
-				sources: z.array(z.string()).catch([]),
-			})
-			.safeParse(extractJson(text));
-		return {
-			...base,
-			...(parsed.success
-				? parsed.data
-				: { ...EMPTY_PERSON_FIELDS, confidence: "low" as const, sources: [] }),
-		};
-	});
+			const parsed = personFieldsSchema
+				.extend({
+					confidence: confidenceSchema.catch("low"),
+					sources: z.array(z.string()).catch([]),
+				})
+				.safeParse(extractJson(text));
+			return {
+				...base,
+				...(parsed.success
+					? parsed.data
+					: {
+							...EMPTY_PERSON_FIELDS,
+							confidence: "low" as const,
+							sources: [],
+						}),
+			};
+		},
+		(value) =>
+			value.title ||
+			value.linkedinUrl ||
+			value.twitterUrl ||
+			value.githubUrl ||
+			value.websiteUrl
+				? CACHE_TTL_SECONDS
+				: EMPTY_RESULT_TTL_SECONDS,
+	);
 }
