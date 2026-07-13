@@ -94,7 +94,7 @@ export function CompaniesTable({
 							<TableHead>Plan</TableHead>
 							<TableHead>Seats</TableHead>
 							<TableHead>Events (30d)</TableHead>
-							<TableHead>Trend</TableHead>
+							<TableHead>Trend (30d)</TableHead>
 							<TableHead>Last active</TableHead>
 							<TableHead>Health</TableHead>
 						</TableRow>
@@ -160,7 +160,11 @@ export function CompaniesTable({
 								<TableCell>{row.subscription?.seats ?? "—"}</TableCell>
 								<TableCell>{numberFormat.format(row.events30d)}</TableCell>
 								<TableCell>
-									<TrendCell trendPct={row.trendPct} />
+									<TrendCell
+										trendPct={row.trendPct}
+										events30d={row.events30d}
+										events30dPrev={row.events30dPrev}
+									/>
 								</TableCell>
 								<TableCell className="text-muted-foreground text-sm">
 									{row.lastActiveAt

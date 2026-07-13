@@ -161,7 +161,16 @@ function UserDetailPage() {
 						label="Events (30d)"
 						value={numberFormat.format(data.events30d)}
 					/>
-					<Stat label="Trend" value={<TrendCell trendPct={data.trendPct} />} />
+					<Stat
+						label="Trend (30d)"
+						value={
+							<TrendCell
+								trendPct={data.trendPct}
+								events30d={data.events30d}
+								events30dPrev={data.events30dPrev}
+							/>
+						}
+					/>
 					<Stat label="Active days (30d)" value={data.activeDays30} />
 					{SURFACES.map((surface) => (
 						<Stat

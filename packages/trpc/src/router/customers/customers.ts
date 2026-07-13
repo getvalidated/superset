@@ -190,6 +190,7 @@ export const customersRouter = {
 				memberCount: number;
 				lastActiveAt: Date | null;
 				events30d: number;
+				events30dPrev: number;
 				trendPct: number | null;
 				activeMembers7d: number;
 				health: CustomerHealth;
@@ -238,6 +239,7 @@ export const customersRouter = {
 					memberCount: activity?.memberCount ?? 0,
 					lastActiveAt: activity?.lastActiveAt ?? null,
 					events30d: activity?.events30d ?? 0,
+					events30dPrev: activity?.events30dPrev ?? 0,
 					trendPct: trendPct(
 						activity?.events30d ?? 0,
 						activity?.events30dPrev ?? 0,
@@ -642,6 +644,7 @@ export const customersRouter = {
 				lastActiveAt: activity?.lastActiveAt ?? null,
 				events7d: activity?.events7d ?? 0,
 				events30d: activity?.events30d ?? 0,
+				events30dPrev: activity?.events30dPrev ?? 0,
 				trendPct: trendPct(
 					activity?.events30d ?? 0,
 					activity?.events30dPrev ?? 0,
@@ -862,6 +865,7 @@ export const customersRouter = {
 					domain: entry.domain,
 					stage: stageFromUserCount(entry.userCount),
 					userCount: entry.userCount,
+					events30dPrev: entry.events30dPrev,
 					activeUsers7d: entry.activeUsers7d,
 					events30d: entry.events30d,
 					trendPct: entry.trendPct,
