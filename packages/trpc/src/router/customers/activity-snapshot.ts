@@ -153,8 +153,18 @@ LIMIT ${SNAPSHOT_ROW_LIMIT}`;
 
 const MEMO_TTL_MS = 15 * 60 * 1000;
 
+const memoInvalidators = new Set<() => void>();
+
+/** Drop every in-process memo so the next request re-reads the DB. */
+export function invalidateMemos(): void {
+	for (const invalidate of memoInvalidators) invalidate();
+}
+
 export function memoizeAsync<T>(fn: () => Promise<T>): () => Promise<T> {
 	let memo: { promise: Promise<T>; expiresAt: number } | null = null;
+	memoInvalidators.add(() => {
+		memo = null;
+	});
 	return () => {
 		if (memo && Date.now() < memo.expiresAt) {
 			return memo.promise;

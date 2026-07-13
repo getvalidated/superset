@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { RefreshButton } from "@/components/RefreshButton";
 import { SnapshotNote } from "@/components/SnapshotNote";
 import { useTRPC } from "@/trpc/react";
 
@@ -65,7 +66,10 @@ function CompaniesPage() {
 						Customer accounts with paying status and product activity
 					</p>
 				</div>
-				<SnapshotNote snapshotAt={data?.snapshotAt} />
+				<div className="flex items-center gap-3">
+					<SnapshotNote snapshotAt={data?.snapshotAt} />
+					<RefreshButton />
+				</div>
 			</div>
 
 			<CompanyFilters

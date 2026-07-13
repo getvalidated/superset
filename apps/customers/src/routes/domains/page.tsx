@@ -15,6 +15,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LuSearch } from "react-icons/lu";
 
+import { RefreshButton } from "@/components/RefreshButton";
 import { SnapshotNote } from "@/components/SnapshotNote";
 import { useTRPC } from "@/trpc/react";
 
@@ -78,7 +79,10 @@ function DomainsPage() {
 						formal org
 					</p>
 				</div>
-				<SnapshotNote snapshotAt={data?.snapshotAt} />
+				<div className="flex items-center gap-3">
+					<SnapshotNote snapshotAt={data?.snapshotAt} />
+					<RefreshButton />
+				</div>
 			</div>
 
 			<div className="flex flex-wrap items-center gap-6">

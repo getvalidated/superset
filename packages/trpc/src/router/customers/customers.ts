@@ -26,6 +26,7 @@ import {
 	getMembershipRows,
 	getOrgActivityIndex,
 	getUserDirectory,
+	invalidateMemos,
 	memoizeAsync,
 	type UserActivity,
 	WEEKLY_ACTIVITY_IDS_CAP,
@@ -844,6 +845,13 @@ export const customersRouter = {
 	domainResearchProgress: adminProcedure
 		.input(z.object({ domain: domainSchema }))
 		.query(({ input }) => getDomainResearchProgress(input.domain)),
+
+	/** Busts the 15-minute server memos so new signups/subscriptions show up
+	 * immediately. PostHog activity stays on its hourly cache. */
+	refreshData: adminProcedure.mutation(() => {
+		invalidateMemos();
+		return { ok: true };
+	}),
 
 	userRoleEnrichment: adminProcedure
 		.input(z.object({ userId: z.string().uuid() }))

@@ -13,7 +13,7 @@ import {
 } from "@superset/ui/chart";
 import { Skeleton } from "@superset/ui/skeleton";
 import type { ReactNode } from "react";
-import { Bar, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { Bar, Cell, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 interface ActivityPoint {
 	weekStart: Date;
@@ -37,7 +37,13 @@ const chartConfig = {
 		label: "Events",
 		color: "var(--chart-2)",
 	},
+	eventsPartial: {
+		label: "Events (week in progress)",
+		color: "var(--chart-2)",
+	},
 } satisfies ChartConfig;
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function ActivityChart({
 	points,
@@ -45,6 +51,23 @@ export function ActivityChart({
 	error,
 	headerAction,
 }: ActivityChartProps) {
+	// The last bucket is usually the current, still-running week — render it
+	// as provisional (dashed) so it doesn't read as a real drop.
+	const lastPoint = points?.at(-1);
+	const lastIsPartial =
+		lastPoint != null && lastPoint.weekStart.getTime() + WEEK_MS > Date.now();
+	const lastIndex = (points?.length ?? 0) - 1;
+
+	const chartData = (points ?? []).map((point, index) => ({
+		...point,
+		week: point.weekStart.toISOString(),
+		// Solid line covers all complete weeks; the dashed overlay draws the
+		// final segment into the in-progress week (sharing the boundary point).
+		events: !lastIsPartial || index < lastIndex ? point.events : null,
+		eventsPartial:
+			lastIsPartial && index >= lastIndex - 1 ? point.events : null,
+	}));
+
 	return (
 		<Card>
 			<CardHeader>
@@ -53,6 +76,7 @@ export function ActivityChart({
 						<CardTitle>Weekly activity</CardTitle>
 						<CardDescription>
 							Active members and core product events per week
+							{lastIsPartial && " · current week still in progress (dashed)"}
 						</CardDescription>
 					</div>
 					{headerAction}
@@ -73,13 +97,7 @@ export function ActivityChart({
 					</div>
 				) : (
 					<ChartContainer config={chartConfig} className="h-[220px] w-full">
-						<ComposedChart
-							data={points.map((point) => ({
-								...point,
-								week: point.weekStart.toISOString(),
-							}))}
-							margin={{ left: 0, right: 0 }}
-						>
+						<ComposedChart data={chartData} margin={{ left: 0, right: 0 }}>
 							<XAxis
 								dataKey="week"
 								tickLine={false}
@@ -100,8 +118,22 @@ export function ActivityChart({
 								dataKey="activeUsers"
 								fill="var(--color-activeUsers)"
 								radius={[4, 4, 0, 0]}
-								fillOpacity={0.8}
-							/>
+							>
+								{chartData.map((entry, index) => {
+									const isPartialBar = lastIsPartial && index === lastIndex;
+									return (
+										<Cell
+											key={entry.week}
+											fillOpacity={isPartialBar ? 0.25 : 0.8}
+											stroke={
+												isPartialBar ? "var(--color-activeUsers)" : undefined
+											}
+											strokeWidth={isPartialBar ? 1.5 : 0}
+											strokeDasharray={isPartialBar ? "4 3" : undefined}
+										/>
+									);
+								})}
+							</Bar>
 							<Line
 								yAxisId="events"
 								type="monotone"
@@ -110,6 +142,17 @@ export function ActivityChart({
 								strokeWidth={2}
 								dot={false}
 							/>
+							{lastIsPartial && (
+								<Line
+									yAxisId="events"
+									type="monotone"
+									dataKey="eventsPartial"
+									stroke="var(--color-events)"
+									strokeWidth={2}
+									strokeDasharray="5 5"
+									dot={false}
+								/>
+							)}
 						</ComposedChart>
 					</ChartContainer>
 				)}
