@@ -197,10 +197,7 @@ function DomainDetailPage() {
 			)}
 
 			<div className="grid gap-4 lg:grid-cols-3">
-				<CompanyInfoCard
-					domain={data.domain}
-					autoResearch={data.autoResearch}
-				/>
+				<CompanyInfoCard domain={data.domain} />
 				<div className="lg:col-span-2">
 					<ActivityChart
 						points={timeseries.data?.points}

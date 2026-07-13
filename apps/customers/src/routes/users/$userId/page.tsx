@@ -123,7 +123,7 @@ function UserDetailPage() {
 							</p>
 						</div>
 					</div>
-					<UserRoleLine userId={userId} autoResearch={data.autoResearch} />
+					<UserRoleLine userId={userId} />
 				</div>
 				<SnapshotNote snapshotAt={data.snapshotAt} />
 			</div>

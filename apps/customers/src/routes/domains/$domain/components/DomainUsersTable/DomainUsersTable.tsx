@@ -23,6 +23,7 @@ import type { IconType } from "react-icons";
 import { LuMessageSquare, LuMonitor, LuTerminal } from "react-icons/lu";
 
 import { HealthBadge } from "@/components/HealthBadge";
+import { SocialLinks } from "@/components/SocialLinks";
 
 type DomainUser = RouterOutputs["customers"]["domainDetail"]["users"][number];
 
@@ -58,7 +59,6 @@ export function DomainUsersTable({ users, totalUsers }: DomainUsersTableProps) {
 					<TableHeader>
 						<TableRow>
 							<TableHead>User</TableHead>
-							<TableHead>Orgs</TableHead>
 							<TableHead>Last active</TableHead>
 							<TableHead>Events (7d)</TableHead>
 							<TableHead>Events (30d)</TableHead>
@@ -96,32 +96,19 @@ export function DomainUsersTable({ users, totalUsers }: DomainUsersTableProps) {
 												</Link>
 												<span className="text-muted-foreground text-xs">
 													{user.email}
-													{user.enrichedTitle && ` · ${user.enrichedTitle}`}
 												</span>
+												{user.research &&
+													(user.research.title ||
+														user.research.linkedinUrl ||
+														user.research.twitterUrl ||
+														user.research.githubUrl ||
+														user.research.websiteUrl) && (
+														<span className="text-muted-foreground flex items-center gap-2 text-xs">
+															{user.research.title}
+															<SocialLinks {...user.research} />
+														</span>
+													)}
 											</div>
-										</div>
-									</TableCell>
-									<TableCell>
-										<div className="flex max-w-64 flex-wrap gap-1">
-											{user.orgs.map((org) => (
-												<Link
-													key={org.id}
-													to="/companies/$orgId"
-													params={{ orgId: org.id }}
-												>
-													<Badge
-														variant="outline"
-														className="hover:bg-accent max-w-36 truncate"
-													>
-														{org.name}
-													</Badge>
-												</Link>
-											))}
-											{user.orgCount > user.orgs.length && (
-												<Badge variant="outline">
-													+{user.orgCount - user.orgs.length}
-												</Badge>
-											)}
 										</div>
 									</TableCell>
 									<TableCell className="text-muted-foreground text-sm">

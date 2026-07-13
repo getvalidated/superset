@@ -562,15 +562,27 @@ export const customersRouter = {
 					name: orgNameById.get(orgId) ?? "Unknown org",
 					isPaying: isPayingOrg(orgId),
 				})),
-				users: shownUsers.map(({ orgIds, ...user }) => ({
-					...user,
-					enrichedTitle: cachedResearch.get(user.userId)?.title ?? null,
-					orgs: orgIds.slice(0, 3).map((orgId) => ({
-						id: orgId,
-						name: orgNameById.get(orgId) ?? "Unknown org",
-					})),
-					orgCount: orgIds.length,
-				})),
+				users: shownUsers.map(({ orgIds, ...user }) => {
+					const research = cachedResearch.get(user.userId);
+					return {
+						...user,
+						research: research
+							? {
+									title: research.title,
+									seniority: research.seniority,
+									linkedinUrl: research.linkedinUrl,
+									twitterUrl: research.twitterUrl,
+									githubUrl: research.githubUrl,
+									websiteUrl: research.websiteUrl,
+								}
+							: null,
+						orgs: orgIds.slice(0, 3).map((orgId) => ({
+							id: orgId,
+							name: orgNameById.get(orgId) ?? "Unknown org",
+						})),
+						orgCount: orgIds.length,
+					};
+				}),
 				snapshotAt: snapshot.fetchedAt,
 			};
 		}),
@@ -632,9 +644,6 @@ export const customersRouter = {
 				throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
 			}
 
-			const emailDomain = user.email.split("@")[1]?.toLowerCase() ?? "";
-			const researchSettings = await getDomainResearchSettings(emailDomain);
-
 			const activity = snapshot.byUserId.get(user.id.toLowerCase());
 			const health = healthFromLastActive(activity?.lastActiveAt ?? null);
 			const orgs = memberRows.map((row) => {
@@ -683,7 +692,6 @@ export const customersRouter = {
 					orgs.some((org) => org.isPaying),
 				),
 				hasActivityData: activity != null,
-				autoResearch: researchSettings.autoResearch,
 				snapshotAt: snapshot.fetchedAt,
 			};
 		}),

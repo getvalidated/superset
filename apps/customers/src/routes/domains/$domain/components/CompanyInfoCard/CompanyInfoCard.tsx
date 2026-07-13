@@ -26,21 +26,17 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export interface CompanyInfoCardProps {
 	domain: string;
-	autoResearch: boolean;
 }
 
 /**
  * Firmographics researched with AI, cached 30 days. Cached results always
- * render; fresh research runs automatically when the domain is set to
- * auto-research, otherwise only on click.
+ * render; fresh research runs only when manually triggered (the button here,
+ * or the domain's one-shot "research everyone" batch).
  */
-export function CompanyInfoCard({
-	domain,
-	autoResearch,
-}: CompanyInfoCardProps) {
+export function CompanyInfoCard({ domain }: CompanyInfoCardProps) {
 	const trpc = useTRPC();
 	const [requested, setRequested] = useState(false);
-	const researchActive = requested || autoResearch;
+	const researchActive = requested;
 
 	const cachedResult = useQuery(
 		trpc.customers.domainEnrichmentCached.queryOptions(
