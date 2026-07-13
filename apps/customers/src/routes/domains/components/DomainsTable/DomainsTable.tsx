@@ -15,6 +15,7 @@ import { formatDistanceToNow } from "date-fns";
 import { LuAtSign } from "react-icons/lu";
 
 import { HealthBadge } from "@/components/HealthBadge";
+import { TrendCell } from "@/components/TrendCell";
 
 type DomainRow = RouterOutputs["customers"]["domainRollup"]["rows"][number];
 
@@ -86,6 +87,7 @@ export function DomainsTable({
 							<TableHead>Users</TableHead>
 							<TableHead>Active (7d)</TableHead>
 							<TableHead>Events (30d)</TableHead>
+							<TableHead>Trend</TableHead>
 							<TableHead>Orgs</TableHead>
 							<TableHead>Paying orgs</TableHead>
 							<TableHead>Last active</TableHead>
@@ -115,6 +117,9 @@ export function DomainsTable({
 									)}
 								</TableCell>
 								<TableCell>{numberFormat.format(row.events30d)}</TableCell>
+								<TableCell>
+									<TrendCell trendPct={row.trendPct} />
+								</TableCell>
 								<TableCell>
 									<div className="flex max-w-96 flex-wrap gap-1">
 										{row.orgs.map((org) => (
@@ -155,7 +160,7 @@ export function DomainsTable({
 										: "never"}
 								</TableCell>
 								<TableCell>
-									<HealthBadge health={row.health} />
+									<HealthBadge health={row.health} churnRisk={row.churnRisk} />
 								</TableCell>
 							</TableRow>
 						))}

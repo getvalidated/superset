@@ -626,7 +626,11 @@ export const customersRouter = {
 				pageSize: z.number().int().min(1).max(100).default(50),
 				minUsers: z.number().int().min(1).default(2),
 				includeFreemail: z.boolean().default(false),
-				sort: z.enum(["users", "events30d", "lastActive"]).default("users"),
+				health: healthFilterSchema.default("all"),
+				trend: z.enum(["all", "growing", "declining"]).default("all"),
+				sort: z
+					.enum(["users", "events30d", "lastActive", "trend"])
+					.default("users"),
 			}),
 		)
 		.query(async ({ input }) => {
@@ -657,6 +661,7 @@ export const customersRouter = {
 				userCount: number;
 				activeUsers7d: number;
 				events30d: number;
+				events30dPrev: number;
 				lastActiveAt: Date | null;
 				orgIds: Set<string>;
 			};
@@ -674,6 +679,7 @@ export const customersRouter = {
 						userCount: 0,
 						activeUsers7d: 0,
 						events30d: 0,
+						events30dPrev: 0,
 						lastActiveAt: null,
 						orgIds: new Set(),
 					};
@@ -687,15 +693,52 @@ export const customersRouter = {
 				const activity = snapshot.byUserId.get(user.id.toLowerCase());
 				if (!activity) continue;
 				entry.events30d += activity.events30d;
+				entry.events30dPrev += activity.events30dPrev;
 				if (activity.events7d > 0) entry.activeUsers7d += 1;
 				if (!entry.lastActiveAt || activity.lastActiveAt > entry.lastActiveAt) {
 					entry.lastActiveAt = activity.lastActiveAt;
 				}
 			}
 
-			const entries = [...byDomain.values()].filter(
-				(entry) => entry.userCount >= input.minUsers,
-			);
+			const isPayingOrg = (orgId: string) => {
+				const sub = subsByOrg.get(orgId);
+				return (
+					sub != null &&
+					isActiveSubscriptionStatus(sub.status) &&
+					isPaidPlan(sub.plan)
+				);
+			};
+
+			const entries = [...byDomain.values()]
+				.filter((entry) => entry.userCount >= input.minUsers)
+				.map((entry) => {
+					const health = healthFromLastActive(entry.lastActiveAt);
+					const payingOrgCount = [...entry.orgIds].filter(isPayingOrg).length;
+					return {
+						...entry,
+						health,
+						payingOrgCount,
+						churnRisk: isChurnRisk(health, payingOrgCount > 0),
+						trendPct: trendPct(entry.events30d, entry.events30dPrev),
+					};
+				})
+				.filter((entry) => {
+					if (input.health === "churnRisk" && !entry.churnRisk) return false;
+					if (
+						input.health !== "all" &&
+						input.health !== "churnRisk" &&
+						entry.health !== input.health
+					) {
+						return false;
+					}
+					if (input.trend === "growing") {
+						return entry.trendPct != null && entry.trendPct > 0;
+					}
+					if (input.trend === "declining") {
+						return entry.trendPct != null && entry.trendPct < 0;
+					}
+					return true;
+				});
 			entries.sort((a, b) => {
 				switch (input.sort) {
 					case "events30d":
@@ -705,6 +748,8 @@ export const customersRouter = {
 							(b.lastActiveAt?.getTime() ?? 0) -
 							(a.lastActiveAt?.getTime() ?? 0)
 						);
+					case "trend":
+						return (b.trendPct ?? -Infinity) - (a.trendPct ?? -Infinity);
 					default:
 						return b.userCount - a.userCount;
 				}
@@ -741,17 +786,12 @@ export const customersRouter = {
 					userCount: entry.userCount,
 					activeUsers7d: entry.activeUsers7d,
 					events30d: entry.events30d,
+					trendPct: entry.trendPct,
 					lastActiveAt: entry.lastActiveAt,
-					health: healthFromLastActive(entry.lastActiveAt),
+					health: entry.health,
+					churnRisk: entry.churnRisk,
 					totalOrgCount: entry.orgIds.size,
-					payingOrgCount: [...entry.orgIds].filter((orgId) => {
-						const sub = subsByOrg.get(orgId);
-						return (
-							sub != null &&
-							isActiveSubscriptionStatus(sub.status) &&
-							isPaidPlan(sub.plan)
-						);
-					}).length,
+					payingOrgCount: entry.payingOrgCount,
 					orgs: [...entry.orgIds]
 						.slice(0, MAX_ORGS_PER_DOMAIN)
 						.flatMap((orgId) => {

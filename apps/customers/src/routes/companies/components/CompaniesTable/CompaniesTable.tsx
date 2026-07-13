@@ -13,15 +13,11 @@ import {
 } from "@superset/ui/table";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import {
-	LuBuilding2,
-	LuTrendingDown,
-	LuTrendingUp,
-	LuUsers,
-} from "react-icons/lu";
+import { LuBuilding2, LuUsers } from "react-icons/lu";
 
 import { HealthBadge } from "@/components/HealthBadge";
 import { PlanBadge } from "@/components/PlanBadge";
+import { TrendCell } from "@/components/TrendCell";
 
 type CompanyRow = RouterOutputs["customers"]["listCompanies"]["rows"][number];
 
@@ -36,28 +32,6 @@ const numberFormat = new Intl.NumberFormat("en-US", {
 	notation: "compact",
 	maximumFractionDigits: 1,
 });
-
-function TrendCell({ trendPct }: { trendPct: number | null }) {
-	if (trendPct == null) return null;
-	const positive = trendPct >= 0;
-	return (
-		<span
-			className={
-				positive
-					? "flex items-center gap-1 text-emerald-500"
-					: "flex items-center gap-1 text-red-400"
-			}
-		>
-			{positive ? (
-				<LuTrendingUp className="size-3.5" />
-			) : (
-				<LuTrendingDown className="size-3.5" />
-			)}
-			{positive ? "+" : ""}
-			{trendPct}%
-		</span>
-	);
-}
 
 export function CompaniesTable({
 	rows,

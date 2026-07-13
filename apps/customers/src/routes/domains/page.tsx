@@ -31,17 +31,27 @@ function DomainsPage() {
 
 	const [minUsers, setMinUsers] = useState(2);
 	const [includeFreemail, setIncludeFreemail] = useState(false);
+	const [health, setHealth] = useState<DomainRollupInput["health"]>("all");
+	const [trend, setTrend] = useState<DomainRollupInput["trend"]>("all");
 	const [sort, setSort] = useState<DomainRollupInput["sort"]>("users");
 	const [page, setPage] = useState(1);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination whenever a filter changes
 	useEffect(() => {
 		setPage(1);
-	}, [minUsers, includeFreemail, sort]);
+	}, [minUsers, includeFreemail, health, trend, sort]);
 
 	const { data, isLoading, error } = useQuery(
 		trpc.customers.domainRollup.queryOptions(
-			{ page, pageSize: PAGE_SIZE, minUsers, includeFreemail, sort },
+			{
+				page,
+				pageSize: PAGE_SIZE,
+				minUsers,
+				includeFreemail,
+				health,
+				trend,
+				sort,
+			},
 			{ placeholderData: keepPreviousData },
 		),
 	);
@@ -84,6 +94,40 @@ function DomainsPage() {
 				</div>
 
 				<Select
+					value={health}
+					onValueChange={(value) =>
+						setHealth(value as NonNullable<DomainRollupInput["health"]>)
+					}
+				>
+					<SelectTrigger className="w-36">
+						<SelectValue placeholder="Health" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="all">All health</SelectItem>
+						<SelectItem value="active">Active</SelectItem>
+						<SelectItem value="cooling">Cooling</SelectItem>
+						<SelectItem value="dormant">Dormant</SelectItem>
+						<SelectItem value="churnRisk">Churn risk</SelectItem>
+					</SelectContent>
+				</Select>
+
+				<Select
+					value={trend}
+					onValueChange={(value) =>
+						setTrend(value as NonNullable<DomainRollupInput["trend"]>)
+					}
+				>
+					<SelectTrigger className="w-36">
+						<SelectValue placeholder="Trend" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="all">All trends</SelectItem>
+						<SelectItem value="growing">Growing</SelectItem>
+						<SelectItem value="declining">Declining</SelectItem>
+					</SelectContent>
+				</Select>
+
+				<Select
 					value={sort}
 					onValueChange={(value) =>
 						setSort(value as NonNullable<DomainRollupInput["sort"]>)
@@ -96,6 +140,7 @@ function DomainsPage() {
 						<SelectItem value="users">Most users</SelectItem>
 						<SelectItem value="events30d">Most events (30d)</SelectItem>
 						<SelectItem value="lastActive">Last active</SelectItem>
+						<SelectItem value="trend">Best trend</SelectItem>
 					</SelectContent>
 				</Select>
 
