@@ -6,7 +6,7 @@ import type { HostDb } from "../../db";
 import { projects, pullRequests, workspaces } from "../../db/schema";
 import type { GitWatcher } from "../../events/git-watcher";
 import type { ExecGh } from "../../trpc/router/workspace-creation/utils/exec-gh";
-import type { GitFactory } from "../git";
+import { type GitFactory, resolveDefaultBranchName } from "../git";
 import {
 	fetchOpenPullRequests,
 	fetchOpenPullRequestsFromGh,
@@ -223,9 +223,9 @@ interface NormalizedRepoIdentity {
 	name: string;
 	url: string;
 	remoteName: string;
-	// Repo's default branch (e.g. `main`), or null when it can't be resolved.
-	// Used to keep workspaces that merely track `origin/<default>` from linking
-	// to whatever open PR happens to have head=<default>.
+	// Repo's default branch (e.g. `main`), or null when the repo can't be
+	// opened. Used to keep workspaces that merely track `origin/<default>` from
+	// linking to whatever open PR happens to have head=<default>.
 	defaultBranch: string | null;
 }
 
@@ -290,10 +290,6 @@ export class PullRequestRuntimeManager {
 		string,
 		{ promise: Promise<GitHubPullRequestNode[]>; fetchedAt: number }
 	>();
-	// Default branch rarely changes; cache successful resolutions for the
-	// process lifetime. Nulls are not cached so a later `git remote set-head`
-	// heals without a restart.
-	private readonly defaultBranchCache = new Map<string, string>();
 
 	constructor(options: PullRequestRuntimeManagerOptions) {
 		this.db = options.db;
@@ -763,35 +759,17 @@ export class PullRequestRuntimeManager {
 			identity = { ...parsedRemote, remoteName };
 		}
 
-		const defaultBranch = await this.resolveDefaultBranch(
-			projectId,
-			project.repoPath,
-			identity.remoteName,
-		);
+		const defaultBranch = await this.resolveDefaultBranch(project.repoPath);
 		return { ...identity, defaultBranch };
 	}
 
-	private async resolveDefaultBranch(
-		projectId: string,
-		repoPath: string,
-		remoteName: string,
-	): Promise<string | null> {
-		const cached = this.defaultBranchCache.get(projectId);
-		if (cached) return cached;
+	// Delegates to the shared `resolveDefaultBranchName` (the same
+	// `origin/HEAD` symref used by git status / branch search), catching a
+	// failure to open the repo so a missing worktree just disables the guard
+	// rather than aborting the whole refresh.
+	private async resolveDefaultBranch(repoPath: string): Promise<string | null> {
 		try {
-			const git = await this.git(repoPath);
-			// `refs/remotes/<remote>/HEAD` is a symref to the remote's default
-			// branch, written by `git clone` / `git remote set-head`.
-			const ref = await tryRaw(git, [
-				"symbolic-ref",
-				"--short",
-				`refs/remotes/${remoteName}/HEAD`,
-			]);
-			if (!ref) return null;
-			const prefix = `${remoteName}/`;
-			const branch = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
-			this.defaultBranchCache.set(projectId, branch);
-			return branch;
+			return await resolveDefaultBranchName(await this.git(repoPath));
 		} catch {
 			return null;
 		}
