@@ -100,6 +100,38 @@ describe("findNestedRepoRoots", () => {
 		expect(roots.length).toBe(2);
 	});
 
+	it("reports truncation when the directory cap is hit", async () => {
+		const root = await createTempRoot();
+		// A wide, repo-free tree so the scan is bounded by maxDirs, not maxRoots.
+		for (let i = 0; i < 10; i++) {
+			await mkdirp(root, `d-${i}`, "child");
+		}
+
+		const { truncated } = await findNestedRepoRoots(root, {
+			pruneDirNames: DEFAULT_IGNORE_DIR_NAMES,
+			maxDirs: 3,
+		});
+
+		expect(truncated).toBe(true);
+	});
+
+	it("reports truncation when the wall-clock deadline is hit", async () => {
+		const root = await createTempRoot();
+		await mkdirp(root, "a", "b");
+		await mkdirp(root, "c", "d");
+		// Clock jumps past the deadline on the second loop check.
+		let ticks = 0;
+		const now = () => ticks++ * 1_000;
+
+		const { truncated } = await findNestedRepoRoots(root, {
+			pruneDirNames: DEFAULT_IGNORE_DIR_NAMES,
+			deadlineMs: 1,
+			now,
+		});
+
+		expect(truncated).toBe(true);
+	});
+
 	it("skips symlinked directories (no cycles, no escape)", async () => {
 		const root = await createTempRoot();
 		const realTree = await mkdirp(root, "real");

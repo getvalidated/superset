@@ -16,12 +16,19 @@ export interface FindNestedRepoRootsOptions {
 	maxDirs?: number;
 	/** Stop after discovering this many nested roots. */
 	maxRoots?: number;
+	/**
+	 * Wall-clock budget in ms. Bounds the scan on a slow/network-backed FS where
+	 * `readdir` latency (not directory count) is the limiter. Omit to disable.
+	 */
+	deadlineMs?: number;
+	/** Injectable clock (defaults to `Date.now`) so the deadline is testable. */
+	now?: () => number;
 }
 
 export interface FindNestedRepoRootsResult {
 	/** Absolute paths of nested git repo / worktree roots below `rootPath`. */
 	roots: string[];
-	/** A scan cap was hit; `roots` may be incomplete. */
+	/** A scan cap (count or time) was hit; `roots` may be incomplete. */
 	truncated: boolean;
 }
 
@@ -33,6 +40,10 @@ export interface FindNestedRepoRootsResult {
  * `pruneDirNames` entry, so it stays cheap even under a tree that has grown to
  * millions of directories via piled-up worktrees.
  *
+ * Traversal is breadth-first, so when a cap truncates the scan the shallow
+ * nested repos (the piled-up worktree roots near the top) are found before a
+ * deep non-repo subtree can exhaust the budget.
+ *
  * Symlinked directories are skipped (`Dirent.isDirectory()` is false for them),
  * which also avoids cycles and escaping the tree.
  */
@@ -42,15 +53,24 @@ export async function findNestedRepoRoots(
 ): Promise<FindNestedRepoRootsResult> {
 	const maxDirs = options.maxDirs ?? DEFAULT_MAX_DIRS;
 	const maxRoots = options.maxRoots ?? DEFAULT_MAX_ROOTS;
+	const now = options.now ?? Date.now;
+	const deadline =
+		options.deadlineMs !== undefined ? now() + options.deadlineMs : null;
 	const roots: string[] = [];
-	const stack: string[] = [rootPath];
+	// FIFO queue with a head cursor — plain `shift()` would be O(n) per dequeue.
+	const queue: string[] = [rootPath];
+	let head = 0;
 	let scanned = 0;
 
-	while (stack.length > 0) {
-		if (roots.length >= maxRoots || scanned >= maxDirs) {
+	while (head < queue.length) {
+		if (
+			roots.length >= maxRoots ||
+			scanned >= maxDirs ||
+			(deadline !== null && now() >= deadline)
+		) {
 			return { roots, truncated: true };
 		}
-		const dir = stack.pop() as string;
+		const dir = queue[head++] as string;
 		scanned += 1;
 
 		// Vanished or unreadable mid-scan — nothing to prune here.
@@ -73,7 +93,7 @@ export async function findNestedRepoRoots(
 			if (options.pruneDirNames.has(entry.name)) {
 				continue;
 			}
-			stack.push(path.join(dir, entry.name));
+			queue.push(path.join(dir, entry.name));
 		}
 	}
 

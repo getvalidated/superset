@@ -51,8 +51,14 @@ const PROBE_TIMEOUT_MS = 4_000;
 // magic, so an absolute path is matched literally when embedded in a glob.
 // Mirrors the metacharacter set `is-glob`/picomatch@2 recognize.
 function escapeGlobMagic(input: string): string {
-	return input.replace(/[\\*?{}()[\]!+@|^]/g, (char) => `\\${char}`);
+	return input.replace(/[\\*?{}()[\]!+@|^$]/g, (char) => `\\${char}`);
 }
+
+// Wall-clock budget for the nested-repo scan (bounds attach latency on a slow
+// or network-backed FS, where readdir latency — not directory count — is the
+// limiter). The static ignore globs still cover the known worktree conventions
+// if the scan truncates here.
+const NESTED_REPO_SCAN_DEADLINE_MS = 3_000;
 
 // Watches are always recursive — @parcel/watcher offers no shallow mode.
 export interface WatchPathOptions {
@@ -520,6 +526,7 @@ export class FsWatcherManager {
 		try {
 			const { roots, truncated } = await findNestedRepoRoots(realPath, {
 				pruneDirNames: DEFAULT_IGNORE_DIR_NAMES,
+				deadlineMs: NESTED_REPO_SCAN_DEADLINE_MS,
 			});
 			if (truncated) {
 				console.warn(
