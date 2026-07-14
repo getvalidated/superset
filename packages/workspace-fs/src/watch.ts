@@ -9,6 +9,7 @@ import { toErrorMessage } from "./error-message";
 import { normalizeAbsolutePath } from "./paths";
 import {
 	DEFAULT_IGNORE_PATTERNS,
+	invalidateSearchIndexesForRoot,
 	patchSearchIndexesForRoot,
 	type SearchPatchEvent,
 } from "./search";
@@ -62,7 +63,10 @@ interface WatcherState {
 	realPath: string;
 	realPathNormalized: string;
 	realPathDiffers: boolean;
-	subscription: AsyncSubscription;
+	/** Null while suspended (root deleted, polling for recreation). */
+	subscription: AsyncSubscription | null;
+	recoveryTimer: ReturnType<typeof setInterval> | null;
+	recovering: boolean;
 	listeners: Set<WatchListener>;
 	filePaths: Map<string, true>;
 	directoryPaths: Set<string>;
@@ -76,6 +80,23 @@ interface WatcherState {
 	 * a quiet one's listeners.
 	 */
 	throttler: ThrottledWorker<FsWatchEvent>;
+}
+
+// A dead FSEvents stream's unsubscribe can hang forever (observed after the
+// watch root is deleted out from under it); never let it block teardown.
+async function unsubscribeQuietly(
+	subscription: AsyncSubscription | null,
+): Promise<void> {
+	if (!subscription) {
+		return;
+	}
+	await Promise.race([
+		subscription.unsubscribe().catch(() => {}),
+		new Promise<void>((resolve) => {
+			const timer = setTimeout(resolve, 5_000);
+			timer.unref?.();
+		}),
+	]);
 }
 
 function coalesceWatchEvent(
@@ -345,12 +366,15 @@ export interface FsWatcherManagerOptions {
 	ignore?: string[];
 	/** Per-watcher LRU cap on tracked file paths. Test-only override. */
 	filePathsMax?: number;
+	/** How often a suspended watcher polls for its deleted root to reappear. */
+	recoveryPollMs?: number;
 }
 
 export class FsWatcherManager {
 	private readonly debounceMs: number;
 	private readonly ignore: string[];
 	private readonly filePathsMax: number;
+	private readonly recoveryPollMs: number;
 	private readonly watchers = new Map<string, WatcherState>();
 	/**
 	 * One-shot dedup so a single ENOSPC report doesn't spam logs across every
@@ -368,6 +392,7 @@ export class FsWatcherManager {
 			? [...new Set([...DEFAULT_IGNORE_PATTERNS, ...options.ignore])]
 			: DEFAULT_IGNORE_PATTERNS;
 		this.filePathsMax = options.filePathsMax ?? FILE_PATHS_MAX;
+		this.recoveryPollMs = options.recoveryPollMs ?? 2_000;
 	}
 
 	async subscribe(
@@ -395,29 +420,32 @@ export class FsWatcherManager {
 				return;
 			}
 
-			if (currentState.flushTimer) {
-				clearTimeout(currentState.flushTimer);
-				currentState.flushTimer = null;
-			}
-
-			currentState.throttler.dispose();
-			await currentState.subscription.unsubscribe();
+			// Remove from the map before touching the native layer so a fresh
+			// subscribe can never reuse a state whose teardown is in flight.
 			this.watchers.delete(absolutePath);
+			await this.disposeWatcherState(currentState);
 		};
 	}
 
 	async close(): Promise<void> {
-		await Promise.all(
-			Array.from(this.watchers.values()).map(async (state) => {
-				if (state.flushTimer) {
-					clearTimeout(state.flushTimer);
-					state.flushTimer = null;
-				}
-				state.throttler.dispose();
-				await state.subscription.unsubscribe();
-			}),
-		);
+		const states = Array.from(this.watchers.values());
 		this.watchers.clear();
+		await Promise.all(states.map((state) => this.disposeWatcherState(state)));
+	}
+
+	private async disposeWatcherState(state: WatcherState): Promise<void> {
+		if (state.flushTimer) {
+			clearTimeout(state.flushTimer);
+			state.flushTimer = null;
+		}
+		if (state.recoveryTimer) {
+			clearInterval(state.recoveryTimer);
+			state.recoveryTimer = null;
+		}
+		state.throttler.dispose();
+		const subscription = state.subscription;
+		state.subscription = null;
+		await unsubscribeQuietly(subscription);
 	}
 
 	/**
@@ -499,11 +527,12 @@ export class FsWatcherManager {
 	 *   exhausted. Log once with a remediation hint; spamming repeats doesn't
 	 *   help — user has to bump the system limit and restart.
 	 * - `'File system must be re-scanned'`: macOS FSEvents kernel queue
-	 *   overflowed. Just log. Crucially, do NOT emit a synthetic event to
-	 *   listeners — overflow means "some events were dropped," not "git state
-	 *   changed," and downstream consumers (git-watcher → renderer's
-	 *   useGitStatus → host-service git.getStatus) would interpret it as the
-	 *   latter and storm the host-service with git subprocess spawns.
+	 *   overflowed. Log and invalidate the search index (next search rebuilds
+	 *   from disk). Crucially, do NOT emit a synthetic event to listeners —
+	 *   overflow means "some events were dropped," not "git state changed,"
+	 *   and downstream consumers (git-watcher → renderer's useGitStatus →
+	 *   host-service git.getStatus) would interpret it as the latter and storm
+	 *   the host-service with git subprocess spawns.
 	 */
 	private onUnexpectedError(error: unknown, state: WatcherState): void {
 		const msg = toErrorMessage(error);
@@ -525,6 +554,10 @@ export class FsWatcherManager {
 				absolutePath: state.absolutePath,
 				error: msg,
 			});
+			// The kernel dropped events, so patch-based index maintenance can no
+			// longer be trusted; drop the index and let the next search rebuild
+			// from a fresh disk walk. Cheap (a map delete), so no debounce.
+			invalidateSearchIndexesForRoot(state.absolutePath);
 			return;
 		}
 
@@ -558,15 +591,14 @@ export class FsWatcherManager {
 			throw error;
 		}
 
-		const { realPath, realPathNormalized, realPathDiffers } =
-			await this.normalizePath(normalizedPath);
-
 		const state: WatcherState = {
 			absolutePath: normalizedPath,
-			realPath,
-			realPathNormalized,
-			realPathDiffers,
-			subscription: null as unknown as AsyncSubscription,
+			realPath: normalizedPath,
+			realPathNormalized: normalizedPath,
+			realPathDiffers: false,
+			subscription: null,
+			recoveryTimer: null,
+			recovering: false,
 			listeners: new Set<WatchListener>(),
 			filePaths: new Map<string, true>(),
 			directoryPaths: new Set<string>(),
@@ -585,6 +617,23 @@ export class FsWatcherManager {
 				},
 			),
 		};
+
+		await this.attachNativeSubscription(state);
+
+		return state;
+	}
+
+	/**
+	 * Resolve the (possibly recreated) root and open the native subscription.
+	 * Split from createWatcher so root-deletion recovery can re-attach to the
+	 * same WatcherState without dropping its listeners.
+	 */
+	private async attachNativeSubscription(state: WatcherState): Promise<void> {
+		const { realPath, realPathNormalized, realPathDiffers } =
+			await this.normalizePath(state.absolutePath);
+		state.realPath = realPath;
+		state.realPathNormalized = realPathNormalized;
+		state.realPathDiffers = realPathDiffers;
 
 		// Subscribe to the resolved real path so kernel paths come back in a
 		// consistent form; we map them back to `state.absolutePath` in
@@ -632,8 +681,83 @@ export class FsWatcherManager {
 				ignore: this.ignore,
 			},
 		);
+	}
 
-		return state;
+	/**
+	 * The watch root was deleted: the native stream is dead and will never
+	 * deliver again (FSEvents keeps following the old inode). Keep the state
+	 * and its listeners, drop the native side, and poll for the path to
+	 * reappear — VS Code's suspend/resume pattern (baseWatcher.ts).
+	 */
+	private async suspendForRecovery(state: WatcherState): Promise<void> {
+		if (!state.subscription || state.recoveryTimer) {
+			return;
+		}
+		if (this.watchers.get(state.absolutePath) !== state) {
+			return;
+		}
+		console.error(
+			"[workspace-fs/watch] watch root deleted — polling for recreation:",
+			{ absolutePath: state.absolutePath },
+		);
+		const deadSubscription = state.subscription;
+		state.subscription = null;
+		// Must complete before any re-subscribe on this path: a new parcel
+		// subscription opened while the dead one is still registered joins the
+		// dead native backend and never delivers (verified empirically).
+		await unsubscribeQuietly(deadSubscription);
+		const timer = setInterval(
+			() => void this.tryRecover(state),
+			this.recoveryPollMs,
+		);
+		timer.unref?.();
+		state.recoveryTimer = timer;
+	}
+
+	private async tryRecover(state: WatcherState): Promise<void> {
+		if (state.recovering) {
+			return;
+		}
+		if (this.watchers.get(state.absolutePath) !== state) {
+			if (state.recoveryTimer) {
+				clearInterval(state.recoveryTimer);
+				state.recoveryTimer = null;
+			}
+			return;
+		}
+		state.recovering = true;
+		try {
+			const stats = await stat(state.absolutePath);
+			if (!stats.isDirectory()) {
+				return;
+			}
+			await this.attachNativeSubscription(state);
+		} catch {
+			return;
+		} finally {
+			state.recovering = false;
+		}
+		if (state.recoveryTimer) {
+			clearInterval(state.recoveryTimer);
+			state.recoveryTimer = null;
+		}
+		// The recreated tree is unknown: reset per-path tracking, drop the
+		// search index, and emit a root create so consumers refetch.
+		state.filePaths.clear();
+		state.directoryPaths.clear();
+		invalidateSearchIndexesForRoot(state.absolutePath);
+		console.error("[workspace-fs/watch] watch root recreated — resumed:", {
+			absolutePath: state.absolutePath,
+		});
+		this.emit(state, {
+			events: [
+				{
+					kind: "create",
+					absolutePath: state.absolutePath,
+					isDirectory: true,
+				},
+			],
+		});
 	}
 
 	private async flushPendingEvents(
@@ -662,6 +786,21 @@ export class FsWatcherManager {
 			.map(internalToSearchPatchEvent)
 			.filter((e): e is SearchPatchEvent => e !== null);
 		patchSearchIndexesForRoot(state.absolutePath, searchPatchEvents);
+
+		// A rename away from the root also leaves the native stream dead.
+		// Suspend BEFORE emitting: a listener may react to the root-delete by
+		// recreating the directory, and the dead native subscription must be
+		// fully released while the path is still absent (see suspendForRecovery).
+		const rootDeleted = reconciledEvents.some(
+			(event) =>
+				(event.kind === "delete" &&
+					event.absolutePath === state.absolutePath) ||
+				(event.kind === "rename" &&
+					event.oldAbsolutePath === state.absolutePath),
+		);
+		if (rootDeleted) {
+			await this.suspendForRecovery(state);
+		}
 
 		const publicEvents = reconciledEvents.map(internalToFsWatchEvent);
 		this.emit(state, { events: publicEvents });
