@@ -741,6 +741,15 @@ export class FsWatcherManager {
 			clearInterval(state.recoveryTimer);
 			state.recoveryTimer = null;
 		}
+		// Ownership can change across the awaits above: if the state was
+		// disposed meanwhile (last listener unsubscribed), the subscription we
+		// just attached is orphaned and would leak a native watcher.
+		if (this.watchers.get(state.absolutePath) !== state) {
+			const orphaned = state.subscription;
+			state.subscription = null;
+			void unsubscribeQuietly(orphaned);
+			return;
+		}
 		// The recreated tree is unknown: reset per-path tracking, drop the
 		// search index, and emit a root create so consumers refetch.
 		state.filePaths.clear();

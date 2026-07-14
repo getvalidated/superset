@@ -63,8 +63,12 @@ describe("FsWatcherManager ignore patterns", () => {
 		await waitForCondition(() =>
 			seen.includes(path.join(rootPath, "src/app.ts")),
 		);
-		// Drain any stragglers before asserting the ignored paths stayed silent.
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		// Ordered-delivery barrier: a later write arriving proves the earlier
+		// ignored writes had their chance to arrive — no timing dependence.
+		await fs.writeFile(path.join(rootPath, "src/barrier.ts"), "x");
+		await waitForCondition(() =>
+			seen.includes(path.join(rootPath, "src/barrier.ts")),
+		);
 
 		// Directory-touch events for the root/src dirs are fine; the two
 		// ignored writes must not appear.
