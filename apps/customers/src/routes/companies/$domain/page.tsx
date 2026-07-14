@@ -20,6 +20,7 @@ import { StageBadge } from "@/components/StageBadge";
 import { WeeksPicker } from "@/components/WeeksPicker";
 import { useTRPC } from "@/trpc/react";
 
+import { ActivityMatrix } from "./components/ActivityMatrix";
 import { CompanyInfoCard } from "./components/CompanyInfoCard";
 import { DomainUsersTable } from "./components/DomainUsersTable";
 import { SlackTasksCard } from "./components/SlackTasksCard";
@@ -299,6 +300,8 @@ function DomainDetailPage() {
 					)}
 				</div>
 			</div>
+
+			<ActivityMatrix domain={data.domain} />
 
 			<SlackTasksCard domain={data.domain} />
 

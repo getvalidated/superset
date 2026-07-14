@@ -1,5 +1,6 @@
 import { db } from "@superset/db/client";
 import {
+	githubPullRequests,
 	members,
 	organizations,
 	type SelectSubscription,
@@ -17,9 +18,10 @@ import {
 } from "@superset/shared/customer-health";
 import { stageFromUserCount } from "@superset/shared/customer-stage";
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
-import { eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../../trpc";
+import { fetchActivityMatrix, MATRIX_USERS_CAP } from "./activity-matrix";
 import {
 	fetchWeeklyActivity,
 	getActivitySnapshot,
@@ -745,6 +747,134 @@ export const customersRouter = {
 			return {
 				points: await fetchWeeklyActivity(ids, input.weeks),
 				sampled: ids.length > WEEKLY_ACTIVITY_IDS_CAP,
+			};
+		}),
+
+	/**
+	 * Per-user × per-day dot-plot data: activity split by category, plus
+	 * milestones (first day, workspace created) and PR merges (from the DB,
+	 * attributed to the company since author logins aren't mapped to users).
+	 */
+	domainActivityMatrix: adminProcedure
+		.input(
+			z.object({
+				domain: domainSchema,
+				days: z.number().int().min(14).max(120).default(90),
+				users: z.number().int().min(1).max(MATRIX_USERS_CAP).default(10),
+			}),
+		)
+		.query(async ({ input }) => {
+			const [snapshot, domainUsers] = await Promise.all([
+				getActivitySnapshot(),
+				getUsersByDomain(input.domain),
+			]);
+			if (domainUsers.length === 0) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: `No users with @${input.domain} emails`,
+				});
+			}
+
+			const dayMs = 24 * 60 * 60 * 1000;
+			const startMs =
+				Math.floor(Date.now() / dayMs) * dayMs - (input.days - 1) * dayMs;
+			const dayIndex = (date: Date) =>
+				Math.floor((date.getTime() - startMs) / dayMs);
+
+			// Most-recently-active first, so the default 10 rows are the users
+			// that matter.
+			const shown = domainUsers
+				.map((user) => ({
+					user,
+					lastActiveMs:
+						snapshot.byUserId
+							.get(user.id.toLowerCase())
+							?.lastActiveAt.getTime() ?? 0,
+				}))
+				.sort((a, b) => b.lastActiveMs - a.lastActiveMs)
+				.slice(0, input.users)
+				.map((entry) => entry.user);
+
+			const [cellsByUser, memberRows] = await Promise.all([
+				fetchActivityMatrix(
+					shown.map((user) => user.id),
+					input.days,
+				),
+				db
+					.select({ organizationId: members.organizationId })
+					.from(members)
+					.where(
+						inArray(
+							members.userId,
+							domainUsers.map((user) => user.id),
+						),
+					),
+			]);
+
+			const orgIds = [...new Set(memberRows.map((row) => row.organizationId))];
+			const prRows =
+				orgIds.length > 0
+					? await db
+							.select({
+								mergedAt: githubPullRequests.mergedAt,
+								authorLogin: githubPullRequests.authorLogin,
+							})
+							.from(githubPullRequests)
+							.where(
+								and(
+									inArray(githubPullRequests.organizationId, orgIds),
+									isNotNull(githubPullRequests.mergedAt),
+									gte(githubPullRequests.mergedAt, new Date(startMs)),
+								),
+							)
+					: [];
+
+			const prByDay = new Map<
+				number,
+				{ count: number; authors: Set<string> }
+			>();
+			for (const row of prRows) {
+				if (!row.mergedAt) continue;
+				const d = dayIndex(row.mergedAt);
+				if (d < 0 || d >= input.days) continue;
+				const entry = prByDay.get(d) ?? { count: 0, authors: new Set() };
+				entry.count += 1;
+				entry.authors.add(row.authorLogin);
+				prByDay.set(d, entry);
+			}
+
+			return {
+				start: new Date(startMs),
+				days: input.days,
+				totalUsers: domainUsers.length,
+				snapshotAt: snapshot.fetchedAt,
+				users: shown.map((user) => {
+					const firstDay = dayIndex(user.createdAt);
+					return {
+						userId: user.id,
+						name: user.name,
+						email: user.email,
+						image: user.image,
+						firstDayIndex:
+							firstDay >= 0 && firstDay < input.days ? firstDay : null,
+						cells: (cellsByUser.get(user.id.toLowerCase()) ?? [])
+							.map((cell) => ({
+								d: dayIndex(new Date(`${cell.day}T00:00:00Z`)),
+								terminal: cell.terminal,
+								chat: cell.chat,
+								workspace: cell.workspace,
+								created: cell.created,
+							}))
+							.filter((cell) => cell.d >= 0 && cell.d < input.days),
+					};
+				}),
+				prCells: [...prByDay.entries()]
+					.sort((a, b) => a[0] - b[0])
+					.map(([d, entry]) => ({
+						d,
+						count: entry.count,
+						authors: [...entry.authors].slice(0, 8),
+					})),
 			};
 		}),
 
