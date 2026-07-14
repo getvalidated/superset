@@ -101,6 +101,28 @@ export function CompanyInfoCard({ domain }: CompanyInfoCardProps) {
 							/>
 							<Row label="Industry" value={data.industry} />
 							<Row label="HQ" value={data.headquarters} />
+							<Row label="Total raised" value={data.totalRaised} />
+							<Row label="Last round" value={data.lastRoundAt} />
+							<Row label="Founded" value={data.foundedYear} />
+							{data.ycBatch && (
+								<Row
+									label="Y Combinator"
+									value={
+										<Badge className="border-transparent bg-orange-500/15 text-orange-400">
+											YC {data.ycBatch}
+										</Badge>
+									}
+								/>
+							)}
+							{data.parentCompany && (
+								<Row label="Parent company" value={data.parentCompany} />
+							)}
+							{data.investors.length > 0 && (
+								<Row
+									label="Investors"
+									value={data.investors.slice(0, 5).join(", ")}
+								/>
+							)}
 							{data.sources.length > 0 && (
 								<p className="text-muted-foreground pt-1 text-xs">
 									Sources:{" "}

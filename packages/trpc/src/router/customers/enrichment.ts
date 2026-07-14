@@ -90,14 +90,14 @@ type Confidence = z.infer<typeof confidenceSchema>;
 export function getCachedDomainEnrichment(
 	domain: string,
 ): Promise<DomainEnrichment | null> {
-	return getCached<DomainEnrichment>(`domain:${domain}`);
+	return getCached<DomainEnrichment>(`domain:v2:${domain}`);
 }
 
 /** Cache-only read — never triggers research. */
 export function getCachedPersonEnrichment(
 	cacheKey: string,
 ): Promise<PersonEnrichment | null> {
-	return getCached<PersonEnrichment>(`person:v2:${cacheKey}`);
+	return getCached<PersonEnrichment>(`person:v3:${cacheKey}`);
 }
 
 /** Cache-only batch read (KV mget) — never triggers research. */
@@ -110,7 +110,7 @@ export async function getCachedPersonEnrichmentBatch(
 	if (isKVConfigured) {
 		try {
 			const values = await kv.mget<(PersonEnrichment | null)[]>(
-				...cacheKeys.map((key) => `${CACHE_PREFIX}person:v2:${key}`),
+				...cacheKeys.map((key) => `${CACHE_PREFIX}person:v3:${key}`),
 			);
 			cacheKeys.forEach((key, index) => {
 				const value = values[index];
@@ -122,7 +122,7 @@ export async function getCachedPersonEnrichmentBatch(
 		}
 	}
 	for (const key of cacheKeys) {
-		const entry = memoryCache.get(`${CACHE_PREFIX}person:v2:${key}`);
+		const entry = memoryCache.get(`${CACHE_PREFIX}person:v3:${key}`);
 		if (entry && Date.now() <= entry.expiresAt) {
 			result.set(key, entry.data as PersonEnrichment);
 		}
@@ -275,6 +275,13 @@ const domainFieldsSchema = z.object({
 	stage: z.string().nullable().catch(null),
 	industry: z.string().nullable().catch(null),
 	headquarters: z.string().nullable().catch(null),
+	// Experimental fields being evaluated in KV before graduating to the DB
+	totalRaised: z.string().nullable().catch(null),
+	lastRoundAt: z.string().nullable().catch(null),
+	investors: z.array(z.string()).catch([]),
+	ycBatch: z.string().nullable().catch(null),
+	foundedYear: z.number().int().nullable().catch(null),
+	parentCompany: z.string().nullable().catch(null),
 });
 
 export type DomainEnrichment = z.infer<typeof domainFieldsSchema> & {
@@ -291,12 +298,18 @@ const EMPTY_DOMAIN_FIELDS: z.infer<typeof domainFieldsSchema> = {
 	stage: null,
 	industry: null,
 	headquarters: null,
+	totalRaised: null,
+	lastRoundAt: null,
+	investors: [],
+	ycBatch: null,
+	foundedYear: null,
+	parentCompany: null,
 };
 
 const EMPLOYEE_RANGES =
 	'"1-10", "11-50", "51-200", "201-1000", "1001-5000", "5000+"';
 const STAGES =
-	'"bootstrapped", "pre-seed", "seed", "series-a", "series-b", "series-c+", "public", "subsidiary", "nonprofit"';
+	'"bootstrapped", "pre-seed", "seed", "series-a", "series-b", "series-c+", "public", "acquired", "subsidiary", "nonprofit"';
 
 const EXA_DOMAIN_SCHEMA = {
 	type: "object",
@@ -321,12 +334,30 @@ const EXA_DOMAIN_SCHEMA = {
 			description: "Short industry label, e.g. developer tools",
 		},
 		headquarters: { type: "string", description: "City, country" },
+		totalRaised: {
+			type: "string",
+			description: 'Total funding raised, e.g. "$58M"',
+		},
+		lastRoundAt: {
+			type: "string",
+			description: 'Most recent funding round date as "YYYY-MM"',
+		},
+		investors: {
+			type: "array",
+			description: "Up to 5 notable investors",
+			items: { type: "string" },
+		},
+		ycBatch: {
+			type: "string",
+			description: 'Y Combinator batch like "W23" if a YC company',
+		},
 	},
 };
 
 export function getDomainEnrichment(domain: string): Promise<DomainEnrichment> {
+	// v2: added funding/YC/founded/parent fields — old cache entries lack them.
 	return cached(
-		`domain:${domain}`,
+		`domain:v2:${domain}`,
 		async () => {
 			const base = { domain, fetchedAt: new Date().toISOString() };
 			if (FREEMAIL_DOMAINS.has(domain)) {
@@ -371,6 +402,12 @@ Respond with ONLY a single JSON object — no markdown fences, no prose before o
   "stage": ${STAGES.replaceAll(", ", " | ")} | null,
   "industry": string | null,           // short, e.g. "developer tools"
   "headquarters": string | null,       // city, country
+  "totalRaised": string | null,        // total funding raised, e.g. "$58M"
+  "lastRoundAt": string | null,        // most recent funding round date as "YYYY-MM" (or "YYYY")
+  "investors": string[],               // up to 5 notable investors, [] if unknown
+  "ycBatch": string | null,            // Y Combinator batch like "W23" if they went through YC, else null
+  "foundedYear": number | null,        // year founded
+  "parentCompany": string | null,      // owning company if acquired or a subsidiary
   "confidence": "high" | "medium" | "low",
   "sources": string[]                  // up to 3 source URLs
 }
@@ -415,6 +452,7 @@ const personFieldsSchema = z.object({
 	twitterUrl: z.string().nullable().catch(null),
 	githubUrl: z.string().nullable().catch(null),
 	websiteUrl: z.string().nullable().catch(null),
+	location: z.string().nullable().catch(null),
 });
 
 export type PersonEnrichment = z.infer<typeof personFieldsSchema> & {
@@ -430,6 +468,7 @@ const EMPTY_PERSON_FIELDS: z.infer<typeof personFieldsSchema> = {
 	twitterUrl: null,
 	githubUrl: null,
 	websiteUrl: null,
+	location: null,
 };
 
 const EXA_PERSON_SCHEMA = {
@@ -462,6 +501,10 @@ const EXA_PERSON_SCHEMA = {
 			type: "string",
 			description: "URL of their personal website or blog",
 		},
+		location: {
+			type: "string",
+			description: 'City/region they are based in, e.g. "Tel Aviv, Israel"',
+		},
 	},
 };
 
@@ -470,9 +513,9 @@ export function getPersonEnrichment(options: {
 	name: string;
 	domain: string;
 }): Promise<PersonEnrichment> {
-	// v2: added twitter/github/website fields — old cache entries lack them.
+	// v3: added location — old cache entries lack it.
 	return cached(
-		`person:v2:${options.cacheKey}`,
+		`person:v3:${options.cacheKey}`,
 		async () => {
 			const base = { fetchedAt: new Date().toISOString() };
 			const isFreemail = FREEMAIL_DOMAINS.has(options.domain);
@@ -511,6 +554,7 @@ Respond with ONLY a single JSON object — no markdown fences, no prose — with
   "twitterUrl": string | null,         // their Twitter/X profile URL
   "githubUrl": string | null,          // their GitHub profile URL
   "websiteUrl": string | null,         // their personal website or blog
+  "location": string | null,           // city/region they are based in
   "confidence": "high" | "medium" | "low",
   "sources": string[]                  // up to 3 source URLs
 }

@@ -83,6 +83,9 @@ export function UserRoleLine({ userId }: UserRoleLineProps) {
 				{data.title ?? "Role unknown"}
 			</span>
 			{data.seniority && <Badge variant="outline">{data.seniority}</Badge>}
+			{data.location && (
+				<span className="text-muted-foreground">{data.location}</span>
+			)}
 			<SocialLinks
 				linkedinUrl={data.linkedinUrl}
 				twitterUrl={data.twitterUrl}
