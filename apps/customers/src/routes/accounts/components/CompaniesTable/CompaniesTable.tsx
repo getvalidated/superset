@@ -60,7 +60,7 @@ export function CompaniesTable({
 		return (
 			<Card>
 				<CardContent className="py-12 text-center">
-					<p className="text-lg font-medium">Failed to load companies</p>
+					<p className="text-lg font-medium">Failed to load accounts</p>
 					<p className="text-muted-foreground text-sm">{error.message}</p>
 				</CardContent>
 			</Card>
@@ -72,7 +72,7 @@ export function CompaniesTable({
 			<Card>
 				<CardContent className="flex flex-col items-center justify-center py-12 text-center">
 					<LuBuilding2 className="text-muted-foreground mb-4 size-12" />
-					<p className="text-lg font-medium">No companies match</p>
+					<p className="text-lg font-medium">No accounts match</p>
 					<p className="text-muted-foreground text-sm">
 						Try widening the filters or switching to "All orgs"
 					</p>
@@ -89,13 +89,13 @@ export function CompaniesTable({
 				}
 			>
 				<p className="text-muted-foreground flex items-center gap-2 pb-3 text-sm">
-					{total?.toLocaleString()} compan{total === 1 ? "y" : "ies"}
+					{total?.toLocaleString()} account{total === 1 ? "" : "s"}
 					{isFetching && <LuLoaderCircle className="size-3.5 animate-spin" />}
 				</p>
 				<Table>
 					<TableHeader>
 						<TableRow>
-							<TableHead>Company</TableHead>
+							<TableHead>Account</TableHead>
 							<TableHead>Stage</TableHead>
 							<TableHead>Members</TableHead>
 							<TableHead>Plan</TableHead>
@@ -113,7 +113,7 @@ export function CompaniesTable({
 								className="cursor-pointer"
 								onClick={() =>
 									navigate({
-										to: "/companies/$orgId",
+										to: "/accounts/$orgId",
 										params: { orgId: row.orgId },
 									})
 								}
@@ -128,7 +128,7 @@ export function CompaniesTable({
 										</Avatar>
 										<div className="flex flex-col">
 											<Link
-												to="/companies/$orgId"
+												to="/accounts/$orgId"
 												params={{ orgId: row.orgId }}
 												className="font-medium hover:underline"
 												onClick={(event) => event.stopPropagation()}

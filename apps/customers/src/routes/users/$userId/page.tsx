@@ -131,11 +131,7 @@ function UserDetailPage() {
 			{data.orgs.length > 0 && (
 				<div className="flex flex-wrap items-center gap-1.5">
 					{data.orgs.map((org) => (
-						<Link
-							key={org.id}
-							to="/companies/$orgId"
-							params={{ orgId: org.id }}
-						>
+						<Link key={org.id} to="/accounts/$orgId" params={{ orgId: org.id }}>
 							<Badge
 								variant="outline"
 								className="hover:bg-accent max-w-48 truncate"

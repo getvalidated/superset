@@ -33,11 +33,11 @@ export function CompanyHeader({
 	return (
 		<div className="space-y-3">
 			<Link
-				to="/companies"
+				to="/accounts"
 				className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm"
 			>
 				<LuArrowLeft className="size-3.5" />
-				Companies
+				Accounts
 			</Link>
 			<div className="flex items-center gap-4">
 				<Avatar className="size-12">

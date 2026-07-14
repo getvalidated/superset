@@ -140,7 +140,7 @@ export function DomainsTable({
 								</TableCell>
 								<TableCell>
 									<Link
-										to="/domains/$domain"
+										to="/companies/$domain"
 										params={{ domain: row.domain }}
 										className="font-medium hover:underline"
 									>

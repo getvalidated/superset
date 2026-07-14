@@ -12,7 +12,7 @@ import {
 	SidebarRail,
 } from "@superset/ui/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import { LuAtSign, LuBuilding2 } from "react-icons/lu";
+import { LuBuilding2, LuCreditCard } from "react-icons/lu";
 
 import { AppSidebarHeader } from "./components/AppSidebarHeader";
 import { NavUser } from "./components/NavUser";
@@ -24,9 +24,9 @@ const nav = [
 		icon: LuBuilding2,
 	},
 	{
-		title: "Domains",
-		url: "/domains",
-		icon: LuAtSign,
+		title: "Accounts",
+		url: "/accounts",
+		icon: LuCreditCard,
 	},
 ];
 

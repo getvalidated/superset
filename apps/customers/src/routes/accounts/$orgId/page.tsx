@@ -11,7 +11,7 @@ import { CompanyHeader } from "./components/CompanyHeader";
 import { MembersTable } from "./components/MembersTable";
 import { SubscriptionCard } from "./components/SubscriptionCard";
 
-export const Route = createFileRoute("/companies/$orgId/")({
+export const Route = createFileRoute("/accounts/$orgId/")({
 	component: CompanyDetailPage,
 });
 
