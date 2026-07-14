@@ -1,18 +1,12 @@
 {
 	"display_information": {
 		"name": "Superset Customers",
-		"description": "Internal read-only bot for the customers dashboard — reads channels shared with customers to extract tasks.",
+		"description": "Internal read-only app for the customers dashboard — reads channels shared with customers to extract tasks, as the installing user.",
 		"background_color": "#1a1d21"
-	},
-	"features": {
-		"bot_user": {
-			"display_name": "superset-customers",
-			"always_online": false
-		}
 	},
 	"oauth_config": {
 		"scopes": {
-			"bot": [
+			"user": [
 				"channels:read",
 				"channels:history",
 				"groups:read",

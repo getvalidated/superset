@@ -1045,7 +1045,7 @@ export const customersRouter = {
 			if (!isSlackConfigured()) {
 				throw new TRPCError({
 					code: "PRECONDITION_FAILED",
-					message: "SLACK_CUSTOMERS_BOT_TOKEN is not configured",
+					message: "SLACK_CUSTOMERS_TOKEN is not configured",
 				});
 			}
 			const matches = await getChannelsForDomain(input.domain);

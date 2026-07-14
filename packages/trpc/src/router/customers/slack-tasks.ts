@@ -7,19 +7,21 @@ import { memoizeAsync } from "./activity-snapshot";
 
 /**
  * Slack → customer tasks. Reads OUR OWN Slack workspace with a single internal
- * bot token (no OAuth — this is unrelated to the customer-facing Slack
+ * user token (no OAuth flow — this is unrelated to the customer-facing Slack
  * integration in apps/api). Channels are matched to a customer domain by an
  * explicit `customer:<domain>` tag in the channel topic/purpose, or by a name
  * convention (`ext-acme`, `acme-superset`, …). Matched channels' histories are
  * synced incrementally and Claude maintains a running task list per channel,
  * stored in KV.
  *
- * The bot only sees channels it has been invited to (`channels:history` covers
- * members-only) — un-joined matches are surfaced so a human can /invite it.
+ * A user token reads whatever the installing user can read — every channel
+ * they're in, no per-app invites. Slack still requires channel membership to
+ * pull history, so matched channels the user hasn't joined are surfaced in
+ * the UI rather than synced.
  */
 
 export function isSlackConfigured(): boolean {
-	return Boolean(env.SLACK_CUSTOMERS_BOT_TOKEN);
+	return Boolean(env.SLACK_CUSTOMERS_TOKEN);
 }
 
 // ---------------------------------------------------------------------------
@@ -34,7 +36,7 @@ async function slackApi<T>(
 	const response = await fetch(
 		`https://slack.com/api/${method}${search ? `?${search}` : ""}`,
 		{
-			headers: { Authorization: `Bearer ${env.SLACK_CUSTOMERS_BOT_TOKEN}` },
+			headers: { Authorization: `Bearer ${env.SLACK_CUSTOMERS_TOKEN}` },
 		},
 	);
 	const body = (await response.json()) as { ok: boolean; error?: string } & T;

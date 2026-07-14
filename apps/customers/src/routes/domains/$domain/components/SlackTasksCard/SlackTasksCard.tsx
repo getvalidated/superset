@@ -100,8 +100,11 @@ function ChannelSection({ channel }: { channel: SlackChannel }) {
 					</Badge>
 				)}
 				{!channel.isMember && (
-					<Badge className="border-transparent bg-amber-500/15 text-amber-400">
-						invite the bot to sync
+					<Badge
+						className="border-transparent bg-amber-500/15 text-amber-400"
+						title="Slack only exposes history for channels the token's user has joined"
+					>
+						join channel to sync
 					</Badge>
 				)}
 				{store && (
@@ -152,7 +155,7 @@ export interface SlackTasksCardProps {
 /**
  * Tasks extracted from our Slack channels with this customer. Cached task
  * lists always render; Sync reads new messages and has Claude update the list.
- * Renders nothing when SLACK_CUSTOMERS_BOT_TOKEN isn't configured.
+ * Renders nothing when SLACK_CUSTOMERS_TOKEN isn't configured.
  */
 export function SlackTasksCard({ domain }: SlackTasksCardProps) {
 	const trpc = useTRPC();
