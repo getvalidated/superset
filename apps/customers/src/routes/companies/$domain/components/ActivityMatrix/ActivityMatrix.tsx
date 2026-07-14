@@ -26,9 +26,10 @@ type MatrixCell = MatrixUser["cells"][number];
 
 const CELL = 12;
 const ROW_H = 22;
-const HEADER_H = 18;
-const DAYS = 90;
+const HEADER_H = 32;
+const DAY_OPTIONS = [14, 30, 60, 90, 120];
 const USER_COUNT_OPTIONS = [10, 25, 50, 100, 200];
+const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const CATEGORY_COLORS = {
 	terminal: "#fbbf24",
@@ -44,6 +45,7 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 	timeZone: "UTC",
 });
 const DAY_FORMAT = new Intl.DateTimeFormat("en-US", {
+	weekday: "short",
 	month: "short",
 	day: "numeric",
 	timeZone: "UTC",
@@ -165,10 +167,11 @@ export interface ActivityMatrixProps {
 export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 	const trpc = useTRPC();
 	const [userCount, setUserCount] = useState(10);
+	const [days, setDays] = useState(90);
 
 	const matrix = useQuery(
 		trpc.customers.domainActivityMatrix.queryOptions(
-			{ domain, days: DAYS, users: userCount },
+			{ domain, days, users: userCount },
 			{ staleTime: 60_000, placeholderData: (previous) => previous },
 		),
 	);
@@ -177,7 +180,7 @@ export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 	const start = data ? new Date(data.start) : null;
 	const hasPrRow = (data?.prCells.length ?? 0) > 0;
 	const rows = (data?.users.length ?? 0) + (hasPrRow ? 1 : 0);
-	const gridWidth = DAYS * CELL;
+	const gridWidth = days * CELL;
 	const gridHeight = HEADER_H + rows * ROW_H;
 	const prRowIndex = 0;
 	const userRowOffset = hasPrRow ? 1 : 0;
@@ -188,24 +191,41 @@ export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 				<div className="space-y-1.5">
 					<CardTitle>Activity matrix</CardTitle>
 					<CardDescription>
-						Who did what, day by day, over the last {DAYS} days
+						Who did what, day by day, over the last {days} days
 					</CardDescription>
 				</div>
-				<Select
-					value={String(userCount)}
-					onValueChange={(value) => setUserCount(Number(value))}
-				>
-					<SelectTrigger className="w-32">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{USER_COUNT_OPTIONS.map((option) => (
-							<SelectItem key={option} value={String(option)}>
-								{option} users
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<div className="flex items-center gap-2">
+					<Select
+						value={String(days)}
+						onValueChange={(value) => setDays(Number(value))}
+					>
+						<SelectTrigger className="w-28">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{DAY_OPTIONS.map((option) => (
+								<SelectItem key={option} value={String(option)}>
+									{option} days
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Select
+						value={String(userCount)}
+						onValueChange={(value) => setUserCount(Number(value))}
+					>
+						<SelectTrigger className="w-32">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{USER_COUNT_OPTIONS.map((option) => (
+								<SelectItem key={option} value={String(option)}>
+									{option} users
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
 			</CardHeader>
 			<CardContent>
 				{matrix.isLoading && !data ? (
@@ -258,7 +278,7 @@ export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 									aria-label="Per-user daily activity dot plot"
 								>
 									{/* Weekend shading */}
-									{Array.from({ length: DAYS }, (_, d) => d)
+									{Array.from({ length: days }, (_, d) => d)
 										.filter((d) => {
 											const weekday = dateForDay(start, d).getUTCDay();
 											return weekday === 0 || weekday === 6;
@@ -275,7 +295,7 @@ export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 											/>
 										))}
 									{/* Month labels */}
-									{Array.from({ length: DAYS }, (_, d) => d)
+									{Array.from({ length: days }, (_, d) => d)
 										.filter(
 											(d) => d === 0 || dateForDay(start, d).getUTCDate() === 1,
 										)
@@ -283,13 +303,27 @@ export function ActivityMatrix({ domain }: ActivityMatrixProps) {
 											<text
 												key={d}
 												x={d * CELL + 2}
-												y={HEADER_H - 6}
+												y={12}
 												className="fill-muted-foreground"
 												fontSize={10}
 											>
 												{MONTH_FORMAT.format(dateForDay(start, d))}
 											</text>
 										))}
+									{/* Day-of-week initials */}
+									{Array.from({ length: days }, (_, d) => d).map((d) => (
+										<text
+											key={d}
+											x={d * CELL + CELL / 2}
+											y={HEADER_H - 6}
+											textAnchor="middle"
+											className="fill-muted-foreground"
+											fontSize={8}
+											opacity={0.7}
+										>
+											{WEEKDAY_LETTERS[dateForDay(start, d).getUTCDay()]}
+										</text>
+									))}
 									{/* Row separators */}
 									{Array.from({ length: rows }, (_, row) => row).map((row) => (
 										<line
