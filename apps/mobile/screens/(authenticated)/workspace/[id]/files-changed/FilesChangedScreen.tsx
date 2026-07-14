@@ -8,6 +8,7 @@ import {
 	ActionSheetIOS,
 	ActivityIndicator,
 	Alert,
+	LayoutAnimation,
 	Linking,
 	PanResponder,
 	RefreshControl,
@@ -113,20 +114,32 @@ export function FilesChangedScreen() {
 		[viewedSet, collapsedToggles],
 	);
 
-	const toggleCollapsed = useCallback((path: string) => {
-		setCollapsedToggles((previous) => {
-			const next = new Set(previous);
-			if (next.has(path)) next.delete(path);
-			else next.add(path);
-			return next;
-		});
+	// Section collapse/expand: pause cell recycling for the next commit and let
+	// native LayoutAnimation slide the surrounding rows into place.
+	const animateNextListUpdate = useCallback(() => {
+		listRef.current?.prepareForLayoutAnimationRender();
+		LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 	}, []);
+
+	const toggleCollapsed = useCallback(
+		(path: string) => {
+			animateNextListUpdate();
+			setCollapsedToggles((previous) => {
+				const next = new Set(previous);
+				if (next.has(path)) next.delete(path);
+				else next.add(path);
+				return next;
+			});
+		},
+		[animateNextListUpdate],
+	);
 
 	// The toggle bit is relative to the viewed baseline — reset it when the
 	// baseline flips, or marking a collapsed file viewed would re-expand it.
 	const onToggleViewed = useCallback(
 		(path: string) => {
 			if (!workspaceId) return;
+			animateNextListUpdate();
 			toggleViewed(workspaceId, path);
 			setCollapsedToggles((previous) => {
 				if (!previous.has(path)) return previous;
@@ -135,7 +148,7 @@ export function FilesChangedScreen() {
 				return next;
 			});
 		},
-		[workspaceId, toggleViewed],
+		[workspaceId, toggleViewed, animateNextListUpdate],
 	);
 
 	const fetchableFiles = useMemo(

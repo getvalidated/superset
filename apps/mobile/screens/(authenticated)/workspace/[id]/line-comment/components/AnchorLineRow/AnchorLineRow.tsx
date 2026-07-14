@@ -66,7 +66,7 @@ export function AnchorLineRow({
 					numberOfLines={1}
 					style={MONO_STYLE}
 				>
-					<RNText allowFontScaling={false} className={TEXT_CLASS[type]}>
+					<RNText allowFontScaling={false} className="text-foreground/90">
 						{SIGN[type]}
 					</RNText>
 					{tokens

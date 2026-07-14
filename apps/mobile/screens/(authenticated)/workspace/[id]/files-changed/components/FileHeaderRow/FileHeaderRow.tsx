@@ -11,6 +11,7 @@ import {
 	ChevronRight,
 	Circle,
 } from "lucide-react-native";
+import { memo } from "react";
 import { View } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -19,7 +20,7 @@ import { PressableScale } from "@/screens/(authenticated)/components/PressableSc
 import type { ChangesetFile } from "../../../hooks/useWorkspaceChangeset";
 import { FILE_HEADER_HEIGHT } from "../../utils/diffMetrics";
 
-export function FileHeaderRow({
+export const FileHeaderRow = memo(function FileHeaderRow({
 	file,
 	expanded,
 	viewed,
@@ -106,4 +107,4 @@ export function FileHeaderRow({
 			</PressableScale>
 		</PressableScale>
 	);
-}
+});

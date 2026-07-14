@@ -25,8 +25,8 @@ const PLAIN_COLOR = {
 } as const;
 
 const SIGN_COLOR = {
-	add: "#4ade80",
-	del: "#f87171",
+	add: "#e8eaed",
+	del: "#e8eaed",
 	context: "transparent",
 } as const;
 
@@ -135,9 +135,7 @@ export const HunkSegmentCell = memo(function HunkSegmentCell({
 							key={line.key}
 							style={{
 								color:
-									line.type === "context"
-										? "rgba(154,163,175,0.5)"
-										: "rgba(232,234,237,0.7)",
+									line.type === "context" ? "rgba(154,163,175,0.6)" : "#e8eaed",
 							}}
 						>
 							{(line.newLineNumber ?? line.oldLineNumber ?? "") +
@@ -166,12 +164,19 @@ export const HunkSegmentCell = memo(function HunkSegmentCell({
 							const newline = index < segment.lines.length - 1 ? "\n" : "";
 							if (!line.tokens) {
 								return (
-									<RNText
-										allowFontScaling={false}
-										key={line.key}
-										style={{ color: PLAIN_COLOR[line.type] }}
-									>
-										{SIGN[line.type] + line.text + newline}
+									<RNText allowFontScaling={false} key={line.key}>
+										<RNText
+											allowFontScaling={false}
+											style={{ color: SIGN_COLOR[line.type] }}
+										>
+											{SIGN[line.type]}
+										</RNText>
+										<RNText
+											allowFontScaling={false}
+											style={{ color: PLAIN_COLOR[line.type] }}
+										>
+											{line.text + newline}
+										</RNText>
 									</RNText>
 								);
 							}

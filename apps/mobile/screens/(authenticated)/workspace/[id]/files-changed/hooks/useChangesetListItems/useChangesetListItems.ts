@@ -21,6 +21,25 @@ interface CacheEntry {
 	placedCommentIds: ReadonlySet<string>;
 }
 
+interface HeaderCacheEntry {
+	file: ChangesetFile;
+	expanded: boolean;
+	viewed: boolean;
+	item: ListItem;
+}
+
+interface NoteCacheEntry {
+	signature: string;
+	item: ListItem;
+}
+
+interface CommentCacheEntry {
+	comment: DraftComment;
+	stale: boolean;
+	orphaned: boolean;
+	item: ListItem;
+}
+
 function placeholderHeight(file: ChangesetFile): number {
 	const lines = file.additions + file.deletions + 8;
 	return Math.min(Math.max(lines * DIFF_LINE_HEIGHT, NOTE_ROW_HEIGHT), 2_400);
@@ -28,9 +47,10 @@ function placeholderHeight(file: ChangesetFile): number {
 
 /**
  * Assembles the flat item list from per-file cached blocks. A file's body is
- * rebuilt ONLY when its own data/expansions/comments references change —
- * toggling one file never recomputes another, and unchanged files keep
- * identical item references so the list re-renders nothing for them.
+ * rebuilt ONLY when its own data/expansions/comments references change, and
+ * every item kind keeps a stable object identity across unrelated re-renders —
+ * FlashList skips renderItem entirely for cells whose item reference is
+ * unchanged, so toggling one file re-renders nothing else.
  */
 export function useChangesetListItems(args: {
 	files: ChangesetFile[];
@@ -43,6 +63,9 @@ export function useChangesetListItems(args: {
 	const { files, dataByPath, expansions, comments, isExpanded, viewedSet } =
 		args;
 	const cacheRef = useRef(new Map<string, CacheEntry>());
+	const headerCacheRef = useRef(new Map<string, HeaderCacheEntry>());
+	const noteCacheRef = useRef(new Map<string, NoteCacheEntry>());
+	const commentCacheRef = useRef(new Map<string, CommentCacheEntry>());
 
 	const commentsByPath = useMemo(() => {
 		const map = new Map<string, DraftComment[]>();
@@ -56,66 +79,107 @@ export function useChangesetListItems(args: {
 
 	return useMemo(() => {
 		const cache = cacheRef.current;
+		const headerCache = headerCacheRef.current;
+		const noteCache = noteCacheRef.current;
+		const commentCache = commentCacheRef.current;
 		const items: ListItem[] = [];
 		const stickyHeaderIndices: number[] = [];
 		const placedIds = new Set<string>();
 		const livePaths = new Set<string>();
 
+		const commentItem = (
+			comment: DraftComment,
+			stale: boolean,
+			orphaned: boolean,
+		): ListItem => {
+			const cached = commentCache.get(comment.id);
+			if (
+				cached &&
+				cached.comment === comment &&
+				cached.stale === stale &&
+				cached.orphaned === orphaned
+			) {
+				return cached.item;
+			}
+			const item: ListItem = {
+				kind: "comment",
+				key: `comment:${comment.id}`,
+				comment,
+				stale,
+				orphaned,
+			};
+			commentCache.set(comment.id, { comment, stale, orphaned, item });
+			return item;
+		};
+
+		const noteItem = (
+			path: string,
+			note: "loading" | "error" | "binary",
+			height: number,
+		): ListItem => {
+			const signature = `${note}:${height}`;
+			const cached = noteCache.get(path);
+			if (cached && cached.signature === signature) return cached.item;
+			const item: ListItem = {
+				kind: "note",
+				key: `${path}:${note}`,
+				path,
+				note,
+				height,
+			};
+			noteCache.set(path, { signature, item });
+			return item;
+		};
+
 		for (const file of files) {
 			livePaths.add(file.path);
 			const expanded = isExpanded(file);
 			stickyHeaderIndices.push(items.length);
-			items.push({
-				kind: "file",
-				key: `file:${file.path}`,
-				file,
-				expanded,
-				viewed: viewedSet.has(file.path),
-			});
+
+			const cachedHeader = headerCache.get(file.path);
+			if (
+				cachedHeader &&
+				cachedHeader.file === file &&
+				cachedHeader.expanded === expanded &&
+				cachedHeader.viewed === viewedSet.has(file.path)
+			) {
+				items.push(cachedHeader.item);
+			} else {
+				const viewed = viewedSet.has(file.path);
+				const item: ListItem = {
+					kind: "file",
+					key: `file:${file.path}`,
+					file,
+					expanded,
+					viewed,
+				};
+				headerCache.set(file.path, { file, expanded, viewed, item });
+				items.push(item);
+			}
 			const fileComments = commentsByPath.get(file.path) ?? NO_FILE_COMMENTS;
 
 			if (!expanded) {
 				for (const comment of fileComments) {
 					placedIds.add(comment.id);
-					items.push({
-						kind: "comment",
-						key: `comment:${comment.id}`,
-						comment,
-						stale: false,
-						orphaned: false,
-					});
+					items.push(commentItem(comment, false, false));
 				}
 				continue;
 			}
 			if (file.isBinary === true) {
-				items.push({
-					kind: "note",
-					key: `${file.path}:binary`,
-					path: file.path,
-					note: "binary",
-					height: NOTE_ROW_HEIGHT,
-				});
+				items.push(noteItem(file.path, "binary", NOTE_ROW_HEIGHT));
 				continue;
 			}
 			const entry = dataByPath.get(file.path);
 			if (!entry?.data) {
 				const isError = entry?.isError ?? false;
-				items.push({
-					kind: "note",
-					key: `${file.path}:${isError ? "error" : "loading"}`,
-					path: file.path,
-					note: isError ? "error" : "loading",
-					height: isError ? NOTE_ROW_HEIGHT : placeholderHeight(file),
-				});
+				items.push(
+					isError
+						? noteItem(file.path, "error", NOTE_ROW_HEIGHT)
+						: noteItem(file.path, "loading", placeholderHeight(file)),
+				);
 				for (const comment of fileComments) {
 					placedIds.add(comment.id);
-					items.push({
-						kind: "comment",
-						key: `comment:${comment.id}`,
-						comment,
-						stale: false,
-						orphaned: false,
-					});
+					items.push(commentItem(comment, false, false));
 				}
 				continue;
 			}
@@ -153,15 +217,19 @@ export function useChangesetListItems(args: {
 		for (const path of cache.keys()) {
 			if (!livePaths.has(path)) cache.delete(path);
 		}
+		for (const path of headerCache.keys()) {
+			if (!livePaths.has(path)) headerCache.delete(path);
+		}
+		for (const path of noteCache.keys()) {
+			if (!livePaths.has(path)) noteCache.delete(path);
+		}
+		const liveCommentIds = new Set(comments.map((comment) => comment.id));
+		for (const id of commentCache.keys()) {
+			if (!liveCommentIds.has(id)) commentCache.delete(id);
+		}
 		for (const comment of comments) {
 			if (placedIds.has(comment.id)) continue;
-			items.push({
-				kind: "comment",
-				key: `comment:${comment.id}`,
-				comment,
-				stale: true,
-				orphaned: true,
-			});
+			items.push(commentItem(comment, true, true));
 		}
 		return { items, stickyHeaderIndices };
 	}, [
