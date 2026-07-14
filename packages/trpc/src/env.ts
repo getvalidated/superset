@@ -30,6 +30,8 @@ export const env = createEnv({
 		SECRETS_ENCRYPTION_KEY: z.string().min(1),
 		ANTHROPIC_API_KEY: z.string(),
 		EXA_API_KEY: z.string().optional(),
+		/** Internal bot token for reading our own Slack workspace (customers app). */
+		SLACK_CUSTOMERS_BOT_TOKEN: z.string().optional(),
 		RELAY_URL: z.string().url(),
 		LINEAR_CLIENT_ID: z.string().min(1),
 		LINEAR_CLIENT_SECRET: z.string().min(1),

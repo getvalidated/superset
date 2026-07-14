@@ -22,6 +22,7 @@ import { useTRPC } from "@/trpc/react";
 
 import { CompanyInfoCard } from "./components/CompanyInfoCard";
 import { DomainUsersTable } from "./components/DomainUsersTable";
+import { SlackTasksCard } from "./components/SlackTasksCard";
 
 export const Route = createFileRoute("/domains/$domain/")({
 	component: DomainDetailPage,
@@ -289,6 +290,8 @@ function DomainDetailPage() {
 					)}
 				</div>
 			</div>
+
+			<SlackTasksCard domain={data.domain} />
 
 			<DomainUsersTable
 				users={data.users}

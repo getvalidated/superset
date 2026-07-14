@@ -46,6 +46,12 @@ import {
 	getDomainResearchSettings,
 	setDomainResearchSettings,
 } from "./research-settings";
+import {
+	getChannelsForDomain,
+	getChannelTaskStore,
+	isSlackConfigured,
+	syncChannelTasks,
+} from "./slack-tasks";
 
 type SubscriptionSummary = {
 	plan: string;
@@ -1010,5 +1016,56 @@ export const customersRouter = {
 				input.pinned ? [...without, input.domain] : without,
 			);
 			return { pinned: input.pinned };
+		}),
+
+	/**
+	 * Slack channels matched to this domain, with their cached task lists.
+	 * Read-only — never hits the Slack API history or Claude.
+	 */
+	domainSlackTasks: adminProcedure
+		.input(z.object({ domain: domainSchema }))
+		.query(async ({ input }) => {
+			if (!isSlackConfigured()) {
+				return { configured: false as const, channels: [] };
+			}
+			const matches = await getChannelsForDomain(input.domain);
+			const channels = await Promise.all(
+				matches.map(async (match) => ({
+					...match,
+					store: await getChannelTaskStore(match.channelId),
+				})),
+			);
+			return { configured: true as const, channels };
+		}),
+
+	/** Sync matched channels' history and re-extract tasks with Claude. */
+	syncDomainSlackTasks: adminProcedure
+		.input(z.object({ domain: domainSchema }))
+		.mutation(async ({ input }) => {
+			if (!isSlackConfigured()) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "SLACK_CUSTOMERS_BOT_TOKEN is not configured",
+				});
+			}
+			const matches = await getChannelsForDomain(input.domain);
+			const joined = matches.filter((match) => match.isMember);
+			const results = await Promise.allSettled(
+				joined.map((match) =>
+					syncChannelTasks({
+						channelId: match.channelId,
+						channelName: match.name,
+						domain: input.domain,
+					}),
+				),
+			);
+			const failures = results
+				.map((result, index) =>
+					result.status === "rejected"
+						? `#${joined[index]?.name}: ${result.reason instanceof Error ? result.reason.message : "failed"}`
+						: null,
+				)
+				.filter((failure): failure is string => failure !== null);
+			return { synced: results.length - failures.length, failures };
 		}),
 } satisfies TRPCRouterRecord;
