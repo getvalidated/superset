@@ -290,7 +290,11 @@ function DomainDetailPage() {
 				</div>
 			</div>
 
-			<DomainUsersTable users={data.users} totalUsers={data.totalUsers} />
+			<DomainUsersTable
+				users={data.users}
+				totalUsers={data.totalUsers}
+				domain={data.domain}
+			/>
 		</div>
 	);
 }

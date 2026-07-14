@@ -25,6 +25,8 @@ import { LuMessageSquare, LuMonitor, LuTerminal } from "react-icons/lu";
 import { HealthBadge } from "@/components/HealthBadge";
 import { SocialLinks } from "@/components/SocialLinks";
 
+import { UserResearchButton } from "./components/UserResearchButton";
+
 type DomainUser = RouterOutputs["customers"]["domainDetail"]["users"][number];
 
 const SURFACE_ICONS: Record<string, { icon: IconType; label: string }> = {
@@ -41,9 +43,14 @@ const numberFormat = new Intl.NumberFormat("en-US", {
 export interface DomainUsersTableProps {
 	users: DomainUser[];
 	totalUsers: number;
+	domain: string;
 }
 
-export function DomainUsersTable({ users, totalUsers }: DomainUsersTableProps) {
+export function DomainUsersTable({
+	users,
+	totalUsers,
+	domain,
+}: DomainUsersTableProps) {
 	return (
 		<Card>
 			<CardHeader>
@@ -97,13 +104,18 @@ export function DomainUsersTable({ users, totalUsers }: DomainUsersTableProps) {
 												<span className="text-muted-foreground text-xs">
 													{user.email}
 												</span>
-												{user.research && (
+												{user.research ? (
 													<span className="text-muted-foreground flex items-center gap-2 text-xs">
 														{user.research.title ?? (
 															<span className="italic">Role unknown</span>
 														)}
 														<SocialLinks {...user.research} />
 													</span>
+												) : (
+													<UserResearchButton
+														userId={user.userId}
+														domain={domain}
+													/>
 												)}
 											</div>
 										</div>
