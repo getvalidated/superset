@@ -123,6 +123,7 @@ export function CanvasWindowFrame({
 	zIndex,
 	isFocused,
 	workspaceLabel,
+	onCloseWorkspace,
 	children,
 }: {
 	window: CanvasWindow;
@@ -130,6 +131,10 @@ export function CanvasWindowFrame({
 	zIndex: number;
 	isFocused: boolean;
 	workspaceLabel: string;
+	/** Close the workspace behind this window (confirm dialog upstream).
+	 *  Absent for windows with no closable workspace (main / unknown /
+	 *  ephemeral) — the button then just removes the window from the canvas. */
+	onCloseWorkspace?: () => void;
 	children: ReactNode;
 }) {
 	const frameRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +322,7 @@ export function CanvasWindowFrame({
 	}, [dismissWindow, window]);
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: right-click inside a window must not open the canvas background menu
 		<div
 			ref={frameRef}
 			data-canvas-window={window.id}
@@ -332,6 +338,7 @@ export function CanvasWindowFrame({
 				zIndex,
 			}}
 			onPointerDownCapture={focusWindow}
+			onContextMenu={(event) => event.stopPropagation()}
 		>
 			<div
 				className="flex h-8 shrink-0 cursor-grab select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 active:cursor-grabbing"
@@ -348,8 +355,8 @@ export function CanvasWindowFrame({
 					type="button"
 					className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
 					onPointerDown={(event) => event.stopPropagation()}
-					onClick={handleDismiss}
-					title="Remove from canvas"
+					onClick={onCloseWorkspace ?? handleDismiss}
+					title={onCloseWorkspace ? "Close workspace" : "Remove from canvas"}
 				>
 					<svg
 						aria-hidden="true"

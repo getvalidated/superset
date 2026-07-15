@@ -1,4 +1,11 @@
 import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from "@superset/ui/context-menu";
+import { Plus } from "lucide-react";
+import {
 	memo,
 	useCallback,
 	useEffect,
@@ -8,9 +15,12 @@ import {
 	useState,
 } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
+import { DashboardSidebarDeleteDialog } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarDeleteDialog";
+import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { DEFAULT_CANVAS_CAMERA } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
@@ -70,6 +80,9 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	workspaceLabel,
 	hostId,
 	organizationId,
+	closableWorkspaceId,
+	closableWorkspaceName,
+	onRequestCloseWorkspace,
 }: {
 	window: CanvasWindow;
 	store: StoreApi<CanvasStore>;
@@ -80,6 +93,10 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	workspaceLabel: string;
 	hostId: string | null;
 	organizationId: string;
+	/** Workspace to destroy from the frame's close button; null = plain remove. */
+	closableWorkspaceId: string | null;
+	closableWorkspaceName: string | null;
+	onRequestCloseWorkspace: (workspaceId: string, workspaceName: string) => void;
 }) {
 	const culled =
 		window.kind === "terminal"
@@ -92,6 +109,15 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 			zIndex={zIndex}
 			isFocused={isFocused}
 			workspaceLabel={workspaceLabel}
+			onCloseWorkspace={
+				closableWorkspaceId
+					? () =>
+							onRequestCloseWorkspace(
+								closableWorkspaceId,
+								closableWorkspaceName ?? "",
+							)
+					: undefined
+			}
 		>
 			{culled ? (
 				window.kind === "terminal" ? (
@@ -131,6 +157,8 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	// The canvas is org-global but always hosted by a workspace page; toolbar
 	// windows that need a workspace scope (search) bind to the route workspace.
 	const { workspace: routeWorkspace } = useWorkspace();
+	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
+	const { removeWorkspaceFromSidebar } = useDashboardSidebarState();
 	const store = useMemo(
 		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
 		[activeOrganizationId],
@@ -345,6 +373,44 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		});
 	}, [store]);
 
+	// Close button on a window frame → the sidebar's destroy-workspace confirm
+	// dialog. Windows without a closable workspace (main / unknown / ephemeral)
+	// keep the plain remove-from-canvas behavior in the frame itself.
+	const [closeTarget, setCloseTarget] = useState<{
+		workspaceId: string;
+		workspaceName: string;
+		open: boolean;
+	} | null>(null);
+
+	const handleWorkspaceDeleted = useCallback(
+		(workspaceId: string) => {
+			// Drop the workspace's windows now (dismissed, so seeding doesn't
+			// resurrect them while the host still reports the dying sessions) and
+			// release their parked terminal runtimes.
+			const state = store.getState();
+			const ids: string[] = [];
+			for (const window of Object.values(state.windows)) {
+				if (window.workspaceId !== workspaceId) continue;
+				if (window.kind === "terminal") {
+					const { terminalId } = window.data as CanvasTerminalData;
+					terminalRuntimeRegistry.release(terminalId, window.id);
+				}
+				ids.push(window.id);
+			}
+			state.removeWindows(ids, { dismiss: true });
+			removeWorkspaceFromSidebar(workspaceId);
+			setCloseTarget(null);
+		},
+		[store, removeWorkspaceFromSidebar],
+	);
+
+	const handleRequestCloseWorkspace = useCallback(
+		(workspaceId: string, workspaceName: string) => {
+			setCloseTarget({ workspaceId, workspaceName, open: true });
+		},
+		[],
+	);
+
 	const handleZoomToFit = useCallback(() => {
 		store
 			.getState()
@@ -358,61 +424,95 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	}, [store, handleGestureEnd]);
 
 	return (
-		<div
-			ref={viewportRef}
-			className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-muted/20"
-		>
-			<div
-				ref={planeRef}
-				className="absolute left-0 top-0 h-0 w-0"
-				style={{ transformOrigin: "0 0", willChange: "transform" }}
-			>
-				{zOrder.map((windowId, index) => {
-					const window = windows[windowId];
-					if (!window) return null;
-					const workspace = workspacesById.get(window.workspaceId);
-					return (
-						<CanvasWindowItem
-							key={window.id}
-							window={window}
-							store={store}
-							zIndex={index + 1}
-							isFocused={focusedWindowId === window.id}
-							isVisible={visibleIds.has(window.id)}
-							isLiveTerminal={liveTerminalIds.has(window.id)}
-							// Org-global windows (settings, "") carry no workspace label.
-							workspaceLabel={
-								workspace
-									? `${workspace.name} · ${workspace.branch}`
-									: window.workspaceId
-										? "unknown workspace"
-										: ""
-							}
-							hostId={workspace?.hostId ?? null}
-							organizationId={
-								workspace?.organizationId ?? activeOrganizationId ?? ""
-							}
-						/>
-					);
-				})}
-			</div>
-			<CanvasToolbar
-				store={store}
-				onZoomStep={handleZoomStep}
-				onZoomToFit={handleZoomToFit}
-				onOpenSearch={handleOpenSearch}
-				onOpenSettings={handleOpenSettings}
-				onExit={onExit}
-			/>
-			{windowList.length === 0 ? (
-				<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-					<p className="text-sm text-muted-foreground">
-						Nothing on the canvas yet — open files, diffs, and search from the
-						sidebar or toolbar.
-					</p>
+		<ContextMenu>
+			<ContextMenuTrigger asChild>
+				<div
+					ref={viewportRef}
+					className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-muted/20"
+				>
+					<div
+						ref={planeRef}
+						className="absolute left-0 top-0 h-0 w-0"
+						style={{ transformOrigin: "0 0", willChange: "transform" }}
+					>
+						{zOrder.map((windowId, index) => {
+							const window = windows[windowId];
+							if (!window) return null;
+							const workspace = workspacesById.get(window.workspaceId);
+							const closableWorkspace =
+								!window.ephemeral && workspace && workspace.type !== "main"
+									? workspace
+									: null;
+							return (
+								<CanvasWindowItem
+									key={window.id}
+									window={window}
+									store={store}
+									zIndex={index + 1}
+									isFocused={focusedWindowId === window.id}
+									isVisible={visibleIds.has(window.id)}
+									isLiveTerminal={liveTerminalIds.has(window.id)}
+									// Org-global windows (settings, "") carry no workspace label.
+									workspaceLabel={
+										workspace
+											? `${workspace.name} · ${workspace.branch}`
+											: window.workspaceId
+												? "unknown workspace"
+												: ""
+									}
+									hostId={workspace?.hostId ?? null}
+									organizationId={
+										workspace?.organizationId ?? activeOrganizationId ?? ""
+									}
+									closableWorkspaceId={closableWorkspace?.id ?? null}
+									closableWorkspaceName={
+										closableWorkspace
+											? closableWorkspace.name || closableWorkspace.branch
+											: null
+									}
+									onRequestCloseWorkspace={handleRequestCloseWorkspace}
+								/>
+							);
+						})}
+					</div>
+					<CanvasToolbar
+						store={store}
+						onZoomStep={handleZoomStep}
+						onZoomToFit={handleZoomToFit}
+						onOpenSearch={handleOpenSearch}
+						onOpenSettings={handleOpenSettings}
+						onExit={onExit}
+					/>
+					{windowList.length === 0 ? (
+						<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+							<p className="text-sm text-muted-foreground">
+								Nothing on the canvas yet — open files, diffs, and search from
+								the sidebar or toolbar.
+							</p>
+						</div>
+					) : null}
+					<CanvasSessionSeeder store={store} />
 				</div>
+			</ContextMenuTrigger>
+			<ContextMenuContent>
+				<ContextMenuItem
+					onSelect={() => openNewWorkspaceModal(routeWorkspace?.projectId)}
+				>
+					<Plus className="mr-2 size-4" />
+					New workspace
+				</ContextMenuItem>
+			</ContextMenuContent>
+			{closeTarget ? (
+				<DashboardSidebarDeleteDialog
+					workspaceId={closeTarget.workspaceId}
+					workspaceName={closeTarget.workspaceName}
+					open={closeTarget.open}
+					onOpenChange={(open) =>
+						setCloseTarget((target) => (target ? { ...target, open } : target))
+					}
+					onDeleted={() => handleWorkspaceDeleted(closeTarget.workspaceId)}
+				/>
 			) : null}
-			<CanvasSessionSeeder store={store} />
-		</div>
+		</ContextMenu>
 	);
 }
