@@ -1,5 +1,8 @@
 import { WebSocket as ReconnectingWebSocket } from "partysocket";
-import { primeRelayAffinity } from "../primeRelayAffinity";
+import {
+	primeRelayAffinity,
+	type RelayAffinityProbe,
+} from "../primeRelayAffinity";
 import { createOutageReporter } from "./outageReporter";
 
 export interface RelaySocketOptions {
@@ -19,6 +22,13 @@ export interface RelaySocketOptions {
 	onAccessDenied?: () => void;
 	/** Keep re-probing at this cadence after a 403 instead of closing. */
 	accessDeniedRetryMs?: number;
+	/**
+	 * Called with the `_whoowns` preflight result before every WS attempt (null
+	 * when the URL isn't relay-routed or the relay is unreachable). Lets callers
+	 * surface *why* a stream is down — host offline (503), unauthorized (401),
+	 * relay routing (502/200) — which the WS upgrade status otherwise hides.
+	 */
+	onProbe?: (probe: RelayAffinityProbe | null) => void;
 	minReconnectionDelay?: number;
 	maxReconnectionDelay?: number;
 	maxRetries?: number;
@@ -63,6 +73,7 @@ export function createRelaySocket(opts: RelaySocketOptions): RelaySocket {
 		const url = signUrl(await opts.buildUrl(), await opts.getToken());
 		const probe = await primeRelayAffinity(url);
 		reporter.attempt(url, probe);
+		opts.onProbe?.(probe);
 		if (probe?.status === 403) {
 			reporter.accessDenied(failuresSoFar());
 			opts.onAccessDenied?.();
