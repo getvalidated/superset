@@ -57,9 +57,11 @@ export function CanvasToolbar({
 	const zoom = useStore(store, (state) => state.camera.zoom);
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: right-click on the toolbar must not open the canvas background menu
 		<div
 			data-canvas-ui
 			className="absolute right-3 top-3 z-50 flex items-center gap-0.5 rounded-lg border border-border bg-background/95 px-1 py-0.5 shadow-md"
+			onContextMenu={(event) => event.stopPropagation()}
 		>
 			<ToolbarButton label="Zoom out" onClick={() => onZoomStep(1 / 1.2)}>
 				<Minus className="size-3.5" />
