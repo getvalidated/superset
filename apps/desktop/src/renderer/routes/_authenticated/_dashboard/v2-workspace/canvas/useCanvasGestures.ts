@@ -6,7 +6,7 @@ import type { CanvasStore } from "./canvasStore";
 
 const WHEEL_GESTURE_END_MS = 250;
 
-function isTextEntryTarget(target: EventTarget | null): boolean {
+export function isTextEntryTarget(target: EventTarget | null): boolean {
 	if (!(target instanceof HTMLElement)) return false;
 	if (target.isContentEditable) return true;
 	const tag = target.tagName;

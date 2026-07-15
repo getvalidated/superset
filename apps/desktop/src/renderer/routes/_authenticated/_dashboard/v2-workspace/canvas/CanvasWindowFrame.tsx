@@ -1,4 +1,3 @@
-import { alert } from "@superset/ui/atoms/Alert";
 import { cn } from "@superset/ui/utils";
 import {
 	Bot,
@@ -22,13 +21,13 @@ import { getBaseName } from "renderer/lib/pathBasename";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
-import { getDocument } from "../$workspaceId/state/fileDocumentStore";
 import type { CommentPaneData, FilePaneData } from "../$workspaceId/types";
 import {
 	MIN_CANVAS_WINDOW_HEIGHT,
 	MIN_CANVAS_WINDOW_WIDTH,
 } from "./canvasGeometry";
 import type { CanvasStore, CanvasWindow } from "./canvasStore";
+import { requestDismissCanvasWindow } from "./dismissCanvasWindow";
 import type {
 	CanvasSubagentData,
 	CanvasTerminalData,
@@ -127,7 +126,7 @@ export function CanvasWindowFrame({
 	zIndex,
 	isFocused,
 	workspaceLabel,
-	onCloseWorkspace,
+	headerExtras,
 	children,
 }: {
 	window: CanvasWindow;
@@ -135,10 +134,8 @@ export function CanvasWindowFrame({
 	zIndex: number;
 	isFocused: boolean;
 	workspaceLabel: string;
-	/** Close the workspace behind this window (confirm dialog upstream).
-	 *  Absent for windows with no closable workspace (main / unknown /
-	 *  ephemeral) — the button then just removes the window from the canvas. */
-	onCloseWorkspace?: () => void;
+	/** Extra controls rendered in the title bar before the close button. */
+	headerExtras?: ReactNode;
 	children: ReactNode;
 }) {
 	const frameRef = useRef<HTMLDivElement | null>(null);
@@ -273,57 +270,9 @@ export function CanvasWindowFrame({
 		[beginGeometryGesture, window],
 	);
 
-	const dismissWindow = useCallback(() => {
-		if (window.kind === "terminal") {
-			const { terminalId } = window.data as CanvasTerminalData;
-			terminalRuntimeRegistry.release(terminalId, window.id);
-		}
-		store.getState().removeWindows([window.id], { dismiss: true });
-	}, [store, window]);
-
 	const handleDismiss = useCallback(() => {
-		// Mirror the tabs registry's onBeforeClose: a dirty file window prompts
-		// to save instead of silently dropping edits with the window.
-		if (window.kind === "file") {
-			const { filePath } = window.data as FilePaneData;
-			const document = getDocument(window.workspaceId, filePath);
-			if (document?.dirty) {
-				const name = getBaseName(filePath);
-				alert({
-					title: `Do you want to save the changes you made to ${name}?`,
-					description: "Your changes will be lost if you don't save them.",
-					actions: [
-						{
-							label: "Save",
-							onClick: async () => {
-								const current = getDocument(window.workspaceId, filePath);
-								if (!current) {
-									dismissWindow();
-									return;
-								}
-								const result = await current.save();
-								// Keep the window open on a failed save so the user can
-								// see the conflict / error state and retry.
-								if (result.status === "saved") dismissWindow();
-							},
-						},
-						{
-							label: "Don't Save",
-							variant: "secondary",
-							onClick: async () => {
-								const current = getDocument(window.workspaceId, filePath);
-								if (current) await current.reload();
-								dismissWindow();
-							},
-						},
-						{ label: "Cancel", variant: "ghost", onClick: () => {} },
-					],
-				});
-				return;
-			}
-		}
-		dismissWindow();
-	}, [dismissWindow, window]);
+		requestDismissCanvasWindow(store, window);
+	}, [store, window]);
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: right-click inside a window must not open the canvas background menu
@@ -355,12 +304,20 @@ export function CanvasWindowFrame({
 				<span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground">
 					{workspaceLabel}
 				</span>
+				{headerExtras ? (
+					<div
+						className="flex shrink-0 items-center"
+						onPointerDown={(event) => event.stopPropagation()}
+					>
+						{headerExtras}
+					</div>
+				) : null}
 				<button
 					type="button"
 					className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
 					onPointerDown={(event) => event.stopPropagation()}
-					onClick={onCloseWorkspace ?? handleDismiss}
-					title={onCloseWorkspace ? "Close workspace" : "Remove from canvas"}
+					onClick={handleDismiss}
+					title="Remove from canvas"
 				>
 					<svg
 						aria-hidden="true"
