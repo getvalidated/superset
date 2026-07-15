@@ -35,7 +35,9 @@ import {
 } from "./openCanvasWindow";
 import { CanvasSearchPane } from "./panes/CanvasSearchPane";
 import { CanvasSettingsPane } from "./panes/CanvasSettingsPane";
+import { SubagentPane } from "./SubagentPane";
 import {
+	type CanvasSubagentData,
 	type CanvasTerminalData,
 	writeBrowserPaneDataToWorkspace,
 } from "./useCanvasSeeding";
@@ -241,6 +243,14 @@ export function CanvasWindowContent({
 		(data: unknown) => store.getState().updateWindowData(window.id, data),
 		[store, window.id],
 	);
+
+	if (window.kind === "subagent") {
+		return (
+			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+				<SubagentPane data={window.data as CanvasSubagentData} />
+			</CanvasHostProvider>
+		);
+	}
 
 	if (window.kind === "terminal") {
 		return (
