@@ -1,5 +1,12 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { Columns3, Maximize, Minus, Plus } from "lucide-react";
+import {
+	Columns3,
+	Maximize,
+	Minus,
+	Plus,
+	Search,
+	Settings,
+} from "lucide-react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { clampZoom } from "./canvasGeometry";
@@ -36,11 +43,15 @@ export function CanvasToolbar({
 	store,
 	onZoomStep,
 	onZoomToFit,
+	onOpenSearch,
+	onOpenSettings,
 	onExit,
 }: {
 	store: StoreApi<CanvasStore>;
 	onZoomStep: (factor: number) => void;
 	onZoomToFit: () => void;
+	onOpenSearch: () => void;
+	onOpenSettings: () => void;
 	onExit: () => void;
 }) {
 	const zoom = useStore(store, (state) => state.camera.zoom);
@@ -61,6 +72,13 @@ export function CanvasToolbar({
 			</ToolbarButton>
 			<ToolbarButton label="Zoom to fit" onClick={onZoomToFit}>
 				<Maximize className="size-3.5" />
+			</ToolbarButton>
+			<div className="mx-0.5 h-3.5 w-px bg-border" />
+			<ToolbarButton label="New search window" onClick={onOpenSearch}>
+				<Search className="size-3.5" />
+			</ToolbarButton>
+			<ToolbarButton label="Settings window" onClick={onOpenSettings}>
+				<Settings className="size-3.5" />
 			</ToolbarButton>
 			<div className="mx-0.5 h-3.5 w-px bg-border" />
 			<ToolbarButton label="Back to tabs" onClick={onExit}>

@@ -1,5 +1,13 @@
+import { alert } from "@superset/ui/atoms/Alert";
 import { cn } from "@superset/ui/utils";
-import { Globe, TerminalSquare } from "lucide-react";
+import {
+	GitCompareArrows,
+	Globe,
+	MessageSquare,
+	Search,
+	Settings,
+	TerminalSquare,
+} from "lucide-react";
 import {
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
@@ -8,9 +16,13 @@ import {
 	useRef,
 	useSyncExternalStore,
 } from "react";
+import { FileIcon } from "renderer/lib/fileIcons";
+import { getBaseName } from "renderer/lib/pathBasename";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
+import { getDocument } from "../$workspaceId/state/fileDocumentStore";
+import type { CommentPaneData, FilePaneData } from "../$workspaceId/types";
 import {
 	MIN_CANVAS_WINDOW_HEIGHT,
 	MIN_CANVAS_WINDOW_WIDTH,
@@ -252,13 +264,57 @@ export function CanvasWindowFrame({
 		[beginGeometryGesture, window],
 	);
 
-	const handleDismiss = useCallback(() => {
+	const dismissWindow = useCallback(() => {
 		if (window.kind === "terminal") {
 			const { terminalId } = window.data as CanvasTerminalData;
 			terminalRuntimeRegistry.release(terminalId, window.id);
 		}
 		store.getState().removeWindows([window.id], { dismiss: true });
 	}, [store, window]);
+
+	const handleDismiss = useCallback(() => {
+		// Mirror the tabs registry's onBeforeClose: a dirty file window prompts
+		// to save instead of silently dropping edits with the window.
+		if (window.kind === "file") {
+			const { filePath } = window.data as FilePaneData;
+			const document = getDocument(window.workspaceId, filePath);
+			if (document?.dirty) {
+				const name = getBaseName(filePath);
+				alert({
+					title: `Do you want to save the changes you made to ${name}?`,
+					description: "Your changes will be lost if you don't save them.",
+					actions: [
+						{
+							label: "Save",
+							onClick: async () => {
+								const current = getDocument(window.workspaceId, filePath);
+								if (!current) {
+									dismissWindow();
+									return;
+								}
+								const result = await current.save();
+								// Keep the window open on a failed save so the user can
+								// see the conflict / error state and retry.
+								if (result.status === "saved") dismissWindow();
+							},
+						},
+						{
+							label: "Don't Save",
+							variant: "secondary",
+							onClick: async () => {
+								const current = getDocument(window.workspaceId, filePath);
+								if (current) await current.reload();
+								dismissWindow();
+							},
+						},
+						{ label: "Cancel", variant: "ghost", onClick: () => {} },
+					],
+				});
+				return;
+			}
+		}
+		dismissWindow();
+	}, [dismissWindow, window]);
 
 	return (
 		<div
@@ -281,15 +337,9 @@ export function CanvasWindowFrame({
 				className="flex h-8 shrink-0 cursor-grab select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 active:cursor-grabbing"
 				onPointerDown={handleTitleBarPointerDown}
 			>
-				{window.kind === "terminal" ? (
-					<TerminalSquare className="size-3.5 shrink-0 text-muted-foreground" />
-				) : (
-					<Globe className="size-3.5 shrink-0 text-muted-foreground" />
-				)}
+				<WindowIcon window={window} />
 				<span className="min-w-0 truncate text-xs text-foreground">
-					{window.kind === "terminal"
-						? terminalTitle
-						: browserWindowTitle(window)}
+					{window.kind === "terminal" ? terminalTitle : windowTitle(window)}
 				</span>
 				<span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground">
 					{workspaceLabel}
@@ -338,6 +388,68 @@ function browserWindowTitle(window: CanvasWindow): string {
 		}
 	}
 	return "Browser";
+}
+
+const ICON_CLASS = "size-3.5 shrink-0 text-muted-foreground";
+
+function WindowIcon({ window }: { window: CanvasWindow }) {
+	switch (window.kind) {
+		case "terminal":
+			return <TerminalSquare className={ICON_CLASS} />;
+		case "browser":
+			return <Globe className={ICON_CLASS} />;
+		case "file":
+			return (
+				<FileIcon
+					fileName={getBaseName((window.data as FilePaneData).filePath)}
+					className="size-3.5 shrink-0"
+				/>
+			);
+		case "diff":
+			return <GitCompareArrows className={ICON_CLASS} />;
+		case "comment": {
+			const { avatarUrl } = window.data as CommentPaneData;
+			if (avatarUrl) {
+				return (
+					<img
+						src={avatarUrl}
+						alt=""
+						className="size-3.5 shrink-0 rounded-full"
+					/>
+				);
+			}
+			return <MessageSquare className={ICON_CLASS} />;
+		}
+		case "chat":
+			return <MessageSquare className={ICON_CLASS} />;
+		case "search":
+			return <Search className={ICON_CLASS} />;
+		case "settings":
+			return <Settings className={ICON_CLASS} />;
+	}
+}
+
+/** Title for every kind except terminal, whose live runtime title comes from
+ *  useTerminalWindowTitle. */
+function windowTitle(window: CanvasWindow): string {
+	switch (window.kind) {
+		case "browser":
+			return browserWindowTitle(window);
+		case "file":
+			return getBaseName((window.data as FilePaneData).filePath);
+		case "diff":
+			return "Changes";
+		case "comment":
+			return (window.data as CommentPaneData).authorLogin || "Comment";
+		case "chat":
+			return "Chat";
+		case "search":
+			return "Search";
+		case "settings":
+			return "Settings";
+		default:
+			return "";
+	}
 }
 
 /**

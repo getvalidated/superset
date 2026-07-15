@@ -35,6 +35,9 @@ export interface CanvasStore {
 	/** Windows explicitly closed this session — reconciliation skips them so
 	 *  a dismissed mirror doesn't immediately reappear. */
 	dismissedWindowIds: Set<string>;
+	/** Last measured canvas viewport size, for placing new windows in view.
+	 *  {0,0} until CanvasView's ResizeObserver reports. */
+	viewportSize: { width: number; height: number };
 
 	upsertWindows: (windows: CanvasWindow[]) => void;
 	removeWindows: (ids: string[], options?: { dismiss?: boolean }) => void;
@@ -44,6 +47,7 @@ export interface CanvasStore {
 	setFocusedWindow: (id: string | null) => void;
 	setCamera: (camera: CanvasCamera) => void;
 	setGestureActive: (active: boolean) => void;
+	setViewportSize: (size: { width: number; height: number }) => void;
 	setHydrated: () => void;
 	replaceState: (row: GlobalCanvasLayoutRow) => void;
 	toPersistedRow: () => GlobalCanvasLayoutRow;
@@ -74,6 +78,7 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		gestureActive: false,
 		hydrated: false,
 		dismissedWindowIds: new Set(),
+		viewportSize: { width: 0, height: 0 },
 
 		upsertWindows: (incoming) => {
 			if (incoming.length === 0) return;
@@ -152,6 +157,15 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		setGestureActive: (active) => {
 			set((state) =>
 				state.gestureActive === active ? state : { gestureActive: active },
+			);
+		},
+
+		setViewportSize: (size) => {
+			set((state) =>
+				state.viewportSize.width === size.width &&
+				state.viewportSize.height === size.height
+					? state
+					: { viewportSize: size },
 			);
 		},
 

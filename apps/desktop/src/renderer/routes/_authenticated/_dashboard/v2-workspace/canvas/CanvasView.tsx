@@ -14,6 +14,7 @@ import { useLocalHostService } from "renderer/routes/_authenticated/providers/Lo
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
+import { useWorkspace } from "../providers/WorkspaceProvider";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasWindowContent } from "./CanvasWindowContent";
 import {
@@ -33,6 +34,12 @@ import {
 	type CanvasWindow,
 	getGlobalCanvasStore,
 } from "./canvasStore";
+import {
+	type CanvasSearchData,
+	type CanvasSettingsData,
+	canvasWindowIds,
+	openCanvasWindow,
+} from "./openCanvasWindow";
 import { useCanvasGestures } from "./useCanvasGestures";
 import {
 	CanvasSessionSeeder,
@@ -121,6 +128,9 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
  */
 export function CanvasView({ onExit }: { onExit: () => void }) {
 	const { activeOrganizationId } = useLocalHostService();
+	// The canvas is org-global but always hosted by a workspace page; toolbar
+	// windows that need a workspace scope (search) bind to the route workspace.
+	const { workspace: routeWorkspace } = useWorkspace();
 	const store = useMemo(
 		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
 		[activeOrganizationId],
@@ -176,11 +186,14 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		const observer = new ResizeObserver(() => {
 			const rect = viewport.getBoundingClientRect();
 			viewportSizeRef.current = { width: rect.width, height: rect.height };
+			// Mirror into the store so out-of-view openers (sidebar clicks,
+			// quick open) can place new windows inside the current viewport.
+			store.getState().setViewportSize(viewportSizeRef.current);
 			setCullTick((tick) => tick + 1);
 		});
 		observer.observe(viewport);
 		return () => observer.disconnect();
-	}, []);
+	}, [store]);
 
 	// Every browser webview a canvas zoom has been applied to, so leaving canvas
 	// mode can reset each one to 1× — including any dismissed while zoomed, which
@@ -310,6 +323,28 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		[store, handleGestureEnd],
 	);
 
+	const handleOpenSearch = useCallback(() => {
+		openCanvasWindow(store, {
+			id: `search:${crypto.randomUUID()}`,
+			kind: "search",
+			workspaceId: routeWorkspace.id,
+			data: {} satisfies CanvasSearchData,
+			ephemeral: true,
+		});
+	}, [store, routeWorkspace.id]);
+
+	const handleOpenSettings = useCallback(() => {
+		openCanvasWindow(store, {
+			id: canvasWindowIds.settings(),
+			kind: "settings",
+			workspaceId: "",
+			data: { section: "appearance" } satisfies CanvasSettingsData,
+			// Re-opening focuses the existing window without resetting the
+			// section it was left on.
+			onExisting: "keep-data",
+		});
+	}, [store]);
+
 	const handleZoomToFit = useCallback(() => {
 		store
 			.getState()
@@ -345,10 +380,13 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 							isFocused={focusedWindowId === window.id}
 							isVisible={visibleIds.has(window.id)}
 							isLiveTerminal={liveTerminalIds.has(window.id)}
+							// Org-global windows (settings, "") carry no workspace label.
 							workspaceLabel={
 								workspace
 									? `${workspace.name} · ${workspace.branch}`
-									: "unknown workspace"
+									: window.workspaceId
+										? "unknown workspace"
+										: ""
 							}
 							hostId={workspace?.hostId ?? null}
 							organizationId={
@@ -362,12 +400,15 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				store={store}
 				onZoomStep={handleZoomStep}
 				onZoomToFit={handleZoomToFit}
+				onOpenSearch={handleOpenSearch}
+				onOpenSettings={handleOpenSettings}
 				onExit={onExit}
 			/>
 			{windowList.length === 0 ? (
 				<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
 					<p className="text-sm text-muted-foreground">
-						No active terminal sessions or browser panes yet.
+						Nothing on the canvas yet — open files, diffs, and search from the
+						sidebar or toolbar.
 					</p>
 				</div>
 			) : null}
