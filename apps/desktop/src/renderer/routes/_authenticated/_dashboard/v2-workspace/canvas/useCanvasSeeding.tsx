@@ -19,6 +19,119 @@ export function terminalWindowId(terminalId: string): string {
 	return `${TERMINAL_WINDOW_ID_PREFIX}${terminalId}`;
 }
 
+export const SUBAGENT_WINDOW_ID_PREFIX = "subagent:";
+
+export function subagentWindowId(
+	agentSessionId: string,
+	subagentId: string,
+): string {
+	return `${SUBAGENT_WINDOW_ID_PREFIX}${agentSessionId}:${subagentId}`;
+}
+
+/** Transcript identity a subagent window needs to tail its file. */
+export interface CanvasSubagentData {
+	terminalId: string;
+	agentSessionId: string;
+	subagentId: string;
+	/** The subagent's task prompt, truncated host-side. */
+	title: string;
+	startedAtMs: number;
+}
+
+interface SubagentSummary extends CanvasSubagentData {
+	workspaceId: string;
+	mtimeMs: number;
+}
+
+/** Don't seed windows for subagents that finished this long ago — a
+ *  long-lived session can accumulate dozens; only fresh ones auto-appear.
+ *  Existing windows are kept regardless until the parent session dies. */
+const SUBAGENT_SEED_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Diff one host's subagent transcripts (from live Claude terminal sessions)
+ * against the canvas subagent windows owned by that host. New recent
+ * transcripts get windows; windows whose transcript vanished from the list
+ * (parent terminal exited) are pruned.
+ */
+export function reconcileSubagentWindows({
+	store,
+	hostWorkspaceIds,
+	subagents,
+	now = Date.now(),
+}: {
+	store: StoreApi<CanvasStore>;
+	hostWorkspaceIds: readonly string[];
+	subagents: readonly SubagentSummary[];
+	now?: number;
+}): void {
+	const state = store.getState();
+	const live = new Map<string, SubagentSummary>();
+	const scope = new Set(hostWorkspaceIds);
+	for (const subagent of subagents) {
+		scope.add(subagent.workspaceId);
+		live.set(
+			subagentWindowId(subagent.agentSessionId, subagent.subagentId),
+			subagent,
+		);
+	}
+
+	const toRemove: string[] = [];
+	for (const window of Object.values(state.windows)) {
+		if (window.kind !== "subagent" || !scope.has(window.workspaceId)) continue;
+		if (!live.has(window.id)) toRemove.push(window.id);
+	}
+	if (toRemove.length > 0) state.removeWindows(toRemove);
+
+	const toAdd: SubagentSummary[] = [];
+	const toRefresh: CanvasWindow[] = [];
+	for (const [id, subagent] of live) {
+		if (state.dismissedWindowIds.has(id)) continue;
+		const existing = state.windows[id];
+		if (existing) {
+			const data = existing.data as CanvasSubagentData;
+			if (data.title !== subagent.title) {
+				toRefresh.push({
+					...existing,
+					data: { ...data, title: subagent.title },
+				});
+			}
+			continue;
+		}
+		if (now - subagent.mtimeMs > SUBAGENT_SEED_WINDOW_MS) continue;
+		toAdd.push(subagent);
+	}
+
+	if (toAdd.length > 0) {
+		toAdd.sort(
+			(a, b) =>
+				a.startedAtMs - b.startedAtMs ||
+				a.subagentId.localeCompare(b.subagentId),
+		);
+		const placements = planWindowPlacements({
+			existing: Object.values(store.getState().windows),
+			toPlaceCount: toAdd.length,
+		});
+		state.upsertWindows(
+			toAdd.map((subagent, index) => ({
+				id: subagentWindowId(subagent.agentSessionId, subagent.subagentId),
+				kind: "subagent" as const,
+				workspaceId: subagent.workspaceId,
+				...placements[index],
+				data: {
+					terminalId: subagent.terminalId,
+					agentSessionId: subagent.agentSessionId,
+					subagentId: subagent.subagentId,
+					title: subagent.title,
+					startedAtMs: subagent.startedAtMs,
+				} satisfies CanvasSubagentData,
+			})),
+		);
+	}
+
+	if (toRefresh.length > 0) state.upsertWindows(toRefresh);
+}
+
 /** Extra fields the canvas keeps alongside TerminalPaneData. */
 export interface CanvasTerminalData extends TerminalPaneData {
 	/** Last known session title, for placeholder cards. */
@@ -141,6 +254,14 @@ function HostSessionsSync({
 			retry: 1,
 		},
 	);
+	// Subagent transcripts appear/grow on their own cadence (seconds, not
+	// session lifetimes), so they poll faster than sessions. Older hosts
+	// without the subagents router simply error out and contribute none.
+	const subagentsQuery = workspaceTrpc.subagents.listAll.useQuery(undefined, {
+		refetchInterval: 5_000,
+		refetchOnWindowFocus: true,
+		retry: 1,
+	});
 	const hydrated = useStore(store, (state) => state.hydrated);
 
 	useEffect(() => {
@@ -154,6 +275,16 @@ function HostSessionsSync({
 			sessions: sessionsQuery.data.sessions,
 		});
 	}, [sessionsQuery.data, hostWorkspaceIds, store, hydrated]);
+
+	useEffect(() => {
+		if (!hydrated) return;
+		if (!subagentsQuery.data) return;
+		reconcileSubagentWindows({
+			store,
+			hostWorkspaceIds,
+			subagents: subagentsQuery.data.subagents,
+		});
+	}, [subagentsQuery.data, hostWorkspaceIds, store, hydrated]);
 
 	return null;
 }

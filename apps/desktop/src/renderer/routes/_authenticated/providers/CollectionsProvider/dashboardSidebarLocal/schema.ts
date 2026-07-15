@@ -95,6 +95,7 @@ const canvasWindowSchema = z.object({
 	kind: z.enum([
 		"terminal",
 		"browser",
+		"subagent",
 		"file",
 		"diff",
 		"chat",

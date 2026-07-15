@@ -1,6 +1,7 @@
 import { alert } from "@superset/ui/atoms/Alert";
 import { cn } from "@superset/ui/utils";
 import {
+	Bot,
 	GitCompareArrows,
 	Globe,
 	MessageSquare,
@@ -28,7 +29,10 @@ import {
 	MIN_CANVAS_WINDOW_WIDTH,
 } from "./canvasGeometry";
 import type { CanvasStore, CanvasWindow } from "./canvasStore";
-import type { CanvasTerminalData } from "./useCanvasSeeding";
+import type {
+	CanvasSubagentData,
+	CanvasTerminalData,
+} from "./useCanvasSeeding";
 
 interface ResizeEdges {
 	left?: boolean;
@@ -384,6 +388,11 @@ export function CanvasWindowFrame({
 	);
 }
 
+function subagentWindowTitle(window: CanvasWindow): string {
+	const data = window.data as CanvasSubagentData;
+	return data.title?.trim() || "Subagent";
+}
+
 function browserWindowTitle(window: CanvasWindow): string {
 	const data = window.data as { url?: string; pageTitle?: string };
 	if (data.pageTitle) return data.pageTitle;
@@ -405,6 +414,8 @@ function WindowIcon({ window }: { window: CanvasWindow }) {
 			return <TerminalSquare className={ICON_CLASS} />;
 		case "browser":
 			return <Globe className={ICON_CLASS} />;
+		case "subagent":
+			return <Bot className={ICON_CLASS} />;
 		case "file":
 			return (
 				<FileIcon
@@ -442,6 +453,8 @@ function windowTitle(window: CanvasWindow): string {
 	switch (window.kind) {
 		case "browser":
 			return browserWindowTitle(window);
+		case "subagent":
+			return subagentWindowTitle(window);
 		case "file":
 			return getBaseName((window.data as FilePaneData).filePath);
 		case "diff":

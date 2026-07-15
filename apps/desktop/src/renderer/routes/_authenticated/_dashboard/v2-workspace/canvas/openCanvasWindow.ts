@@ -20,6 +20,7 @@ export const CANVAS_WINDOW_DEFAULT_SIZES: Record<
 > = {
 	terminal: { width: 640, height: 420 },
 	browser: { width: 800, height: 560 },
+	subagent: { width: 520, height: 480 },
 	file: { width: 720, height: 520 },
 	diff: { width: 860, height: 600 },
 	chat: { width: 520, height: 620 },
