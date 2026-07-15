@@ -1,4 +1,5 @@
 import {
+	memo,
 	useCallback,
 	useEffect,
 	useLayoutEffect,
@@ -11,10 +12,12 @@ import { DEFAULT_CANVAS_CAMERA } from "renderer/routes/_authenticated/providers/
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useStore } from "zustand";
+import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasWindowContent } from "./CanvasWindowContent";
 import {
+	CanvasBrowserPlaceholder,
 	CanvasTerminalPlaceholder,
 	CanvasWindowFrame,
 } from "./CanvasWindowFrame";
@@ -25,7 +28,11 @@ import {
 	pickLiveTerminalWindowIds,
 	zoomAtPoint,
 } from "./canvasGeometry";
-import { getGlobalCanvasStore } from "./canvasStore";
+import {
+	type CanvasStore,
+	type CanvasWindow,
+	getGlobalCanvasStore,
+} from "./canvasStore";
 import { useCanvasGestures } from "./useCanvasGestures";
 import {
 	CanvasSessionSeeder,
@@ -33,6 +40,75 @@ import {
 	useCanvasBrowserMirror,
 } from "./useCanvasSeeding";
 import { useGlobalCanvasLayout } from "./useGlobalCanvasLayout";
+
+/**
+ * One canvas window, memoized so a single-window store change (a title
+ * refresh from the 15s reconcile, another window's drag commit, a focus flip)
+ * doesn't re-render every frame on the plane.
+ *
+ * Off-screen content is culled to cheap placeholders. Terminals outside the
+ * live set have their runtime parked/released by the parent; mirrored browser
+ * windows unmount their BrowserPane, which detaches the webview (hidden,
+ * skipped by pan-time relayoutAll) while its page state survives in the
+ * registry. Ephemeral browser windows stay mounted — unmounting destroys
+ * their webview outright — and the focused window always renders live.
+ */
+const CanvasWindowItem = memo(function CanvasWindowItem({
+	window,
+	store,
+	zIndex,
+	isFocused,
+	isVisible,
+	isLiveTerminal,
+	workspaceLabel,
+	hostId,
+	organizationId,
+}: {
+	window: CanvasWindow;
+	store: StoreApi<CanvasStore>;
+	zIndex: number;
+	isFocused: boolean;
+	isVisible: boolean;
+	isLiveTerminal: boolean;
+	workspaceLabel: string;
+	hostId: string | null;
+	organizationId: string;
+}) {
+	const culled =
+		window.kind === "terminal"
+			? !isLiveTerminal
+			: !isVisible && !window.ephemeral && !isFocused;
+	return (
+		<CanvasWindowFrame
+			window={window}
+			store={store}
+			zIndex={zIndex}
+			isFocused={isFocused}
+			workspaceLabel={workspaceLabel}
+		>
+			{culled ? (
+				window.kind === "terminal" ? (
+					<CanvasTerminalPlaceholder
+						window={window}
+						connectionHint={
+							isVisible ? undefined : "off-screen — click to focus"
+						}
+					/>
+				) : (
+					<CanvasBrowserPlaceholder window={window} />
+				)
+			) : (
+				<CanvasWindowContent
+					window={window}
+					isFocused={isFocused}
+					store={store}
+					hostId={hostId}
+					organizationId={organizationId}
+				/>
+			)}
+		</CanvasWindowFrame>
+	);
+});
 
 /**
  * The global infinite-canvas display mode: every live terminal session
@@ -260,41 +336,25 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 					const window = windows[windowId];
 					if (!window) return null;
 					const workspace = workspacesById.get(window.workspaceId);
-					const workspaceLabel = workspace
-						? `${workspace.name} · ${workspace.branch}`
-						: "unknown workspace";
-					const isFocused = focusedWindowId === window.id;
-					const isVisible = visibleIds.has(window.id);
-					const renderLiveTerminal =
-						window.kind === "terminal" && liveTerminalIds.has(window.id);
 					return (
-						<CanvasWindowFrame
+						<CanvasWindowItem
 							key={window.id}
 							window={window}
 							store={store}
 							zIndex={index + 1}
-							isFocused={isFocused}
-							workspaceLabel={workspaceLabel}
-						>
-							{window.kind === "terminal" && !renderLiveTerminal ? (
-								<CanvasTerminalPlaceholder
-									window={window}
-									connectionHint={
-										isVisible ? undefined : "off-screen — click to focus"
-									}
-								/>
-							) : (
-								<CanvasWindowContent
-									window={window}
-									isFocused={isFocused}
-									store={store}
-									hostId={workspace?.hostId ?? null}
-									organizationId={
-										workspace?.organizationId ?? activeOrganizationId ?? ""
-									}
-								/>
-							)}
-						</CanvasWindowFrame>
+							isFocused={focusedWindowId === window.id}
+							isVisible={visibleIds.has(window.id)}
+							isLiveTerminal={liveTerminalIds.has(window.id)}
+							workspaceLabel={
+								workspace
+									? `${workspace.name} · ${workspace.branch}`
+									: "unknown workspace"
+							}
+							hostId={workspace?.hostId ?? null}
+							organizationId={
+								workspace?.organizationId ?? activeOrganizationId ?? ""
+							}
+						/>
 					);
 				})}
 			</div>

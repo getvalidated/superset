@@ -341,6 +341,26 @@ function browserWindowTitle(window: CanvasWindow): string {
 }
 
 /**
+ * Stand-in for a culled (off-viewport) mirrored browser window. The webview
+ * stays alive in the registry — just detached and hidden, so page state
+ * survives and pan-time relayout skips it. Panning it back into view (or
+ * clicking to focus) reattaches it in place.
+ */
+export function CanvasBrowserPlaceholder({ window }: { window: CanvasWindow }) {
+	return (
+		<div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-background/60">
+			<Globe className="size-8 text-muted-foreground/40" />
+			<span className="max-w-[80%] truncate text-xs text-muted-foreground">
+				{browserWindowTitle(window)}
+			</span>
+			<span className="text-[10px] text-muted-foreground/60">
+				off-screen — click to focus
+			</span>
+		</div>
+	);
+}
+
+/**
  * Stand-in for a culled terminal window (off-viewport, far zoom-out, or over
  * the live-terminal cap). The runtime stays parked; clicking focuses the
  * window, which promotes it into the live set.
