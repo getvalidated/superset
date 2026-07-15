@@ -2,10 +2,24 @@ import { homedir } from "node:os";
 import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { TRPCError } from "@trpc/server";
 
+// Dev instances run under a SUPERSET_WORKSPACE_NAME (written to the worktree
+// .env by .superset/setup.local.sh) and must not share the production app's
+// ~/.superset/worktrees. Mirrors SUPERSET_DIR_NAME in the desktop app's
+// shared/constants.ts, which the v1 resolver used for the same default.
+function supersetDirName(): string {
+	const workspace = process.env.SUPERSET_WORKSPACE_NAME?.trim();
+	if (!workspace || workspace === "superset") return ".superset";
+	const slug = workspace
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "-")
+		.slice(0, 32);
+	return slug ? `.superset-${slug}` : ".superset";
+}
+
 // Kept outside the primary checkout so editors, file watchers, and
 // ignore rules treat worktrees as separate trees, not nested ones.
 export function defaultWorktreesRoot(): string {
-	return join(homedir(), ".superset", "worktrees");
+	return join(homedir(), supersetDirName(), "worktrees");
 }
 
 export function normalizeWorktreeBaseDir(
