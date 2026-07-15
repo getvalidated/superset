@@ -8,6 +8,7 @@ import {
 	setSystemTime,
 	test,
 } from "bun:test";
+import * as relaySocketModule from "@superset/workspace-client/relay-socket";
 import type { Terminal as XTerm } from "@xterm/xterm";
 
 // The transport builds on createRelaySocket (partysocket) — reconnection,
@@ -104,13 +105,16 @@ class FakeRelaySocket {
 	}
 }
 
+// bun's mock.module is process-global and leaks to every later test file in the
+// whole desktop run, so a partial stub breaks unrelated tests that import the
+// module's other named exports. Preserve the real exports and override only
+// createRelaySocket. (auth-client / posthog are deliberately NOT mocked: with a
+// faked socket getToken/ensureFreshJwt never runs, and posthog.capture before
+// init is a harmless no-op — the real modules load fine, as the prior test did.)
 mock.module("@superset/workspace-client/relay-socket", () => ({
+	...relaySocketModule,
 	createRelaySocket: (options: Record<string, unknown>) =>
 		new FakeRelaySocket(options),
-}));
-mock.module("renderer/lib/posthog", () => ({ posthog: { capture: () => {} } }));
-mock.module("renderer/lib/auth-client", () => ({
-	ensureFreshJwt: async () => "tok",
 }));
 
 const { connect, createTransport, disconnect, reconnect } = await import(
