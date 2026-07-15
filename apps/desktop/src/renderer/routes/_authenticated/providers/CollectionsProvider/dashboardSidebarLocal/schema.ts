@@ -92,7 +92,17 @@ export function sanitizePaneLayout(raw: unknown): WorkspaceState<unknown> {
 
 const canvasWindowSchema = z.object({
 	id: z.string(),
-	kind: z.enum(["terminal", "browser"]),
+	kind: z.enum([
+		"terminal",
+		"browser",
+		"file",
+		"diff",
+		"chat",
+		"comment",
+		"search",
+		"settings",
+	]),
+	/** Owning workspace; "" for org-global windows (search, settings). */
 	workspaceId: z.string(),
 	x: z.number().finite(),
 	y: z.number().finite(),

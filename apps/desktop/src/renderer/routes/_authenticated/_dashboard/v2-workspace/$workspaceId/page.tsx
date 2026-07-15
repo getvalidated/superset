@@ -22,6 +22,7 @@ import { WorkspaceEmptyState } from "./components/WorkspaceEmptyState";
 import { WorkspaceMissingWorktreeState } from "./components/WorkspaceMissingWorktreeState";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { useBrowserShellInteractionPassthrough } from "./hooks/useBrowserShellInteractionPassthrough";
+import { useCanvasWindowOpeners } from "./hooks/useCanvasWindowOpeners";
 import { useClearActivePaneAttention } from "./hooks/useClearActivePaneAttention";
 import { useConsumeAutomationRunLink } from "./hooks/useConsumeAutomationRunLink";
 import { useConsumeOpenUrlRequest } from "./hooks/useConsumeOpenUrlRequest";
@@ -225,23 +226,26 @@ function V2WorkspaceContent() {
 		},
 		[closeQuickOpen],
 	);
-	// Sidebar/quick-open picks open panes in the tabbed layout. In canvas mode
-	// that layout is hidden, so switch back to it first — otherwise the click
-	// appears to do nothing.
-	const ensureTabsMode = useCallback(() => {
-		if (displayMode !== "tabs") setDisplayMode("tabs");
-	}, [displayMode, setDisplayMode]);
+	// Sidebar/quick-open picks open panes in the tabbed layout; in canvas mode
+	// they open free-floating windows on the global canvas instead.
+	const { openFileOnCanvas, openDiffOnCanvas, openCommentOnCanvas } =
+		useCanvasWindowOpeners({ workspaceId });
 	// Picking a file from Quick Open should surface the sidebar/Files tab so
-	// the reveal (expand + highlight + scroll) is actually visible.
+	// the reveal (expand + highlight + scroll) is actually visible. On the
+	// canvas there's no reveal to show — just open the window.
 	const handleQuickOpenSelectFile = useCallback(
 		(filePath: string, openInNewTab?: boolean) => {
-			ensureTabsMode();
+			if (displayMode === "canvas") {
+				openFileOnCanvas(filePath, openInNewTab);
+				return;
+			}
 			setRightSidebarOpen(true);
 			setRightSidebarTab("files");
 			openFilePaneFromTreeClick(filePath, openInNewTab);
 		},
 		[
-			ensureTabsMode,
+			displayMode,
+			openFileOnCanvas,
 			openFilePaneFromTreeClick,
 			setRightSidebarOpen,
 			setRightSidebarTab,
@@ -252,24 +256,33 @@ function V2WorkspaceContent() {
 
 	const handleSidebarSelectFile = useCallback(
 		(...args: Parameters<typeof openFilePaneFromTreeClick>) => {
-			ensureTabsMode();
+			if (displayMode === "canvas") {
+				openFileOnCanvas(...args);
+				return;
+			}
 			openFilePaneFromTreeClick(...args);
 		},
-		[ensureTabsMode, openFilePaneFromTreeClick],
+		[displayMode, openFileOnCanvas, openFilePaneFromTreeClick],
 	);
 	const handleSidebarSelectDiffFile = useCallback(
 		(...args: Parameters<typeof openDiffPane>) => {
-			ensureTabsMode();
+			if (displayMode === "canvas") {
+				openDiffOnCanvas(...args);
+				return;
+			}
 			openDiffPane(...args);
 		},
-		[ensureTabsMode, openDiffPane],
+		[displayMode, openDiffOnCanvas, openDiffPane],
 	);
 	const handleSidebarOpenComment = useCallback(
 		(...args: Parameters<typeof openCommentPane>) => {
-			ensureTabsMode();
+			if (displayMode === "canvas") {
+				openCommentOnCanvas(...args);
+				return;
+			}
 			openCommentPane(...args);
 		},
-		[ensureTabsMode, openCommentPane],
+		[displayMode, openCommentOnCanvas, openCommentPane],
 	);
 
 	// Fallback for rows persisted before the rightSidebarWidth field existed —

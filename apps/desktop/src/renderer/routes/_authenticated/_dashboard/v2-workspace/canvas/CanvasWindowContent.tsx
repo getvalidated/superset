@@ -3,19 +3,38 @@ import {
 	type RendererContext,
 	type WorkspaceStore,
 } from "@superset/panes";
-import { useEffect, useMemo } from "react";
+import { workspaceTrpc } from "@superset/workspace-client";
+import { useCallback, useEffect, useMemo } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { toAbsoluteWorkspacePath } from "shared/absolute-paths";
 import type { StoreApi } from "zustand/vanilla";
 import {
 	BrowserPane,
 	BrowserPaneToolbar,
 	browserRuntimeRegistry,
 } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
+import { ChatPane } from "../$workspaceId/hooks/usePaneRegistry/components/ChatPane";
+import { CommentPane } from "../$workspaceId/hooks/usePaneRegistry/components/CommentPane";
+import { DiffPane } from "../$workspaceId/hooks/usePaneRegistry/components/DiffPane";
+import { FilePane } from "../$workspaceId/hooks/usePaneRegistry/components/FilePane";
 import { TerminalPane } from "../$workspaceId/hooks/usePaneRegistry/components/TerminalPane";
-import type { BrowserPaneData, PaneViewerData } from "../$workspaceId/types";
+import type {
+	BrowserPaneData,
+	ChatPaneData,
+	FilePaneData,
+	PaneViewerData,
+} from "../$workspaceId/types";
 import { CanvasHostProvider } from "./CanvasHostProvider";
 import type { CanvasStore, CanvasWindow } from "./canvasStore";
+import {
+	type CanvasSearchData,
+	type CanvasSettingsData,
+	canvasWindowIds,
+	openCanvasWindow,
+} from "./openCanvasWindow";
+import { CanvasSearchPane } from "./panes/CanvasSearchPane";
+import { CanvasSettingsPane } from "./panes/CanvasSettingsPane";
 import {
 	type CanvasTerminalData,
 	writeBrowserPaneDataToWorkspace,
@@ -130,6 +149,55 @@ function useCanvasRendererContext({
 	}, [window, isFocused, store, collections]);
 }
 
+function openCanvasFileWindow(
+	store: StoreApi<CanvasStore>,
+	workspaceId: string,
+	absolutePath: string,
+): void {
+	openCanvasWindow(store, {
+		id: canvasWindowIds.file(workspaceId, absolutePath),
+		kind: "file",
+		workspaceId,
+		data: { filePath: absolutePath, mode: "editor" } satisfies FilePaneData,
+	});
+}
+
+/**
+ * DiffPane's in-diff "open file" links resolve worktree-relative paths, so
+ * this lives inside the window's CanvasHostProvider where the owning host's
+ * workspace.get is reachable.
+ */
+function CanvasDiffContent({
+	ctx,
+	window,
+	store,
+}: {
+	ctx: RendererContext<PaneViewerData>;
+	window: CanvasWindow;
+	store: StoreApi<CanvasStore>;
+}) {
+	const workspaceQuery = workspaceTrpc.workspace.get.useQuery({
+		id: window.workspaceId,
+	});
+	const worktreePath = workspaceQuery.data?.worktreePath ?? "";
+	const handleOpenFile = useCallback(
+		(filePath: string) => {
+			const absolutePath = worktreePath
+				? toAbsoluteWorkspacePath(worktreePath, filePath)
+				: filePath;
+			openCanvasFileWindow(store, window.workspaceId, absolutePath);
+		},
+		[worktreePath, store, window.workspaceId],
+	);
+	return (
+		<DiffPane
+			context={ctx}
+			workspaceId={window.workspaceId}
+			onOpenFile={handleOpenFile}
+		/>
+	);
+}
+
 export function CanvasWindowContent({
 	window,
 	isFocused,
@@ -169,6 +237,11 @@ export function CanvasWindowContent({
 		);
 	}, [window.kind, window.id, store]);
 
+	const updateWindowData = useCallback(
+		(data: unknown) => store.getState().updateWindowData(window.id, data),
+		[store, window.id],
+	);
+
 	if (window.kind === "terminal") {
 		return (
 			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
@@ -179,6 +252,69 @@ export function CanvasWindowContent({
 					onRevealPath={noop}
 				/>
 			</CanvasHostProvider>
+		);
+	}
+
+	if (window.kind === "file") {
+		return (
+			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+				<FilePane context={ctx} workspaceId={window.workspaceId} />
+			</CanvasHostProvider>
+		);
+	}
+
+	if (window.kind === "diff") {
+		return (
+			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+				<CanvasDiffContent ctx={ctx} window={window} store={store} />
+			</CanvasHostProvider>
+		);
+	}
+
+	if (window.kind === "comment") {
+		return <CommentPane context={ctx} />;
+	}
+
+	if (window.kind === "chat") {
+		const data = window.data as ChatPaneData;
+		return (
+			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+				<ChatPane
+					workspaceId={window.workspaceId}
+					sessionId={data.sessionId}
+					onSessionIdChange={(sessionId) =>
+						updateWindowData({ ...data, sessionId })
+					}
+					initialLaunchConfig={data.launchConfig ?? null}
+					onConsumeLaunchConfig={() =>
+						updateWindowData({ ...data, launchConfig: null })
+					}
+				/>
+			</CanvasHostProvider>
+		);
+	}
+
+	if (window.kind === "search") {
+		return (
+			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+				<CanvasSearchPane
+					workspaceId={window.workspaceId}
+					data={window.data as CanvasSearchData}
+					onDataChange={updateWindowData}
+					onSelectFile={(absolutePath) =>
+						openCanvasFileWindow(store, window.workspaceId, absolutePath)
+					}
+				/>
+			</CanvasHostProvider>
+		);
+	}
+
+	if (window.kind === "settings") {
+		return (
+			<CanvasSettingsPane
+				data={window.data as CanvasSettingsData}
+				onDataChange={updateWindowData}
+			/>
 		);
 	}
 
