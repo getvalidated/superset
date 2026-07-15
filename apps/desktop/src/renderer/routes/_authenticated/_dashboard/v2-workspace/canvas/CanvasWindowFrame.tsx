@@ -293,8 +293,12 @@ export function CanvasWindowFrame({
 			onPointerDownCapture={focusWindow}
 			onContextMenu={(event) => event.stopPropagation()}
 		>
+			{/* z-20 keeps title-bar controls (close, presets) above the absolute
+			    resize handles (z-10) — the ne corner handle otherwise swallows
+			    most of the close button's hit area. Edge-resize still works from
+			    the handle strip outside the bar. */}
 			<div
-				className="flex h-8 shrink-0 cursor-grab select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 active:cursor-grabbing"
+				className="relative z-20 flex h-8 shrink-0 cursor-grab select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 active:cursor-grabbing"
 				onPointerDown={handleTitleBarPointerDown}
 			>
 				<WindowIcon window={window} />
@@ -314,7 +318,7 @@ export function CanvasWindowFrame({
 				) : null}
 				<button
 					type="button"
-					className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+					className="ml-0.5 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
 					onPointerDown={(event) => event.stopPropagation()}
 					onClick={handleDismiss}
 					title="Remove from canvas"
