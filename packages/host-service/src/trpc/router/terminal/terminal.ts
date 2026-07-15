@@ -122,6 +122,14 @@ export const terminalRouter = router({
 			}),
 		})),
 
+	// Every session on this host across all of its workspaces (exited ones
+	// included, so the canvas can prune their windows), each row tagged with
+	// its workspaceId. One host-service serves the whole org on this machine,
+	// so this is the org-wide view (used by the global canvas).
+	listAllSessions: protectedProcedure.query(() => ({
+		sessions: listTerminalSessions({ includeExited: true }),
+	})),
+
 	countBackgroundSessions: protectedProcedure
 		.input(
 			z.object({

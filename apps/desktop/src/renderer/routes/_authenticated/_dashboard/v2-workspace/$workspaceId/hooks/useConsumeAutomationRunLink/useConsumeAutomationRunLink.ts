@@ -14,6 +14,7 @@ interface UseConsumeAutomationRunLinkArgs {
 	terminalId: string | undefined;
 	chatSessionId: string | undefined;
 	focusRequestId: string | undefined;
+	enabled: boolean;
 }
 
 /**
@@ -28,6 +29,7 @@ export function useConsumeAutomationRunLink({
 	terminalId,
 	chatSessionId,
 	focusRequestId,
+	enabled,
 }: UseConsumeAutomationRunLinkArgs): void {
 	const consumedRef = useRef<Set<string>>(new Set());
 	const collections = useCollections();
@@ -48,6 +50,9 @@ export function useConsumeAutomationRunLink({
 	const chatSession = chatSessionRows?.[0] ?? null;
 
 	useEffect(() => {
+		// In canvas mode the tabbed layout is hidden; re-adopting the pane there
+		// would be invisible. Leave the link unconsumed so it fires on return.
+		if (!enabled) return;
 		if (!terminalId) return;
 		if (!terminalSessionsQuery.isSuccess) return;
 		const key = getAutomationRunLinkConsumeKey({
@@ -78,9 +83,11 @@ export function useConsumeAutomationRunLink({
 		terminalSessionsQuery.isSuccess,
 		terminalSessionsQuery.data,
 		workspaceId,
+		enabled,
 	]);
 
 	useEffect(() => {
+		if (!enabled) return;
 		if (!chatSessionId) return;
 		if (!chatSessionsReady) return;
 		if (!chatSession) return;
@@ -106,6 +113,7 @@ export function useConsumeAutomationRunLink({
 		chatSession,
 		chatSessionsReady,
 		workspaceId,
+		enabled,
 	]);
 }
 

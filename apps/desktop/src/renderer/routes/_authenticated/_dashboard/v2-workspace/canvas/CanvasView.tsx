@@ -1,0 +1,377 @@
+import {
+	memo,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
+import { DEFAULT_CANVAS_CAMERA } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
+import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { useStore } from "zustand";
+import type { StoreApi } from "zustand/vanilla";
+import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
+import { CanvasToolbar } from "./CanvasToolbar";
+import { CanvasWindowContent } from "./CanvasWindowContent";
+import {
+	CanvasBrowserPlaceholder,
+	CanvasTerminalPlaceholder,
+	CanvasWindowFrame,
+} from "./CanvasWindowFrame";
+import {
+	clampZoom,
+	getVisibleWindowIds,
+	getZoomToFitCamera,
+	pickLiveTerminalWindowIds,
+	zoomAtPoint,
+} from "./canvasGeometry";
+import {
+	type CanvasStore,
+	type CanvasWindow,
+	getGlobalCanvasStore,
+} from "./canvasStore";
+import { useCanvasGestures } from "./useCanvasGestures";
+import {
+	CanvasSessionSeeder,
+	type CanvasTerminalData,
+	useCanvasBrowserMirror,
+} from "./useCanvasSeeding";
+import { useGlobalCanvasLayout } from "./useGlobalCanvasLayout";
+
+/**
+ * One canvas window, memoized so a single-window store change (a title
+ * refresh from the 15s reconcile, another window's drag commit, a focus flip)
+ * doesn't re-render every frame on the plane.
+ *
+ * Off-screen content is culled to cheap placeholders. Terminals outside the
+ * live set have their runtime parked/released by the parent; mirrored browser
+ * windows unmount their BrowserPane, which detaches the webview (hidden,
+ * skipped by pan-time relayoutAll) while its page state survives in the
+ * registry. Ephemeral browser windows stay mounted — unmounting destroys
+ * their webview outright — and the focused window always renders live.
+ */
+const CanvasWindowItem = memo(function CanvasWindowItem({
+	window,
+	store,
+	zIndex,
+	isFocused,
+	isVisible,
+	isLiveTerminal,
+	workspaceLabel,
+	hostId,
+	organizationId,
+}: {
+	window: CanvasWindow;
+	store: StoreApi<CanvasStore>;
+	zIndex: number;
+	isFocused: boolean;
+	isVisible: boolean;
+	isLiveTerminal: boolean;
+	workspaceLabel: string;
+	hostId: string | null;
+	organizationId: string;
+}) {
+	const culled =
+		window.kind === "terminal"
+			? !isLiveTerminal
+			: !isVisible && !window.ephemeral && !isFocused;
+	return (
+		<CanvasWindowFrame
+			window={window}
+			store={store}
+			zIndex={zIndex}
+			isFocused={isFocused}
+			workspaceLabel={workspaceLabel}
+		>
+			{culled ? (
+				window.kind === "terminal" ? (
+					<CanvasTerminalPlaceholder
+						window={window}
+						connectionHint={
+							isVisible ? undefined : "off-screen — click to focus"
+						}
+					/>
+				) : (
+					<CanvasBrowserPlaceholder window={window} />
+				)
+			) : (
+				<CanvasWindowContent
+					window={window}
+					isFocused={isFocused}
+					store={store}
+					hostId={hostId}
+					organizationId={organizationId}
+				/>
+			)}
+		</CanvasWindowFrame>
+	);
+});
+
+/**
+ * The global infinite-canvas display mode: every live terminal session
+ * across all workspaces, plus mirrored browser panes, as free-floating
+ * windows on a pannable/zoomable plane.
+ *
+ * The camera transform is applied imperatively from a store subscription so
+ * pan/zoom never re-renders the React tree; window geometry only changes on
+ * gesture commit.
+ */
+export function CanvasView({ onExit }: { onExit: () => void }) {
+	const { activeOrganizationId } = useLocalHostService();
+	const store = useMemo(
+		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
+		[activeOrganizationId],
+	);
+	useGlobalCanvasLayout(store);
+	useCanvasBrowserMirror(store);
+
+	const { workspaces } = useHostWorkspaces();
+	const workspacesById = useMemo(() => {
+		const byId = new Map<string, (typeof workspaces)[number]>();
+		for (const workspace of workspaces) byId.set(workspace.id, workspace);
+		return byId;
+	}, [workspaces]);
+
+	const viewportRef = useRef<HTMLDivElement | null>(null);
+	const planeRef = useRef<HTMLDivElement | null>(null);
+	const viewportSizeRef = useRef({ width: 0, height: 0 });
+	const [cullTick, setCullTick] = useState(0);
+
+	const windows = useStore(store, (state) => state.windows);
+	const zOrder = useStore(store, (state) => state.zOrder);
+	const focusedWindowId = useStore(store, (state) => state.focusedWindowId);
+
+	// Camera → plane transform + webview relayout, no React involvement.
+	useEffect(() => {
+		const apply = () => {
+			const plane = planeRef.current;
+			if (!plane) return;
+			const { camera } = store.getState();
+			plane.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`;
+			browserRuntimeRegistry.relayoutAll();
+		};
+		apply();
+		return store.subscribe((state, prevState) => {
+			if (state.camera !== prevState.camera) apply();
+		});
+	}, [store]);
+
+	// Window mounts/geometry commits move placeholders without resizing the
+	// viewport — re-sync webviews after the React commit paints.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: windows/zOrder are re-run triggers, not effect inputs
+	useLayoutEffect(() => {
+		const frame = requestAnimationFrame(() =>
+			browserRuntimeRegistry.relayoutAll(),
+		);
+		return () => cancelAnimationFrame(frame);
+	}, [windows, zOrder]);
+
+	// Track viewport size for culling math.
+	useEffect(() => {
+		const viewport = viewportRef.current;
+		if (!viewport) return;
+		const observer = new ResizeObserver(() => {
+			const rect = viewport.getBoundingClientRect();
+			viewportSizeRef.current = { width: rect.width, height: rect.height };
+			setCullTick((tick) => tick + 1);
+		});
+		observer.observe(viewport);
+		return () => observer.disconnect();
+	}, []);
+
+	// Every browser webview a canvas zoom has been applied to, so leaving canvas
+	// mode can reset each one to 1× — including any dismissed while zoomed, which
+	// never re-enter the store to be reset otherwise.
+	const zoomedBrowserIdsRef = useRef<Set<string>>(new Set());
+	const applyBrowserContentZoom = useCallback(() => {
+		const state = store.getState();
+		for (const window of Object.values(state.windows)) {
+			if (window.kind !== "browser") continue;
+			zoomedBrowserIdsRef.current.add(window.id);
+			browserRuntimeRegistry.setContentZoom(window.id, state.camera.zoom);
+		}
+	}, [store]);
+
+	const handleGestureEnd = useCallback(() => {
+		setCullTick((tick) => tick + 1);
+		applyBrowserContentZoom();
+	}, [applyBrowserContentZoom]);
+
+	useCanvasGestures({ viewportRef, store, onGestureEnd: handleGestureEnd });
+
+	// Apply page zoom to browser webviews now and re-apply as new ones mirror in
+	// after mount, then reset every webview touched back to 1× when leaving
+	// canvas mode — the same webviews serve tabs mode.
+	useEffect(() => {
+		applyBrowserContentZoom();
+		const unsubscribe = store.subscribe((state, prevState) => {
+			if (state.windows !== prevState.windows) applyBrowserContentZoom();
+		});
+		return () => {
+			unsubscribe();
+			for (const paneId of zoomedBrowserIdsRef.current) {
+				browserRuntimeRegistry.setContentZoom(paneId, 1);
+			}
+			zoomedBrowserIdsRef.current.clear();
+		};
+	}, [applyBrowserContentZoom, store]);
+
+	const windowList = useMemo(() => Object.values(windows), [windows]);
+
+	// First-ever seed with an untouched camera: frame everything. Held off until
+	// the viewport has been measured — framing a 0×0 viewport yields the default
+	// camera and would burn the one-shot, leaving the first open looking empty.
+	const hadWindowsRef = useRef(windowList.length > 0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: cullTick re-runs this once the ResizeObserver reports a size
+	useEffect(() => {
+		if (hadWindowsRef.current || windowList.length === 0) return;
+		const viewport = viewportSizeRef.current;
+		if (viewport.width === 0 || viewport.height === 0) return;
+		hadWindowsRef.current = true;
+		const { camera } = store.getState();
+		if (
+			camera.x === DEFAULT_CANVAS_CAMERA.x &&
+			camera.y === DEFAULT_CANVAS_CAMERA.y &&
+			camera.zoom === DEFAULT_CANVAS_CAMERA.zoom
+		) {
+			store.getState().setCamera(getZoomToFitCamera(windowList, viewport));
+			setCullTick((tick) => tick + 1);
+		}
+	}, [windowList, store, cullTick]);
+
+	// Culling — recomputed on gesture end / viewport resize / window changes,
+	// never per pan frame. Reads the camera imperatively on purpose.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: cullTick invalidates the imperative camera/viewport reads
+	const { visibleIds, liveTerminalIds } = useMemo(() => {
+		const camera = store.getState().camera;
+		const viewport = viewportSizeRef.current;
+		return {
+			visibleIds: getVisibleWindowIds(windowList, camera, viewport),
+			liveTerminalIds: pickLiveTerminalWindowIds({
+				windows: windowList.filter((window) => window.kind === "terminal"),
+				camera,
+				viewport,
+				focusedWindowId,
+			}),
+		};
+	}, [windowList, focusedWindowId, cullTick, store]);
+
+	// Windows that fell out of the live set have already swapped to
+	// placeholders (TerminalPane unmounted → runtime parked). Release those
+	// canvas-instance runtimes so parked WebGL contexts don't accumulate past
+	// the browser's ~16-context limit while panning around — the context-loss
+	// fallback would permanently flip every terminal to the DOM renderer.
+	// The buffer replays from the persisted snapshot on the next mount.
+	const prevLiveTerminalIdsRef = useRef<Set<string>>(new Set());
+	useEffect(() => {
+		for (const windowId of prevLiveTerminalIdsRef.current) {
+			if (liveTerminalIds.has(windowId)) continue;
+			const window = store.getState().windows[windowId];
+			if (!window || window.kind !== "terminal") continue;
+			const { terminalId } = window.data as CanvasTerminalData;
+			terminalRuntimeRegistry.release(terminalId, windowId);
+		}
+		prevLiveTerminalIdsRef.current = new Set(liveTerminalIds);
+	}, [liveTerminalIds, store]);
+
+	// Leaving canvas mode (or switching org store) unmounts every TerminalPane,
+	// which only parks its runtime under the canvas instanceId — the WebGL
+	// context and WebSocket stay alive. Release them all here, or tabs mode
+	// mounts a second runtime per session on top of the parked ones and the
+	// accumulated contexts trip the ~16-context loss fallback.
+	useEffect(() => {
+		return () => {
+			for (const window of Object.values(store.getState().windows)) {
+				if (window.kind !== "terminal") continue;
+				const { terminalId } = window.data as CanvasTerminalData;
+				terminalRuntimeRegistry.release(terminalId, window.id);
+			}
+		};
+	}, [store]);
+
+	const handleZoomStep = useCallback(
+		(factor: number) => {
+			const { camera } = store.getState();
+			const viewport = viewportSizeRef.current;
+			store
+				.getState()
+				.setCamera(
+					zoomAtPoint(
+						camera,
+						{ x: viewport.width / 2, y: viewport.height / 2 },
+						clampZoom(camera.zoom * factor),
+					),
+				);
+			handleGestureEnd();
+		},
+		[store, handleGestureEnd],
+	);
+
+	const handleZoomToFit = useCallback(() => {
+		store
+			.getState()
+			.setCamera(
+				getZoomToFitCamera(
+					Object.values(store.getState().windows),
+					viewportSizeRef.current,
+				),
+			);
+		handleGestureEnd();
+	}, [store, handleGestureEnd]);
+
+	return (
+		<div
+			ref={viewportRef}
+			className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-muted/20"
+		>
+			<div
+				ref={planeRef}
+				className="absolute left-0 top-0 h-0 w-0"
+				style={{ transformOrigin: "0 0", willChange: "transform" }}
+			>
+				{zOrder.map((windowId, index) => {
+					const window = windows[windowId];
+					if (!window) return null;
+					const workspace = workspacesById.get(window.workspaceId);
+					return (
+						<CanvasWindowItem
+							key={window.id}
+							window={window}
+							store={store}
+							zIndex={index + 1}
+							isFocused={focusedWindowId === window.id}
+							isVisible={visibleIds.has(window.id)}
+							isLiveTerminal={liveTerminalIds.has(window.id)}
+							workspaceLabel={
+								workspace
+									? `${workspace.name} · ${workspace.branch}`
+									: "unknown workspace"
+							}
+							hostId={workspace?.hostId ?? null}
+							organizationId={
+								workspace?.organizationId ?? activeOrganizationId ?? ""
+							}
+						/>
+					);
+				})}
+			</div>
+			<CanvasToolbar
+				store={store}
+				onZoomStep={handleZoomStep}
+				onZoomToFit={handleZoomToFit}
+				onExit={onExit}
+			/>
+			{windowList.length === 0 ? (
+				<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+					<p className="text-sm text-muted-foreground">
+						No active terminal sessions or browser panes yet.
+					</p>
+				</div>
+			) : null}
+			<CanvasSessionSeeder store={store} />
+		</div>
+	);
+}

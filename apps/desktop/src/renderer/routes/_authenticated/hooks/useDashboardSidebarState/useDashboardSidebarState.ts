@@ -1,11 +1,8 @@
-import type { Pane } from "@superset/panes";
+import type { Pane, WorkspaceState } from "@superset/panes";
 import { useCallback } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { browserRuntimeRegistry } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/usePaneRegistry/components/BrowserPane/browserRuntimeRegistry";
-import {
-	extractPaneIds,
-	type PaneLifecycleRow,
-} from "renderer/routes/_authenticated/components/utils/paneLifecycleRows";
+import type { PaneLifecycleRow } from "renderer/routes/_authenticated/components/utils/paneLifecycleRows";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { AppCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider/collections";
 import {
@@ -177,13 +174,33 @@ function getBrowserRuntimeId(pane: Pane<unknown>): string | null {
 	return pane.kind === "browser" ? pane.id : null;
 }
 
+function forEachPane(
+	rows: PaneLifecycleRow[],
+	visit: (pane: Pane<unknown>) => void,
+): void {
+	for (const row of rows) {
+		const layout = row.paneLayout as WorkspaceState<unknown> | undefined;
+		if (!layout?.tabs) continue;
+		for (const tab of layout.tabs) {
+			for (const pane of Object.values(tab.panes)) {
+				visit(pane);
+			}
+		}
+	}
+}
+
 function cleanupWorkspacePaneRuntimes(rows: PaneLifecycleRow[]): void {
-	for (const terminalId of extractPaneIds(rows, getTerminalRuntimeId)) {
-		terminalRuntimeRegistry.release(terminalId);
-	}
-	for (const browserId of extractPaneIds(rows, getBrowserRuntimeId)) {
-		browserRuntimeRegistry.destroy(browserId);
-	}
+	forEachPane(rows, (pane) => {
+		const terminalId = getTerminalRuntimeId(pane);
+		if (terminalId) {
+			// Release only this pane's own instance; a live canvas window mounted
+			// under a different instanceId for the same terminal must survive.
+			terminalRuntimeRegistry.release(terminalId, pane.id);
+			return;
+		}
+		const browserId = getBrowserRuntimeId(pane);
+		if (browserId) browserRuntimeRegistry.destroy(browserId);
+	});
 }
 
 export function useDashboardSidebarState() {

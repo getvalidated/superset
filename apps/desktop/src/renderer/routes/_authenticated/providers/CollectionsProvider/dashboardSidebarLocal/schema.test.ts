@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { WorkspaceState } from "@superset/panes";
 import {
+	DEFAULT_CANVAS_CAMERA,
+	DEFAULT_GLOBAL_CANVAS_LAYOUT,
 	DEFAULT_V2_USER_PREFERENCES,
 	healV2UserPreferences,
 	healWorkspaceLocalState,
+	sanitizeGlobalCanvasLayout,
 	sanitizePaneLayout,
 } from "./schema";
 
@@ -277,5 +280,77 @@ describe("sanitizePaneLayout", () => {
 			activeTabId: "does-not-exist",
 		});
 		expect(result.activeTabId).toBe("tab-1");
+	});
+});
+
+describe("sanitizeGlobalCanvasLayout", () => {
+	const validWindow = {
+		id: "term:abc",
+		kind: "terminal",
+		workspaceId: "ws-1",
+		x: 10,
+		y: 20,
+		width: 400,
+		height: 300,
+		data: { terminalId: "abc" },
+	};
+
+	it("resets unparseable top-level shapes to the empty default", () => {
+		expect(sanitizeGlobalCanvasLayout(null)).toEqual(
+			DEFAULT_GLOBAL_CANVAS_LAYOUT,
+		);
+		expect(sanitizeGlobalCanvasLayout("nope")).toEqual(
+			DEFAULT_GLOBAL_CANVAS_LAYOUT,
+		);
+		expect(sanitizeGlobalCanvasLayout({ version: 2, windows: [] })).toEqual(
+			DEFAULT_GLOBAL_CANVAS_LAYOUT,
+		);
+	});
+
+	it("drops corrupt windows while keeping valid ones", () => {
+		const healed = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 1 },
+			windows: [
+				validWindow,
+				{ id: "bad", kind: "terminal" }, // missing geometry
+				{ ...validWindow, id: "neg", width: -5 }, // non-positive size
+			],
+			zOrder: ["term:abc", "bad"],
+		});
+		expect(healed.windows.map((w) => w.id)).toEqual(["term:abc"]);
+		expect(healed.zOrder).toEqual(["term:abc"]);
+	});
+
+	it("repairs zOrder to cover exactly the surviving windows", () => {
+		const healed = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 1 },
+			windows: [validWindow, { ...validWindow, id: "w2" }],
+			zOrder: ["w2", "ghost"],
+		});
+		expect(healed.zOrder).toEqual(["w2", "term:abc"]);
+	});
+
+	it("falls back to the default camera when the stored one is invalid", () => {
+		const healed = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 99 },
+			windows: [validWindow],
+			zOrder: ["term:abc"],
+		});
+		expect(healed.camera).toEqual(DEFAULT_CANVAS_CAMERA);
+	});
+});
+
+describe("displayMode preference", () => {
+	it("heals to tabs for rows persisted before the field existed", () => {
+		expect(healV2UserPreferences({}).displayMode).toBe("tabs");
+	});
+
+	it("preserves a stored canvas mode", () => {
+		expect(healV2UserPreferences({ displayMode: "canvas" }).displayMode).toBe(
+			"canvas",
+		);
 	});
 });

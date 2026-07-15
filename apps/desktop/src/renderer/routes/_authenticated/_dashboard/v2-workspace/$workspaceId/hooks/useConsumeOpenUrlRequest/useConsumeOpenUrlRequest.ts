@@ -12,6 +12,7 @@ interface UseConsumeOpenUrlRequestArgs {
 	url: string | undefined;
 	target: V2WorkspaceUrlOpenTarget | undefined;
 	requestId: string | undefined;
+	enabled: boolean;
 }
 
 export function useConsumeOpenUrlRequest({
@@ -19,10 +20,15 @@ export function useConsumeOpenUrlRequest({
 	url,
 	target,
 	requestId,
+	enabled,
 }: UseConsumeOpenUrlRequestArgs): void {
 	const consumedRef = useRef<Set<string>>(new Set());
 
 	useEffect(() => {
+		// While the tabbed layout is hidden (canvas mode) the request would open
+		// into a pane the user can't see. Leave it unconsumed so it fires when
+		// they return to tabs.
+		if (!enabled) return;
 		if (!url) return;
 		const resolvedTarget = target ?? "current-tab";
 		const key = getOpenUrlRequestConsumeKey({
@@ -33,7 +39,7 @@ export function useConsumeOpenUrlRequest({
 		if (consumedRef.current.has(key)) return;
 		consumedRef.current.add(key);
 		openUrlInV2Workspace({ store, target: resolvedTarget, url });
-	}, [store, target, url, requestId]);
+	}, [store, target, url, requestId, enabled]);
 }
 
 export function getOpenUrlRequestConsumeKey({
