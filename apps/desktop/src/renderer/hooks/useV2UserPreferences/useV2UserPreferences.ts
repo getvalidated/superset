@@ -11,6 +11,7 @@ import {
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 
 export type RightSidebarTab = V2UserPreferencesRow["rightSidebarTab"];
+export type WorkspaceDisplayMode = V2UserPreferencesRow["displayMode"];
 
 export interface V2UserPreferencesApi {
 	preferences: V2UserPreferencesRow;
@@ -24,6 +25,7 @@ export interface V2UserPreferencesApi {
 	setDeleteLocalBranch: (next: boolean) => void;
 	setShowPresetsBar: (next: boolean | ((prev: boolean) => boolean)) => void;
 	toggleShowPresetsBar: () => void;
+	setDisplayMode: (next: WorkspaceDisplayMode) => void;
 }
 
 export function useV2UserPreferences(): V2UserPreferencesApi {
@@ -200,6 +202,25 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		setShowPresetsBar((prev) => !prev);
 	}, [setShowPresetsBar]);
 
+	const setDisplayMode = useCallback(
+		(next: WorkspaceDisplayMode) => {
+			const existing = collections.v2UserPreferences.get(
+				V2_USER_PREFERENCES_ID,
+			);
+			if (!existing) {
+				collections.v2UserPreferences.insert({
+					...DEFAULT_V2_USER_PREFERENCES,
+					displayMode: next,
+				});
+				return;
+			}
+			collections.v2UserPreferences.update(V2_USER_PREFERENCES_ID, (draft) => {
+				draft.displayMode = next;
+			});
+		},
+		[collections],
+	);
+
 	return {
 		preferences,
 		setFileLinks,
@@ -212,5 +233,6 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		setDeleteLocalBranch,
 		setShowPresetsBar,
 		toggleShowPresetsBar,
+		setDisplayMode,
 	};
 }

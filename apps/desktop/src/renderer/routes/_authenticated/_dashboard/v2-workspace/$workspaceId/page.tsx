@@ -1,6 +1,8 @@
 import { Workspace } from "@superset/panes";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { createFileRoute } from "@tanstack/react-router";
+import { LayoutDashboard } from "lucide-react";
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuickOpenStore } from "renderer/commandPalette/ui/QuickOpen/quickOpenStore";
@@ -9,6 +11,7 @@ import { useHotkey } from "renderer/hotkeys";
 import { CommandPalette } from "renderer/screens/main/components/CommandPalette";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { getV2NotificationSourcesForTab } from "renderer/stores/v2-notifications";
+import { CanvasView } from "../canvas";
 import { useWorkspace } from "../providers/WorkspaceProvider";
 import { AddTabMenu } from "./components/AddTabMenu";
 import { BackgroundTerminalsButton } from "./components/BackgroundTerminalsButton";
@@ -102,6 +105,17 @@ function V2WorkspacePage() {
 	return <V2WorkspaceContent />;
 }
 
+// Hooks that only act on the tabbed layout — hotkeys drive it and attention
+// clearing targets its active pane. Mounted only in tabs mode so they stay
+// inert while the canvas is showing the hidden store.
+function TabbedWorkspaceEffects(
+	props: Parameters<typeof useWorkspaceHotkeys>[0],
+) {
+	useClearActivePaneAttention({ store: props.store });
+	useWorkspaceHotkeys(props);
+	return null;
+}
+
 function V2WorkspaceContent() {
 	const {
 		terminalId,
@@ -120,11 +134,14 @@ function V2WorkspaceContent() {
 		setRightSidebarTab,
 		setRightSidebarWidth,
 		setShowPresetsBar,
+		setDisplayMode,
 	} = useV2UserPreferences();
 	const showPresetsBar = v2UserPreferences.showPresetsBar;
 	const sidebarOpen = v2UserPreferences.rightSidebarOpen;
+	// Older persisted rows read displayMode as undefined (live reads skip zod
+	// defaults) — treat that as tabs.
+	const displayMode = v2UserPreferences.displayMode ?? "tabs";
 	const { store } = useV2WorkspacePaneLayout();
-	useClearActivePaneAttention({ store });
 	const launcher = useV2TerminalLauncher();
 	const {
 		matchedPresets,
@@ -147,12 +164,14 @@ function V2WorkspaceContent() {
 		terminalId,
 		chatSessionId,
 		focusRequestId,
+		enabled: displayMode === "tabs",
 	});
 	useConsumeOpenUrlRequest({
 		store,
 		url: openUrl,
 		target: openUrlTarget,
 		requestId: openUrlRequestId,
+		enabled: displayMode === "tabs",
 	});
 
 	const {
@@ -206,18 +225,52 @@ function V2WorkspaceContent() {
 		},
 		[closeQuickOpen],
 	);
+	// Sidebar/quick-open picks open panes in the tabbed layout. In canvas mode
+	// that layout is hidden, so switch back to it first — otherwise the click
+	// appears to do nothing.
+	const ensureTabsMode = useCallback(() => {
+		if (displayMode !== "tabs") setDisplayMode("tabs");
+	}, [displayMode, setDisplayMode]);
 	// Picking a file from Quick Open should surface the sidebar/Files tab so
 	// the reveal (expand + highlight + scroll) is actually visible.
 	const handleQuickOpenSelectFile = useCallback(
 		(filePath: string, openInNewTab?: boolean) => {
+			ensureTabsMode();
 			setRightSidebarOpen(true);
 			setRightSidebarTab("files");
 			openFilePaneFromTreeClick(filePath, openInNewTab);
 		},
-		[openFilePaneFromTreeClick, setRightSidebarOpen, setRightSidebarTab],
+		[
+			ensureTabsMode,
+			openFilePaneFromTreeClick,
+			setRightSidebarOpen,
+			setRightSidebarTab,
+		],
 	);
 	const defaultPaneActions = useDefaultPaneActions({ launcher });
 	const onBeforeCloseTab = useDirtyTabCloseGuard();
+
+	const handleSidebarSelectFile = useCallback(
+		(...args: Parameters<typeof openFilePaneFromTreeClick>) => {
+			ensureTabsMode();
+			openFilePaneFromTreeClick(...args);
+		},
+		[ensureTabsMode, openFilePaneFromTreeClick],
+	);
+	const handleSidebarSelectDiffFile = useCallback(
+		(...args: Parameters<typeof openDiffPane>) => {
+			ensureTabsMode();
+			openDiffPane(...args);
+		},
+		[ensureTabsMode, openDiffPane],
+	);
+	const handleSidebarOpenComment = useCallback(
+		(...args: Parameters<typeof openCommentPane>) => {
+			ensureTabsMode();
+			openCommentPane(...args);
+		},
+		[ensureTabsMode, openCommentPane],
+	);
 
 	// Fallback for rows persisted before the rightSidebarWidth field existed —
 	// the live collection skips zod defaults, so an older row reads undefined
@@ -242,14 +295,6 @@ function V2WorkspaceContent() {
 	// context (pane store, workspace providers) while appearing in the TopBar.
 	const runButtonSlotEl = useSlotElement("workspace-topbar-run-slot");
 
-	useWorkspaceHotkeys({
-		store,
-		matchedPresets,
-		executePreset,
-		addTerminalTab,
-		paneRegistry,
-		launcher,
-	});
 	useHotkey("QUICK_OPEN", handleQuickOpen);
 	useHotkey("RUN_WORKSPACE_COMMAND", () => {
 		void workspaceRun.toggleWorkspaceRun();
@@ -269,6 +314,16 @@ function V2WorkspaceContent() {
 
 	return (
 		<FileDocumentStoreProvider>
+			{displayMode === "tabs" && (
+				<TabbedWorkspaceEffects
+					store={store}
+					matchedPresets={matchedPresets}
+					executePreset={executePreset}
+					addTerminalTab={addTerminalTab}
+					paneRegistry={paneRegistry}
+					launcher={launcher}
+				/>
+			)}
 			<WorkspaceGitStatusProvider
 				workspaceId={workspaceId}
 				store={store}
@@ -279,58 +334,78 @@ function V2WorkspaceContent() {
 						className="flex min-h-0 min-w-[320px] flex-1 flex-col overflow-hidden"
 						data-workspace-id={workspaceId}
 					>
-						<Workspace<PaneViewerData>
-							key={workspaceId}
-							registry={paneRegistry}
-							paneActions={defaultPaneActions}
-							contextMenuActions={defaultContextMenuActions}
-							renderTabIcon={renderBrowserTabIcon}
-							renderTabAccessory={(tab) => (
-								<V2NotificationStatusIndicator
-									sources={getV2NotificationSourcesForTab(tab)}
-								/>
-							)}
-							renderBelowTabBar={() =>
-								showPresetsBar ? (
-									<V2PresetsBar
-										matchedPresets={matchedPresets}
-										executePreset={executePreset}
+						{displayMode === "canvas" ? (
+							<CanvasView onExit={() => setDisplayMode("tabs")} />
+						) : (
+							<Workspace<PaneViewerData>
+								key={workspaceId}
+								registry={paneRegistry}
+								paneActions={defaultPaneActions}
+								contextMenuActions={defaultContextMenuActions}
+								renderTabIcon={renderBrowserTabIcon}
+								renderTabAccessory={(tab) => (
+									<V2NotificationStatusIndicator
+										sources={getV2NotificationSourcesForTab(tab)}
+									/>
+								)}
+								renderBelowTabBar={() =>
+									showPresetsBar ? (
+										<V2PresetsBar
+											matchedPresets={matchedPresets}
+											executePreset={executePreset}
+											showPresetsBar={showPresetsBar}
+											onToggleShowPresetsBar={setShowPresetsBar}
+											trailing={workspaceRunButton}
+										/>
+									) : null
+								}
+								renderAddTabMenu={() => (
+									<AddTabMenu
+										onAddTerminal={addTerminalTab}
+										onAddChat={addChatTab}
+										onAddBrowser={addBrowserTab}
 										showPresetsBar={showPresetsBar}
 										onToggleShowPresetsBar={setShowPresetsBar}
-										trailing={workspaceRunButton}
 									/>
-								) : null
-							}
-							renderAddTabMenu={() => (
-								<AddTabMenu
-									onAddTerminal={addTerminalTab}
-									onAddChat={addChatTab}
-									onAddBrowser={addBrowserTab}
-									showPresetsBar={showPresetsBar}
-									onToggleShowPresetsBar={setShowPresetsBar}
-								/>
-							)}
-							renderTabBarTrailing={() => (
-								<BackgroundTerminalsButton
-									workspaceId={workspaceId}
-									store={store}
-								/>
-							)}
-							renderEmptyState={() => (
-								<WorkspaceEmptyState
-									onOpenBrowser={addBrowserTab}
-									onOpenChat={addChatTab}
-									onOpenQuickOpen={handleQuickOpen}
-									onOpenTerminal={addTerminalTab}
-								/>
-							)}
-							onBeforeCloseTab={onBeforeCloseTab}
-							onInteractionStateChange={onWorkspaceInteractionStateChange}
-							store={store}
-						/>
+								)}
+								renderTabBarTrailing={() => (
+									<div className="flex items-center gap-0.5">
+										<BackgroundTerminalsButton
+											workspaceId={workspaceId}
+											store={store}
+										/>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<button
+													type="button"
+													onClick={() => setDisplayMode("canvas")}
+													className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+												>
+													<LayoutDashboard className="size-3.5" />
+												</button>
+											</TooltipTrigger>
+											<TooltipContent side="bottom" showArrow={false}>
+												Canvas view — all sessions on an infinite plane
+											</TooltipContent>
+										</Tooltip>
+									</div>
+								)}
+								renderEmptyState={() => (
+									<WorkspaceEmptyState
+										onOpenBrowser={addBrowserTab}
+										onOpenChat={addChatTab}
+										onOpenQuickOpen={handleQuickOpen}
+										onOpenTerminal={addTerminalTab}
+									/>
+								)}
+								onBeforeCloseTab={onBeforeCloseTab}
+								onInteractionStateChange={onWorkspaceInteractionStateChange}
+								store={store}
+							/>
+						)}
 					</div>
 				</div>
-				{!showPresetsBar &&
+				{(displayMode === "canvas" || !showPresetsBar) &&
 					runButtonSlotEl &&
 					createPortal(workspaceRunButton, runButtonSlotEl)}
 				{sidebarOpen &&
@@ -348,9 +423,9 @@ function V2WorkspaceContent() {
 						>
 							<WorkspaceSidebar
 								workspaceId={workspaceId}
-								onSelectFile={openFilePaneFromTreeClick}
-								onSelectDiffFile={openDiffPane}
-								onOpenComment={openCommentPane}
+								onSelectFile={handleSidebarSelectFile}
+								onSelectDiffFile={handleSidebarSelectDiffFile}
+								onOpenComment={handleSidebarOpenComment}
 								onSearch={handleQuickOpen}
 								selectedFilePath={selectedFilePath}
 								pendingReveal={pendingReveal}

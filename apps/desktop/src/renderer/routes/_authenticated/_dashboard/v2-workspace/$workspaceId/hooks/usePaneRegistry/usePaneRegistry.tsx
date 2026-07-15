@@ -325,7 +325,7 @@ export function usePaneRegistry({
 				onAfterClose: (pane) => {
 					const { terminalId } = pane.data as TerminalPaneData;
 					if (consumeTerminalBackgroundIntent(terminalId)) {
-						terminalRuntimeRegistry.release(terminalId);
+						terminalRuntimeRegistry.release(terminalId, pane.id);
 						return;
 					}
 					clearWorkspaceRunTerminal(terminalId);

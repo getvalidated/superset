@@ -153,6 +153,36 @@ class BrowserRuntimeRegistryImpl {
 		w.style.height = `${rect.height}px`;
 	}
 
+	/**
+	 * Re-sync every visible webview to its placeholder rect. The per-entry
+	 * ResizeObserver only fires on size changes — a placeholder that merely
+	 * moves (canvas pan/zoom, window drag) needs this called explicitly.
+	 * getBoundingClientRect() is transform-aware, so scaled placeholders come
+	 * out with the correct on-screen box for free.
+	 */
+	relayoutAll(): void {
+		for (const entry of this.entries.values()) {
+			if (entry.visible && entry.placeholder) this.updateLayout(entry);
+		}
+	}
+
+	/**
+	 * Scale the guest page content (canvas zoom). Chromium clamps zoomFactor
+	 * to [0.25, 5]; setZoomFactor throws before the webview's first
+	 * dom-ready, so failures are swallowed and the caller may retry on the
+	 * next gesture end.
+	 */
+	setContentZoom(paneId: string, zoomFactor: number): void {
+		const entry = this.entries.get(paneId);
+		if (!entry) return;
+		const clamped = Math.min(5, Math.max(0.25, zoomFactor));
+		try {
+			entry.webview.setZoomFactor(clamped);
+		} catch {
+			// Webview not attached yet.
+		}
+	}
+
 	private notify(paneId: string) {
 		const listeners = this.listenersByPaneId.get(paneId);
 		if (!listeners) return;

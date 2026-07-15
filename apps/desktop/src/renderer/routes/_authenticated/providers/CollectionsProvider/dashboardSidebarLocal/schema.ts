@@ -84,6 +84,97 @@ export function sanitizePaneLayout(raw: unknown): WorkspaceState<unknown> {
 	return { version: 1, tabs, activeTabId };
 }
 
+// --- Global canvas (infinite-canvas display mode) ---
+// One org-scoped singleton row holding the canvas camera and every window's
+// free-form geometry. Windows mirror live terminal sessions / browser panes
+// across all workspaces, so this deliberately lives outside the per-workspace
+// v2WorkspaceLocalState rows.
+
+const canvasWindowSchema = z.object({
+	id: z.string(),
+	kind: z.enum(["terminal", "browser"]),
+	workspaceId: z.string(),
+	x: z.number().finite(),
+	y: z.number().finite(),
+	width: z.number().positive().finite(),
+	height: z.number().positive().finite(),
+	data: z.unknown(),
+	/** Canvas-only window (e.g. webview popup) — not mirrored from a
+	 *  workspace layout, so reconciliation must not prune it. */
+	ephemeral: z.boolean().optional(),
+});
+
+export type CanvasWindowRow = z.infer<typeof canvasWindowSchema>;
+
+const canvasCameraSchema = z.object({
+	x: z.number().finite(),
+	y: z.number().finite(),
+	zoom: z.number().min(0.1).max(2),
+});
+
+export type CanvasCamera = z.infer<typeof canvasCameraSchema>;
+
+export const V2_GLOBAL_CANVAS_ID = "canvas" as const;
+
+export const globalCanvasLayoutSchema = z.object({
+	id: z.literal(V2_GLOBAL_CANVAS_ID),
+	version: z.literal(1),
+	camera: canvasCameraSchema,
+	windows: z.array(canvasWindowSchema),
+	zOrder: z.array(z.string()),
+});
+
+export type GlobalCanvasLayoutRow = z.infer<typeof globalCanvasLayoutSchema>;
+
+export const DEFAULT_CANVAS_CAMERA: CanvasCamera = { x: 0, y: 0, zoom: 1 };
+
+export const DEFAULT_GLOBAL_CANVAS_LAYOUT: GlobalCanvasLayoutRow = {
+	id: V2_GLOBAL_CANVAS_ID,
+	version: 1,
+	camera: DEFAULT_CANVAS_CAMERA,
+	windows: [],
+	zOrder: [],
+};
+
+/**
+ * Read-time heal for the persisted global canvas row. An unparseable
+ * top-level shape resets to the empty default; individually-corrupt windows
+ * are dropped while valid ones are kept, and zOrder is repaired to reference
+ * exactly the surviving window ids.
+ */
+export function sanitizeGlobalCanvasLayout(
+	raw: unknown,
+): GlobalCanvasLayoutRow {
+	if (!raw || typeof raw !== "object") return DEFAULT_GLOBAL_CANVAS_LAYOUT;
+	const value = raw as Record<string, unknown>;
+	if (value.version !== 1 || !Array.isArray(value.windows)) {
+		return DEFAULT_GLOBAL_CANVAS_LAYOUT;
+	}
+	const windows = value.windows.flatMap((window): CanvasWindowRow[] => {
+		const parsed = canvasWindowSchema.safeParse(window);
+		return parsed.success ? [parsed.data] : [];
+	});
+	const windowIds = new Set(windows.map((window) => window.id));
+	const storedZOrder = Array.isArray(value.zOrder)
+		? value.zOrder.filter(
+				(id): id is string => typeof id === "string" && windowIds.has(id),
+			)
+		: [];
+	const zOrdered = new Set(storedZOrder);
+	const zOrder = [
+		...storedZOrder,
+		...windows.map((window) => window.id).filter((id) => !zOrdered.has(id)),
+	];
+	const camera = canvasCameraSchema.safeParse(value.camera);
+	return {
+		id: V2_GLOBAL_CANVAS_ID,
+		version: 1,
+		camera: camera.success ? camera.data : DEFAULT_CANVAS_CAMERA,
+		windows,
+		zOrder,
+	};
+}
+
 const changesFilterSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("all") }),
 	z.object({ kind: z.literal("uncommitted") }),
@@ -319,6 +410,10 @@ export const v2UserPreferencesSchema = z.object({
 	rightSidebarWidth: z.number().default(340),
 	deleteLocalBranch: z.boolean().default(false),
 	showPresetsBar: z.boolean().default(true),
+	// "canvas" swaps every v2 workspace view for the global infinite canvas
+	// (windows for all live sessions across workspaces). Global rather than
+	// per-workspace because the canvas itself is org-global.
+	displayMode: z.enum(["tabs", "canvas"]).default("tabs"),
 });
 
 export type V2UserPreferencesRow = z.infer<typeof v2UserPreferencesSchema>;
@@ -337,6 +432,7 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	rightSidebarWidth: 340,
 	deleteLocalBranch: false,
 	showPresetsBar: true,
+	displayMode: "tabs",
 };
 
 /**

@@ -58,8 +58,11 @@ import {
 	dashboardSidebarSectionSchema,
 	type FailedWorkspaceCreateRow,
 	failedWorkspaceCreateSchema,
+	type GlobalCanvasLayoutRow,
+	globalCanvasLayoutSchema,
 	healV2UserPreferences,
 	healWorkspaceLocalState,
+	sanitizeGlobalCanvasLayout,
 	type V2TerminalPresetRow,
 	type V2UserPreferencesRow,
 	v2TerminalPresetSchema,
@@ -194,6 +197,13 @@ export interface OrgCollections {
 		LocalStorageCollectionUtils,
 		typeof v2UserPreferencesSchema,
 		z.input<typeof v2UserPreferencesSchema>
+	>;
+	v2GlobalCanvas: Collection<
+		GlobalCanvasLayoutRow,
+		string,
+		LocalStorageCollectionUtils,
+		typeof globalCanvasLayoutSchema,
+		z.input<typeof globalCanvasLayoutSchema>
 	>;
 	failedWorkspaceCreates: Collection<
 		FailedWorkspaceCreateRow,
@@ -855,6 +865,23 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		),
 	);
 
+	const v2GlobalCanvas = createCollection(
+		localStorageCollectionOptions(
+			withReadHeal(
+				{
+					id: `v2_global_canvas-${organizationId}`,
+					storageKey: `v2-global-canvas-${organizationId}`,
+					schema: globalCanvasLayoutSchema,
+					// Cast widens the literal "canvas" key to string (same shape as
+					// v2UserPreferences); explicit `item` type keeps `withReadHeal`'s
+					// schema/getKey linkage.
+					getKey: (item: GlobalCanvasLayoutRow) => item.id as string,
+				},
+				sanitizeGlobalCanvasLayout,
+			),
+		),
+	);
+
 	const failedWorkspaceCreates = createIndexedCollection(
 		localStorageCollectionOptions({
 			id: `failed_workspace_creates-${organizationId}`,
@@ -893,6 +920,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		v2SidebarSections,
 		v2TerminalPresets,
 		v2UserPreferences,
+		v2GlobalCanvas,
 		failedWorkspaceCreates,
 	};
 }
