@@ -2,6 +2,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { SquarePen } from "lucide-react";
 import { useHotkeyDisplay } from "renderer/hotkeys";
+import { TerminalPresetShortcuts } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/TerminalPresetShortcuts";
+import { useWorkspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceProvider";
 import {
 	terminalRichInputOpenStore,
 	useTerminalRichInputOpen,
@@ -23,6 +25,7 @@ export function TerminalPaneHeaderExtras({
 	terminalId,
 	terminalInstanceId,
 }: TerminalPaneHeaderExtrasProps) {
+	const { workspace } = useWorkspace();
 	const isOpen = useTerminalRichInputOpen();
 	const hotkeyText = useHotkeyDisplay("TOGGLE_TERMINAL_RICH_INPUT").text;
 	const label =
@@ -30,6 +33,15 @@ export function TerminalPaneHeaderExtras({
 
 	return (
 		<div className="flex items-center">
+			<TerminalPresetShortcuts
+				workspaceId={workspace.id}
+				terminalId={terminalId}
+				projectId={workspace.projectId ?? null}
+			/>
+			<div
+				className="mx-1 h-3.5 w-px bg-muted-foreground/30"
+				aria-hidden="true"
+			/>
 			<TerminalConnectionIndicator
 				terminalId={terminalId}
 				terminalInstanceId={terminalInstanceId}

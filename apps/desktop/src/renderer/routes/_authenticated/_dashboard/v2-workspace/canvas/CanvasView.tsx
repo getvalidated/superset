@@ -15,16 +15,16 @@ import {
 	useState,
 } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
-import { DashboardSidebarDeleteDialog } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarDeleteDialog";
-import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { DEFAULT_CANVAS_CAMERA } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
+import { TerminalPresetShortcuts } from "../$workspaceId/components/TerminalPresetShortcuts";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
 import { useWorkspace } from "../providers/WorkspaceProvider";
+import { CanvasHostProvider } from "./CanvasHostProvider";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasWindowContent } from "./CanvasWindowContent";
 import {
@@ -44,13 +44,14 @@ import {
 	type CanvasWindow,
 	getGlobalCanvasStore,
 } from "./canvasStore";
+import { requestDismissCanvasWindow } from "./dismissCanvasWindow";
 import {
 	type CanvasSearchData,
 	type CanvasSettingsData,
 	canvasWindowIds,
 	openCanvasWindow,
 } from "./openCanvasWindow";
-import { useCanvasGestures } from "./useCanvasGestures";
+import { isTextEntryTarget, useCanvasGestures } from "./useCanvasGestures";
 import {
 	CanvasSessionSeeder,
 	type CanvasTerminalData,
@@ -80,9 +81,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	workspaceLabel,
 	hostId,
 	organizationId,
-	closableWorkspaceId,
-	closableWorkspaceName,
-	onRequestCloseWorkspace,
+	projectId,
 }: {
 	window: CanvasWindow;
 	store: StoreApi<CanvasStore>;
@@ -93,10 +92,8 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	workspaceLabel: string;
 	hostId: string | null;
 	organizationId: string;
-	/** Workspace to destroy from the frame's close button; null = plain remove. */
-	closableWorkspaceId: string | null;
-	closableWorkspaceName: string | null;
-	onRequestCloseWorkspace: (workspaceId: string, workspaceName: string) => void;
+	/** Owning workspace's project, for preset matching. */
+	projectId: string | null;
 }) {
 	const culled =
 		window.kind === "terminal"
@@ -109,14 +106,16 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 			zIndex={zIndex}
 			isFocused={isFocused}
 			workspaceLabel={workspaceLabel}
-			onCloseWorkspace={
-				closableWorkspaceId
-					? () =>
-							onRequestCloseWorkspace(
-								closableWorkspaceId,
-								closableWorkspaceName ?? "",
-							)
-					: undefined
+			headerExtras={
+				window.kind === "terminal" ? (
+					<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
+						<TerminalPresetShortcuts
+							workspaceId={window.workspaceId}
+							terminalId={(window.data as CanvasTerminalData).terminalId}
+							projectId={projectId}
+						/>
+					</CanvasHostProvider>
+				) : undefined
 			}
 		>
 			{culled ? (
@@ -158,7 +157,6 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	// windows that need a workspace scope (search) bind to the route workspace.
 	const { workspace: routeWorkspace } = useWorkspace();
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
-	const { removeWorkspaceFromSidebar } = useDashboardSidebarState();
 	const store = useMemo(
 		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
 		[activeOrganizationId],
@@ -373,43 +371,29 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		});
 	}, [store]);
 
-	// Close button on a window frame → the sidebar's destroy-workspace confirm
-	// dialog. Windows without a closable workspace (main / unknown / ephemeral)
-	// keep the plain remove-from-canvas behavior in the frame itself.
-	const [closeTarget, setCloseTarget] = useState<{
-		workspaceId: string;
-		workspaceName: string;
-		open: boolean;
-	} | null>(null);
-
-	const handleWorkspaceDeleted = useCallback(
-		(workspaceId: string) => {
-			// Drop the workspace's windows now (dismissed, so seeding doesn't
-			// resurrect them while the host still reports the dying sessions) and
-			// release their parked terminal runtimes.
-			const state = store.getState();
-			const ids: string[] = [];
-			for (const window of Object.values(state.windows)) {
-				if (window.workspaceId !== workspaceId) continue;
-				if (window.kind === "terminal") {
-					const { terminalId } = window.data as CanvasTerminalData;
-					terminalRuntimeRegistry.release(terminalId, window.id);
-				}
-				ids.push(window.id);
+	// Backspace/Delete removes the selected (focused) window from the canvas —
+	// unless the user is typing (text inputs, the xterm helper textarea).
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Backspace" && event.key !== "Delete") return;
+			if (isTextEntryTarget(event.target)) return;
+			if (
+				event.target instanceof HTMLElement &&
+				event.target.closest(".xterm")
+			) {
+				return;
 			}
-			state.removeWindows(ids, { dismiss: true });
-			removeWorkspaceFromSidebar(workspaceId);
-			setCloseTarget(null);
-		},
-		[store, removeWorkspaceFromSidebar],
-	);
-
-	const handleRequestCloseWorkspace = useCallback(
-		(workspaceId: string, workspaceName: string) => {
-			setCloseTarget({ workspaceId, workspaceName, open: true });
-		},
-		[],
-	);
+			const state = store.getState();
+			const focused = state.focusedWindowId
+				? state.windows[state.focusedWindowId]
+				: null;
+			if (!focused) return;
+			event.preventDefault();
+			requestDismissCanvasWindow(store, focused);
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [store]);
 
 	const handleZoomToFit = useCallback(() => {
 		store
@@ -439,10 +423,6 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 							const window = windows[windowId];
 							if (!window) return null;
 							const workspace = workspacesById.get(window.workspaceId);
-							const closableWorkspace =
-								!window.ephemeral && workspace && workspace.type !== "main"
-									? workspace
-									: null;
 							return (
 								<CanvasWindowItem
 									key={window.id}
@@ -464,13 +444,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 									organizationId={
 										workspace?.organizationId ?? activeOrganizationId ?? ""
 									}
-									closableWorkspaceId={closableWorkspace?.id ?? null}
-									closableWorkspaceName={
-										closableWorkspace
-											? closableWorkspace.name || closableWorkspace.branch
-											: null
-									}
-									onRequestCloseWorkspace={handleRequestCloseWorkspace}
+									projectId={workspace?.projectId ?? null}
 								/>
 							);
 						})}
@@ -502,17 +476,6 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 					New workspace
 				</ContextMenuItem>
 			</ContextMenuContent>
-			{closeTarget ? (
-				<DashboardSidebarDeleteDialog
-					workspaceId={closeTarget.workspaceId}
-					workspaceName={closeTarget.workspaceName}
-					open={closeTarget.open}
-					onOpenChange={(open) =>
-						setCloseTarget((target) => (target ? { ...target, open } : target))
-					}
-					onDeleted={() => handleWorkspaceDeleted(closeTarget.workspaceId)}
-				/>
-			) : null}
 		</ContextMenu>
 	);
 }
