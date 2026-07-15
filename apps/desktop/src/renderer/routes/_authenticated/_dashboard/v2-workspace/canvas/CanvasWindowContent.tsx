@@ -158,6 +158,17 @@ export function CanvasWindowContent({
 		};
 	}, [window.kind, window.ephemeral, window.id]);
 
+	// A browser window mounting here may be a culled webview scrolling back
+	// into view — that reveal happens on the same gesture end whose zoom pass
+	// ran before this mount committed, so reapply the canvas zoom now.
+	useEffect(() => {
+		if (window.kind !== "browser") return;
+		browserRuntimeRegistry.setContentZoom(
+			window.id,
+			store.getState().camera.zoom,
+		);
+	}, [window.kind, window.id, store]);
+
 	if (window.kind === "terminal") {
 		return (
 			<CanvasHostProvider hostId={hostId} organizationId={organizationId}>

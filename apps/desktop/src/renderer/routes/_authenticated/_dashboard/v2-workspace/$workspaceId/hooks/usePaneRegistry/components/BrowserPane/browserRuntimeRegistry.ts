@@ -161,8 +161,23 @@ class BrowserRuntimeRegistryImpl {
 	 * out with the correct on-screen box for free.
 	 */
 	relayoutAll(): void {
+		// This runs per pan/zoom frame on the canvas. Read every placeholder
+		// rect before writing any webview style — interleaving forces a full
+		// layout pass per entry.
+		const measured: Array<{ webview: Electron.WebviewTag; rect: DOMRect }> = [];
 		for (const entry of this.entries.values()) {
-			if (entry.visible && entry.placeholder) this.updateLayout(entry);
+			if (entry.visible && entry.placeholder) {
+				measured.push({
+					webview: entry.webview,
+					rect: entry.placeholder.getBoundingClientRect(),
+				});
+			}
+		}
+		for (const { webview, rect } of measured) {
+			webview.style.top = `${rect.top}px`;
+			webview.style.left = `${rect.left}px`;
+			webview.style.width = `${rect.width}px`;
+			webview.style.height = `${rect.height}px`;
 		}
 	}
 
