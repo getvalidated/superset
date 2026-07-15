@@ -4,14 +4,15 @@ exact = true
 minimumReleaseAge = 259200
 # @xterm beta.288/289 (published 2026-07-13) ships the shared-atlas page-merge
 # garble fix (xtermjs/xterm.js#6042); versions are pinned exact. Safe to remove
-# this exclusion after 2026-07-16.
+# this exclusion after 2026-07-16. (addon-ligatures stays on beta.220: its
+# beta.289 bundle imports node:diagnostics_channel, which breaks the vite
+# renderer build.)
 minimumReleaseAgeExcludes = [
 	"@xterm/xterm",
 	"@xterm/headless",
 	"@xterm/addon-clipboard",
 	"@xterm/addon-fit",
 	"@xterm/addon-image",
-	"@xterm/addon-ligatures",
 	"@xterm/addon-progress",
 	"@xterm/addon-search",
 	"@xterm/addon-serialize",
