@@ -27,10 +27,10 @@ import { useConsumeAutomationRunLink } from "./hooks/useConsumeAutomationRunLink
 import { useConsumeOpenUrlRequest } from "./hooks/useConsumeOpenUrlRequest";
 import { useDefaultContextMenuActions } from "./hooks/useDefaultContextMenuActions";
 import { useDefaultPaneActions } from "./hooks/useDefaultPaneActions";
-import { useDirtyTabCloseGuard } from "./hooks/useDirtyTabCloseGuard";
 import { usePaneRegistry } from "./hooks/usePaneRegistry";
 import { renderBrowserTabIcon } from "./hooks/usePaneRegistry/components/BrowserPane";
 import { useSlotElement } from "./hooks/useSlotElement";
+import { useTabCloseGuard } from "./hooks/useTabCloseGuard";
 import { useV2PresetExecution } from "./hooks/useV2PresetExecution";
 import { useV2TerminalLauncher } from "./hooks/useV2TerminalLauncher";
 import { useV2WorkspacePaneLayout } from "./hooks/useV2WorkspacePaneLayout";
@@ -248,7 +248,7 @@ function V2WorkspaceContent() {
 		],
 	);
 	const defaultPaneActions = useDefaultPaneActions({ launcher });
-	const onBeforeCloseTab = useDirtyTabCloseGuard();
+	const onBeforeCloseTab = useTabCloseGuard();
 
 	const handleSidebarSelectFile = useCallback(
 		(...args: Parameters<typeof openFilePaneFromTreeClick>) => {
@@ -322,6 +322,7 @@ function V2WorkspaceContent() {
 					addTerminalTab={addTerminalTab}
 					paneRegistry={paneRegistry}
 					launcher={launcher}
+					onBeforeCloseTab={onBeforeCloseTab}
 				/>
 			)}
 			<WorkspaceGitStatusProvider
