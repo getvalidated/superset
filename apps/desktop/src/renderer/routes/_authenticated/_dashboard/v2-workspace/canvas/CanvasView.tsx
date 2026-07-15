@@ -4,7 +4,7 @@ import {
 	ContextMenuItem,
 	ContextMenuTrigger,
 } from "@superset/ui/context-menu";
-import { Plus } from "lucide-react";
+import { Globe, Plus } from "lucide-react";
 import {
 	memo,
 	useCallback,
@@ -23,6 +23,7 @@ import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { TerminalPresetShortcuts } from "../$workspaceId/components/TerminalPresetShortcuts";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
+import type { BrowserPaneData } from "../$workspaceId/types";
 import { useWorkspace } from "../providers/WorkspaceProvider";
 import { CanvasHostProvider } from "./CanvasHostProvider";
 import { CanvasToolbar } from "./CanvasToolbar";
@@ -349,6 +350,19 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		[store, handleGestureEnd],
 	);
 
+	// Canvas-native browser windows are ephemeral: they live only on the
+	// canvas (no mirrored tab pane), so the mirror reconciler leaves them
+	// alone and dismissal tears the webview down outright.
+	const handleOpenBrowser = useCallback(() => {
+		openCanvasWindow(store, {
+			id: `browser:${crypto.randomUUID()}`,
+			kind: "browser",
+			workspaceId: routeWorkspace.id,
+			data: { url: "about:blank" } satisfies BrowserPaneData,
+			ephemeral: true,
+		});
+	}, [store, routeWorkspace.id]);
+
 	const handleOpenSearch = useCallback(() => {
 		openCanvasWindow(store, {
 			id: `search:${crypto.randomUUID()}`,
@@ -453,6 +467,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 						store={store}
 						onZoomStep={handleZoomStep}
 						onZoomToFit={handleZoomToFit}
+						onOpenBrowser={handleOpenBrowser}
 						onOpenSearch={handleOpenSearch}
 						onOpenSettings={handleOpenSettings}
 						onExit={onExit}
@@ -474,6 +489,10 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				>
 					<Plus className="mr-2 size-4" />
 					New workspace
+				</ContextMenuItem>
+				<ContextMenuItem onSelect={handleOpenBrowser}>
+					<Globe className="mr-2 size-4" />
+					New browser window
 				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>

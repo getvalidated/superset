@@ -1,6 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import {
 	Columns3,
+	Globe,
 	Maximize,
 	Minus,
 	Plus,
@@ -43,6 +44,7 @@ export function CanvasToolbar({
 	store,
 	onZoomStep,
 	onZoomToFit,
+	onOpenBrowser,
 	onOpenSearch,
 	onOpenSettings,
 	onExit,
@@ -50,6 +52,7 @@ export function CanvasToolbar({
 	store: StoreApi<CanvasStore>;
 	onZoomStep: (factor: number) => void;
 	onZoomToFit: () => void;
+	onOpenBrowser: () => void;
 	onOpenSearch: () => void;
 	onOpenSettings: () => void;
 	onExit: () => void;
@@ -76,6 +79,9 @@ export function CanvasToolbar({
 				<Maximize className="size-3.5" />
 			</ToolbarButton>
 			<div className="mx-0.5 h-3.5 w-px bg-border" />
+			<ToolbarButton label="New browser window" onClick={onOpenBrowser}>
+				<Globe className="size-3.5" />
+			</ToolbarButton>
 			<ToolbarButton label="New search window" onClick={onOpenSearch}>
 				<Search className="size-3.5" />
 			</ToolbarButton>
