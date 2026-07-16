@@ -295,6 +295,10 @@ export const workspaceLocalStateSchema = z.object({
 	workspaceRunTerminals: z
 		.record(z.string(), workspaceRunTerminalStateSchema)
 		.default({}),
+	// Live host sessions the user detached from panes (sent to background).
+	// The session→tab sync must not re-adopt these; ids are pruned once the
+	// session dies.
+	backgroundTerminalIds: z.array(z.string()).default([]),
 });
 
 // Defaults for fields heal can synthesize. Identity fields (workspaceId,
@@ -320,6 +324,7 @@ const WORKSPACE_LOCAL_STATE_OPTIONAL_DEFAULTS = {
 		string,
 		z.infer<typeof workspaceRunTerminalStateSchema>
 	>,
+	backgroundTerminalIds: [] as string[],
 };
 
 export const dashboardSidebarSectionSchema = z.object({
@@ -521,6 +526,9 @@ export function healWorkspaceLocalState(raw: unknown): WorkspaceLocalStateRow {
 		workspaceRunTerminals:
 			r.workspaceRunTerminals ??
 			WORKSPACE_LOCAL_STATE_OPTIONAL_DEFAULTS.workspaceRunTerminals,
+		backgroundTerminalIds:
+			r.backgroundTerminalIds ??
+			WORKSPACE_LOCAL_STATE_OPTIONAL_DEFAULTS.backgroundTerminalIds,
 		sidebarState: {
 			...SIDEBAR_STATE_DEFAULTS,
 			...sidebar,

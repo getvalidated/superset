@@ -30,10 +30,12 @@ import {
 	getTerminalBackgroundMarkerIdsKey,
 	subscribeTerminalBackgroundMarkers,
 } from "renderer/lib/terminal/terminal-background-intents";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { getRelativeTime } from "renderer/screens/main/components/WorkspacesListView/utils";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import type { PaneViewerData } from "../../types";
+import { releaseBackgroundTerminals } from "../../utils/backgroundTerminals";
 import { focusOrAddTerminalPane } from "../../utils/focusTerminalPane";
 import {
 	BACKGROUND_TERMINAL_ATTACHMENT_DEBOUNCE_MS,
@@ -62,6 +64,7 @@ export const BackgroundTerminalsButton = memo(
 		store,
 	}: BackgroundTerminalsButtonProps) {
 		const [isOpen, setIsOpen] = useState(false);
+		const collections = useCollections();
 		const attachedTerminalIdsKey = useStore(store, (s) =>
 			getAttachedTerminalIdsKey(s.tabs),
 		);
@@ -202,6 +205,7 @@ export const BackgroundTerminalsButton = memo(
 
 		const handleAdopt = (terminalId: string) => {
 			clearTerminalBackgroundMarker(workspaceId, terminalId);
+			releaseBackgroundTerminals(collections, workspaceId, [terminalId]);
 			const result = focusOrAddTerminalPane(store, terminalId);
 			void utils.terminal.listSessions.invalidate({ workspaceId });
 			void utils.terminal.countBackgroundSessions.invalidate({ workspaceId });
@@ -213,6 +217,7 @@ export const BackgroundTerminalsButton = memo(
 			try {
 				await killSession.mutateAsync({ terminalId, workspaceId });
 				clearTerminalBackgroundMarker(workspaceId, terminalId);
+				releaseBackgroundTerminals(collections, workspaceId, [terminalId]);
 			} catch (error) {
 				console.error(
 					"[BackgroundTerminalsButton] Failed to kill session:",

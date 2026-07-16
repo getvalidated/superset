@@ -21,6 +21,10 @@ import type {
 	PaneViewerData,
 	TerminalPaneData,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/types";
+import {
+	persistBackgroundTerminal,
+	releaseBackgroundTerminals,
+} from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/backgroundTerminals";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { getRelativeTime } from "renderer/screens/main/components/WorkspacesListView/utils";
 import { TerminalPaneIcon } from "../TerminalPaneIcon";
@@ -193,7 +197,9 @@ export function TerminalSessionDropdown({
 
 		if ((terminalPaneLocations.get(terminalId)?.length ?? 0) === 0) {
 			markTerminalForBackground(terminalId, workspaceId);
+			persistBackgroundTerminal(collections, workspaceId, terminalId);
 		}
+		releaseBackgroundTerminals(collections, workspaceId, [nextTerminalId]);
 
 		state.setPaneData({
 			paneId: context.pane.id,
@@ -252,6 +258,7 @@ export function TerminalSessionDropdown({
 			const terminalPaneLocations = getTerminalPaneLocations(context);
 			if ((terminalPaneLocations.get(terminalId)?.length ?? 0) === 0) {
 				markTerminalForBackground(terminalId, workspaceId);
+				persistBackgroundTerminal(collections, workspaceId, terminalId);
 			}
 			state.setPaneData({
 				paneId: context.pane.id,

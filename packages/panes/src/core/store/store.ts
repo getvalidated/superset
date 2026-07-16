@@ -106,6 +106,9 @@ export type CreateTabInput<TData> = {
 	titleOverride?: string;
 	panes: [CreatePaneInput<TData>, ...CreatePaneInput<TData>[]];
 	activePaneId?: string;
+	/** When false, the new tab is appended without stealing focus (still
+	 *  becomes active if no tab was active). Defaults to true. */
+	activate?: boolean;
 };
 
 export interface WorkspaceStore<TData> extends WorkspaceState<TData> {
@@ -204,7 +207,8 @@ export function createWorkspaceStore<TData>(
 			const tab = buildTab({ ...args, panes: builtPanes });
 			set((s) => ({
 				tabs: [...s.tabs, tab],
-				activeTabId: tab.id,
+				activeTabId:
+					args.activate === false ? (s.activeTabId ?? tab.id) : tab.id,
 			}));
 		},
 
