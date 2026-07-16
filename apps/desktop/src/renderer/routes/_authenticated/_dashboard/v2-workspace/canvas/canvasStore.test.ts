@@ -206,6 +206,17 @@ describe("canvasStore", () => {
 		expect(store.getState().dismissedWindowIds.has("a")).toBe(true);
 	});
 
+	it("interactionMode defaults to drag and switches without churning state", () => {
+		const store = createCanvasStore();
+		expect(store.getState().interactionMode).toBe("drag");
+		store.getState().setInteractionMode("select");
+		expect(store.getState().interactionMode).toBe("select");
+		// No-ops don't create new state.
+		const before = store.getState();
+		store.getState().setInteractionMode("select");
+		expect(store.getState()).toBe(before);
+	});
+
 	it("undo prunes selection and focus to surviving ids", () => {
 		const store = createCanvasStore();
 		store.getState().pushHistory();

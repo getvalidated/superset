@@ -3,6 +3,7 @@ import { cn } from "@superset/ui/utils";
 import {
 	Columns3,
 	Globe,
+	Hand,
 	Maximize,
 	Minus,
 	MousePointer2,
@@ -18,7 +19,11 @@ import {
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { clampZoom } from "./canvasGeometry";
-import type { CanvasStore, CanvasTool } from "./canvasStore";
+import type {
+	CanvasInteractionMode,
+	CanvasStore,
+	CanvasTool,
+} from "./canvasStore";
 
 function ToolbarButton({
 	label,
@@ -75,12 +80,19 @@ export function CanvasToolbar({
 }) {
 	const zoom = useStore(store, (state) => state.camera.zoom);
 	const activeTool = useStore(store, (state) => state.activeTool);
+	const interactionMode = useStore(store, (state) => state.interactionMode);
 	const canUndo = useStore(store, (state) => state.undoStack.length > 0);
 	const canRedo = useStore(store, (state) => state.redoStack.length > 0);
 
 	// Clicking the armed tool again disarms it back to select.
 	const selectTool = (tool: CanvasTool) =>
 		store.getState().setActiveTool(activeTool === tool ? "select" : tool);
+
+	// Picking a mode also disarms any drawing tool, like Figma's V/H.
+	const selectMode = (mode: CanvasInteractionMode) => {
+		store.getState().setActiveTool("select");
+		store.getState().setInteractionMode(mode);
+	};
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: right-click on the toolbar must not open the canvas background menu
@@ -90,12 +102,20 @@ export function CanvasToolbar({
 			onContextMenu={(event) => event.stopPropagation()}
 		>
 			<ToolbarButton
-				label="Select"
-				active={activeTool === "select"}
-				onClick={() => store.getState().setActiveTool("select")}
+				label="Select — drag to marquee-select (V)"
+				active={activeTool === "select" && interactionMode === "select"}
+				onClick={() => selectMode("select")}
 			>
 				<MousePointer2 className="size-3.5" />
 			</ToolbarButton>
+			<ToolbarButton
+				label="Drag — drag to pan (H)"
+				active={activeTool === "select" && interactionMode === "drag"}
+				onClick={() => selectMode("drag")}
+			>
+				<Hand className="size-3.5" />
+			</ToolbarButton>
+			<div className="mx-0.5 h-3.5 w-px bg-border" />
 			<ToolbarButton
 				label="Draw line"
 				active={activeTool === "line"}
