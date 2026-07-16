@@ -6,6 +6,7 @@ import {
 	type TerminalLinkHandlers,
 	TerminalLinkManager,
 } from "./terminal-link-manager";
+import { setTerminalRenderZoom } from "./terminal-render-zoom";
 import {
 	attachToContainer,
 	createRuntime,
@@ -263,6 +264,18 @@ class TerminalRuntimeRegistryImpl {
 			if (!runtime) return;
 			sendResize(transport, runtime.terminal.cols, runtime.terminal.rows);
 		});
+	}
+
+	/**
+	 * Rendering-only compensation for an ancestor CSS scale (the canvas
+	 * camera). Re-rasterizes xterm at devicePixelRatio × zoom so CSS-upscaled
+	 * terminals stay crisp; cols/rows, the PTY, and layout are untouched.
+	 * Idempotent per zoom — call when a zoom gesture settles, not per frame.
+	 */
+	setRenderZoom(terminalId: string, zoom: number, instanceId = terminalId) {
+		const entry = this.getEntry(terminalId, instanceId);
+		if (!entry?.runtime) return;
+		setTerminalRenderZoom(entry.runtime.terminal, zoom);
 	}
 
 	private disposeEntry(

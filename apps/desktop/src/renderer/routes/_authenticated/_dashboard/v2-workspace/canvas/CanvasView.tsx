@@ -245,10 +245,31 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		}
 	}, [store]);
 
+	// Terminals never reflow on camera zoom — geometry is in canvas
+	// coordinates and the camera is a pure CSS transform, so cols/rows and
+	// the PTY are untouched. This pass only re-rasterizes live xterm
+	// instances at the settled zoom so their bitmaps stay crisp above 1×.
+	// Runs on gesture end (the wheel path is already debounced 250ms), never
+	// per frame. Runtimes mounting later (culled → live) re-apply on mount
+	// in CanvasWindowContent; released runtimes drop the state with them.
+	const applyTerminalRenderZoom = useCallback(() => {
+		const state = store.getState();
+		for (const window of Object.values(state.windows)) {
+			if (window.kind !== "terminal") continue;
+			const { terminalId } = window.data as CanvasTerminalData;
+			terminalRuntimeRegistry.setRenderZoom(
+				terminalId,
+				state.camera.zoom,
+				window.id,
+			);
+		}
+	}, [store]);
+
 	const handleGestureEnd = useCallback(() => {
 		setCullTick((tick) => tick + 1);
 		applyBrowserContentZoom();
-	}, [applyBrowserContentZoom]);
+		applyTerminalRenderZoom();
+	}, [applyBrowserContentZoom, applyTerminalRenderZoom]);
 
 	useCanvasGestures({ viewportRef, store, onGestureEnd: handleGestureEnd });
 
