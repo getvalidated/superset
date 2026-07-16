@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
-import { getGlobalCanvasStore } from "renderer/routes/_authenticated/_dashboard/v2-workspace/canvas";
-import { useStore } from "zustand";
+import { useEffectiveWorkspaceId } from "renderer/routes/_authenticated/_dashboard/hooks/useEffectiveWorkspaceId";
 import { useHostWorkspaces } from "../../../../../providers/HostWorkspacesProvider";
 import { useLocalHostService } from "../../../../../providers/LocalHostServiceProvider";
 import { V2OpenInMenuButton } from "../V2OpenInMenuButton";
@@ -15,27 +12,8 @@ interface V2WorkspaceOpenInButtonProps {
 export function V2WorkspaceOpenInButton({
 	workspaceId,
 }: V2WorkspaceOpenInButtonProps) {
-	const { machineId, activeHostUrl, activeOrganizationId } =
-		useLocalHostService();
-	const { preferences } = useV2UserPreferences();
-
-	// The canvas shows windows from every workspace, so the route workspace
-	// isn't necessarily what the user is looking at — while it's displayed,
-	// follow the focused window's owning workspace instead. Org-global windows
-	// (search/settings, workspaceId "") and no-focus fall back to the route.
-	const canvasStore = useMemo(
-		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
-		[activeOrganizationId],
-	);
-	const focusedCanvasWorkspaceId = useStore(canvasStore, (state) =>
-		state.focusedWindowId
-			? state.windows[state.focusedWindowId]?.workspaceId || null
-			: null,
-	);
-	const effectiveWorkspaceId =
-		preferences.displayMode === "canvas" && focusedCanvasWorkspaceId
-			? focusedCanvasWorkspaceId
-			: workspaceId;
+	const { machineId, activeHostUrl } = useLocalHostService();
+	const effectiveWorkspaceId = useEffectiveWorkspaceId(workspaceId);
 
 	const { workspaces } = useHostWorkspaces();
 	const workspace =
