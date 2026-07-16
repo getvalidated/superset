@@ -95,6 +95,31 @@ class BrowserManager extends EventEmitter {
 		return wc;
 	}
 
+	listWindows(): Array<{
+		paneId: string;
+		title: string;
+		url: string;
+		isLoading: boolean;
+	}> {
+		const windows: Array<{
+			paneId: string;
+			title: string;
+			url: string;
+			isLoading: boolean;
+		}> = [];
+		for (const paneId of this.paneWebContentsIds.keys()) {
+			const wc = this.getWebContents(paneId);
+			if (!wc) continue;
+			windows.push({
+				paneId,
+				title: wc.getTitle(),
+				url: wc.getURL(),
+				isLoading: wc.isLoading(),
+			});
+		}
+		return windows;
+	}
+
 	navigate(paneId: string, url: string): void {
 		const wc = this.getWebContents(paneId);
 		if (!wc) throw new Error(`No webContents for pane ${paneId}`);
