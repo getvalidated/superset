@@ -33,6 +33,7 @@ import { usePaneRegistry } from "./hooks/usePaneRegistry";
 import { renderBrowserTabIcon } from "./hooks/usePaneRegistry/components/BrowserPane";
 import { useSlotElement } from "./hooks/useSlotElement";
 import { useTabCloseGuard } from "./hooks/useTabCloseGuard";
+import { useTerminalSessionTabSync } from "./hooks/useTerminalSessionTabSync";
 import { useV2PresetExecution } from "./hooks/useV2PresetExecution";
 import { useV2TerminalLauncher } from "./hooks/useV2TerminalLauncher";
 import { useV2WorkspacePaneLayout } from "./hooks/useV2WorkspacePaneLayout";
@@ -148,6 +149,10 @@ function V2WorkspaceContent() {
 	// defaults) — treat that as tabs.
 	const displayMode = v2UserPreferences.displayMode ?? "tabs";
 	const { store } = useV2WorkspacePaneLayout();
+	// Keep tabs one-to-one with the host's live sessions (runs in both display
+	// modes so canvas and tabs stay in sync) — sessions created out-of-band
+	// (MCP, another client) appear as tabs instead of staying invisible.
+	useTerminalSessionTabSync({ workspaceId, store });
 	const launcher = useV2TerminalLauncher();
 	const {
 		matchedPresets,

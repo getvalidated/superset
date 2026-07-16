@@ -27,6 +27,24 @@ describe("tab operations", () => {
 		expect(store.getState().activeTabId).toBe("t1");
 	});
 
+	it("adds a tab without stealing focus when activate is false", () => {
+		const store = makeStore();
+		store.getState().addTab({ id: "t1", panes: [tp("p1")] });
+
+		store.getState().addTab({ id: "t2", panes: [tp("p2")], activate: false });
+
+		expect(store.getState().tabs.map((t) => t.id)).toEqual(["t1", "t2"]);
+		expect(store.getState().activeTabId).toBe("t1");
+	});
+
+	it("activates a non-activating tab when nothing was active", () => {
+		const store = makeStore();
+
+		store.getState().addTab({ id: "t1", panes: [tp("p1")], activate: false });
+
+		expect(store.getState().activeTabId).toBe("t1");
+	});
+
 	it("removes the active tab and falls back to neighbor", () => {
 		const store = makeStore();
 		store.getState().addTab({ id: "t1", panes: [tp("p1")] });

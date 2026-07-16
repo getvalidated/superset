@@ -1,0 +1,1 @@
+export { useTerminalSessionTabSync } from "./useTerminalSessionTabSync";
