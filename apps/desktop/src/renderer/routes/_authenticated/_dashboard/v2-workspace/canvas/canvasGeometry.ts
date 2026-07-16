@@ -31,9 +31,6 @@ export const CANVAS_WINDOW_GAP = 40;
 export const MIN_CANVAS_WINDOW_WIDTH = 320;
 export const MIN_CANVAS_WINDOW_HEIGHT = 200;
 
-/** Below this zoom, terminal windows render as placeholder cards. */
-export const TERMINAL_PLACEHOLDER_ZOOM = 0.35;
-
 /** Hard cap on simultaneously-mounted xterm runtimes on the canvas. Kept
  *  well under the browser's ~16 WebGL context limit — the context-loss
  *  fallback permanently flips ALL terminals to the DOM renderer, so it must
@@ -146,10 +143,11 @@ export function getVisibleWindowIds(
 }
 
 /**
- * Which terminal windows may mount a real xterm runtime: the closest
- * `maxLive` visible windows by distance from the viewport center, always
- * including the focused window. Below TERMINAL_PLACEHOLDER_ZOOM nothing is
- * live — text is unreadable there anyway.
+ * Which terminal windows may mount a real xterm runtime: visible windows in
+ * store order up to `maxLive`, always including the focused window. Which
+ * ones win the slots doesn't matter — only that the count stays capped so
+ * mounted WebGL contexts remain well under the browser's ~16-context limit.
+ * Over-cap windows render as placeholders and promote to live on focus.
  */
 export function pickLiveTerminalWindowIds({
 	windows,
@@ -164,30 +162,14 @@ export function pickLiveTerminalWindowIds({
 	focusedWindowId: string | null;
 	maxLive?: number;
 }): Set<string> {
-	if (camera.zoom < TERMINAL_PLACEHOLDER_ZOOM) return new Set();
 	const visible = getVisibleWindowIds(windows, camera, viewport);
-	const center = screenToCanvas(
-		{ x: viewport.width / 2, y: viewport.height / 2 },
-		camera,
-	);
-	const byDistance = windows
-		.filter((window) => visible.has(window.id))
-		.map((window) => ({
-			id: window.id,
-			distance: Math.hypot(
-				window.x + window.width / 2 - center.x,
-				window.y + window.height / 2 - center.y,
-			),
-		}))
-		.sort((a, b) => a.distance - b.distance);
-
 	const live = new Set<string>();
 	if (focusedWindowId && windows.some((w) => w.id === focusedWindowId)) {
 		live.add(focusedWindowId);
 	}
-	for (const candidate of byDistance) {
+	for (const window of windows) {
 		if (live.size >= maxLive) break;
-		live.add(candidate.id);
+		if (visible.has(window.id)) live.add(window.id);
 	}
 	return live;
 }

@@ -11,7 +11,6 @@ import {
 	pickLiveTerminalWindowIds,
 	planWindowPlacements,
 	screenToCanvas,
-	TERMINAL_PLACEHOLDER_ZOOM,
 	zoomAtPoint,
 } from "./canvasGeometry";
 
@@ -80,18 +79,18 @@ describe("getVisibleWindowIds", () => {
 });
 
 describe("pickLiveTerminalWindowIds", () => {
-	it("returns nothing below the placeholder zoom threshold", () => {
+	it("stays live at any zoom level while visible", () => {
 		const windows = [makeWindow("a", 0, 0)];
 		const live = pickLiveTerminalWindowIds({
 			windows,
-			camera: { x: 0, y: 0, zoom: TERMINAL_PLACEHOLDER_ZOOM - 0.01 },
+			camera: { x: 0, y: 0, zoom: 0.1 },
 			viewport: VIEWPORT,
-			focusedWindowId: "a",
+			focusedWindowId: null,
 		});
-		expect(live.size).toBe(0);
+		expect(live.has("a")).toBe(true);
 	});
 
-	it("caps at maxLive, closest to viewport center first", () => {
+	it("caps at maxLive with only visible windows", () => {
 		const windows = Array.from({ length: 6 }, (_, i) =>
 			makeWindow(`w${i}`, i * 150, 0, 100),
 		);
@@ -103,11 +102,25 @@ describe("pickLiveTerminalWindowIds", () => {
 			maxLive: 3,
 		});
 		expect(live.size).toBe(3);
-		// Viewport center x=600; closest are w3 (center 350)... compute: centers
-		// are 50,200,350,500,650,800 → nearest to 600 are w3(500), w4(650), w5(800)?
-		// |500-600|=100, |650-600|=50, |800-600|=200, |350-600|=250.
-		expect(live.has("w4")).toBe(true);
-		expect(live.has("w3")).toBe(true);
+		for (const id of live) {
+			expect(windows.some((window) => window.id === id)).toBe(true);
+		}
+	});
+
+	it("skips off-screen windows when filling the cap", () => {
+		const windows = [
+			makeWindow("off", -10_000, -10_000, 100),
+			makeWindow("on", 0, 0, 100),
+		];
+		const live = pickLiveTerminalWindowIds({
+			windows,
+			camera: { x: 0, y: 0, zoom: 1 },
+			viewport: VIEWPORT,
+			focusedWindowId: null,
+			maxLive: 1,
+		});
+		expect(live.has("on")).toBe(true);
+		expect(live.has("off")).toBe(false);
 	});
 
 	it("always includes the focused window", () => {

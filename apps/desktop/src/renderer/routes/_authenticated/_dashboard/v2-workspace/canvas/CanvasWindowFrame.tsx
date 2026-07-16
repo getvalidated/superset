@@ -504,8 +504,8 @@ export function CanvasBrowserPlaceholder({ window }: { window: CanvasWindow }) {
 }
 
 /**
- * Stand-in for a culled terminal window (off-viewport, far zoom-out, or over
- * the live-terminal cap). The runtime stays parked; clicking focuses the
+ * Stand-in for a culled terminal window (off-viewport, or over the
+ * live-terminal cap). The runtime stays parked; clicking focuses the
  * window, which promotes it into the live set.
  */
 export function CanvasTerminalPlaceholder({
