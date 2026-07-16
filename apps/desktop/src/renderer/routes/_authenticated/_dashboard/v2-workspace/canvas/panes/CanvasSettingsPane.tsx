@@ -3,15 +3,22 @@ import { cn } from "@superset/ui/utils";
 import { type ReactNode, useState } from "react";
 import { createChatServiceIpcClient } from "renderer/components/Chat/utils/chat-service-client";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { electronQueryClient } from "renderer/providers/ElectronTRPCProvider";
+import { AccountSettings } from "renderer/routes/_authenticated/settings/account/components/AccountSettings";
+import { ApiKeysSettings } from "renderer/routes/_authenticated/settings/api-keys/components/ApiKeysSettings";
 import { AppearanceSettings } from "renderer/routes/_authenticated/settings/appearance/components/AppearanceSettings";
 import { BehaviorSettings } from "renderer/routes/_authenticated/settings/behavior/components/BehaviorSettings";
 import { ExperimentalSettings } from "renderer/routes/_authenticated/settings/experimental/components/ExperimentalSettings";
 import { GitSettings } from "renderer/routes/_authenticated/settings/git/components/GitSettings";
 import { V2GitSettings } from "renderer/routes/_authenticated/settings/git/components/V2GitSettings";
+import { IntegrationsSettings } from "renderer/routes/_authenticated/settings/integrations/components/IntegrationsSettings";
 import { LinksSettings } from "renderer/routes/_authenticated/settings/links/components/LinksSettings";
 import { ModelsSettings } from "renderer/routes/_authenticated/settings/models/components/ModelsSettings";
+import { OrganizationSettings } from "renderer/routes/_authenticated/settings/organization/components/OrganizationSettings";
+import { PermissionsSettings } from "renderer/routes/_authenticated/settings/permissions/components/PermissionsSettings";
 import { RingtonesSettings } from "renderer/routes/_authenticated/settings/ringtones/components/RingtonesSettings";
+import { SecuritySettings } from "renderer/routes/_authenticated/settings/security/components/SecuritySettings";
 import { TerminalSettings } from "renderer/routes/_authenticated/settings/terminal/components/TerminalSettings";
 import type { CanvasSettingsData } from "../openCanvasWindow";
 
@@ -55,13 +62,17 @@ interface CanvasSettingsSection {
 	id: string;
 	label: string;
 	render: () => ReactNode;
+	/** Section only applies on macOS (system permissions). */
+	macOnly?: boolean;
 }
 
-// Sections whose components mount cleanly outside the settings route. Keyboard
-// is excluded — its UI lives inline in the route page, not a reusable
-// component. Route-scoped sections (account, organization, hosts, projects, …)
+// Sections whose components mount cleanly outside the settings route.
+// Excluded: keyboard (its UI lives inline in the route page, not a reusable
+// component), billing (links into the /settings/billing/plans route), and the
+// inner-sidebar/subroute sections (teams, projects, hosts, agents) — those
 // stay in the full settings screen.
 const SECTIONS: CanvasSettingsSection[] = [
+	{ id: "account", label: "Account", render: () => <AccountSettings /> },
 	{
 		id: "appearance",
 		label: "Appearance",
@@ -77,6 +88,24 @@ const SECTIONS: CanvasSettingsSection[] = [
 	},
 	{ id: "links", label: "Links", render: () => <LinksSettings /> },
 	{ id: "models", label: "Models", render: () => <CanvasModelsSettings /> },
+	{
+		id: "organization",
+		label: "Organization",
+		render: () => <OrganizationSettings />,
+	},
+	{
+		id: "integrations",
+		label: "Integrations",
+		render: () => <IntegrationsSettings />,
+	},
+	{ id: "apikeys", label: "API Keys", render: () => <ApiKeysSettings /> },
+	{ id: "security", label: "Security", render: () => <SecuritySettings /> },
+	{
+		id: "permissions",
+		label: "Permissions",
+		render: () => <PermissionsSettings />,
+		macOnly: true,
+	},
 	{
 		id: "experimental",
 		label: "Experimental",
@@ -96,13 +125,16 @@ export function CanvasSettingsPane({
 	data: CanvasSettingsData;
 	onDataChange: (data: CanvasSettingsData) => void;
 }) {
+	const { data: platform } = electronTrpc.window.getPlatform.useQuery();
+	const isMac = platform === undefined || platform === "darwin";
+	const sections = SECTIONS.filter((section) => !section.macOnly || isMac);
 	const activeSection =
-		SECTIONS.find((section) => section.id === data.section) ?? SECTIONS[0];
+		sections.find((section) => section.id === data.section) ?? sections[0];
 
 	return (
 		<div className="flex h-full min-h-0 w-full">
 			<nav className="w-36 min-w-28 shrink-0 overflow-y-auto border-r border-border/60 p-1.5">
-				{SECTIONS.map((section) => (
+				{sections.map((section) => (
 					<button
 						key={section.id}
 						type="button"
