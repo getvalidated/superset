@@ -4,7 +4,7 @@ import {
 	ContextMenuItem,
 	ContextMenuTrigger,
 } from "@superset/ui/context-menu";
-import { Globe, Plus } from "lucide-react";
+import { Globe, Plus, Search, Settings } from "lucide-react";
 import {
 	memo,
 	useCallback,
@@ -14,7 +14,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import {
 	EDIT_COMMAND_EVENT,
@@ -171,7 +170,6 @@ export function CanvasView() {
 	// list. Toolbar windows that need a workspace scope (search) prefer the
 	// route workspace when one is present.
 	const routeWorkspace = useWorkspaceOptional()?.workspace ?? null;
-	const { setDisplayMode } = useV2UserPreferences();
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
 	const store = useMemo(
 		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
@@ -604,11 +602,6 @@ export function CanvasView() {
 						store={store}
 						onZoomStep={handleZoomStep}
 						onZoomToFit={handleZoomToFit}
-						onOpenBrowser={handleOpenBrowser}
-						onOpenSearch={handleOpenSearch}
-						searchDisabled={!searchWorkspaceId}
-						onOpenSettings={handleOpenSettings}
-						onExit={() => setDisplayMode("tabs")}
 					/>
 					{windowList.length === 0 ? (
 						<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -631,6 +624,17 @@ export function CanvasView() {
 				<ContextMenuItem onSelect={handleOpenBrowser}>
 					<Globe className="mr-2 size-4" />
 					New browser window
+				</ContextMenuItem>
+				<ContextMenuItem
+					onSelect={handleOpenSearch}
+					disabled={!searchWorkspaceId}
+				>
+					<Search className="mr-2 size-4" />
+					New search window
+				</ContextMenuItem>
+				<ContextMenuItem onSelect={handleOpenSettings}>
+					<Settings className="mr-2 size-4" />
+					New settings window
 				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>
