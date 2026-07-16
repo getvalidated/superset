@@ -353,6 +353,90 @@ local_seed_app_projects() {
   return 0
 }
 
+local_seed_v2_projects() {
+  echo "🛰️  Seeding v2_projects rows from the carried host.db..."
+
+  # The v2 canvas surfaces list projects from the CLOUD `v2_projects` table
+  # (synced to the app via Electric), paired with host.db `projects` rows by
+  # shared id. The host.db carry-over pre-places the host rows, but each
+  # workspace's fresh Postgres has no v2_projects — so the canvas
+  # workspace-creation menu stays empty. Mirror the carried host.db projects
+  # into v2_projects under the dev org so the canvas sees them immediately.
+
+  if ! command -v sqlite3 &> /dev/null; then
+    step_skipped "Seed v2 projects (no sqlite3)"
+    return 0
+  fi
+
+  local org_id
+  org_id="$(docker compose -p "$LOCAL_DB_PROJECT" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+    psql -U postgres -d main -Atc \
+    "select m.organization_id from auth.members m join auth.users u on u.id = m.user_id where u.email = 'admin@local.test' limit 1;" \
+    2>/dev/null | tr -d '[:space:]')"
+  if [ -z "$org_id" ]; then
+    warn "Could not resolve dev org id — skipping v2_projects seed"
+    step_skipped "Seed v2 projects (no dev org)"
+    return 0
+  fi
+
+  local host_db="superset-dev-data/host/$org_id/host.db"
+  local app_db="superset-dev-data/local.db"
+  if [ ! -f "$host_db" ]; then
+    warn "No carried host.db — nothing to mirror into v2_projects"
+    step_skipped "Seed v2 projects (no host.db)"
+    return 0
+  fi
+
+  # id|name|clone_url per project; display name from the carried app local.db
+  # when available, else the GitHub repo name, else the repo dir basename.
+  local sql tmp_rows
+  tmp_rows="$(sqlite3 "file:$host_db?mode=ro" \
+    "attach database 'file:$PWD/$app_db?mode=ro' as app;
+     select p.id, coalesce(a.name, p.repo_name, replace(p.repo_path, rtrim(p.repo_path, replace(p.repo_path,'/','')), '')), coalesce(p.repo_url,'')
+     from projects p left join app.projects a on a.main_repo_path = p.repo_path;" 2>/dev/null)"
+  if [ -z "$tmp_rows" ]; then
+    # Retry without the app DB (may not exist) — repo_name/basename only.
+    tmp_rows="$(sqlite3 "file:$host_db?mode=ro" \
+      "select id, coalesce(repo_name, replace(repo_path, rtrim(repo_path, replace(repo_path,'/','')), '')), coalesce(repo_url,'')
+       from projects;" 2>/dev/null)"
+  fi
+  if [ -z "$tmp_rows" ]; then
+    step_skipped "Seed v2 projects (no projects in host.db)"
+    return 0
+  fi
+
+  sql="begin;"
+  local seen="|" line pid pname purl slug base n esc_name esc_url
+  while IFS='|' read -r pid pname purl; do
+    [ -n "$pid" ] || continue
+    slug="$(sanitize_name "$pname")"
+    [ -n "$slug" ] || slug="project"
+    base="$slug"; n=2
+    while [ "${seen#*"|$slug|"}" != "$seen" ]; do
+      slug="$base-$n"; n=$((n + 1))
+    done
+    seen="$seen$slug|"
+    esc_name="$(printf "%s" "$pname" | sed "s/'/''/g")"
+    esc_url="$(printf "%s" "$purl" | sed "s/'/''/g")"
+    if [ -n "$purl" ]; then
+      sql="$sql insert into v2_projects (id, organization_id, name, slug, repo_clone_url) values ('$pid', '$org_id', '$esc_name', '$slug', '$esc_url') on conflict (id) do nothing;"
+    else
+      sql="$sql insert into v2_projects (id, organization_id, name, slug, repo_clone_url) values ('$pid', '$org_id', '$esc_name', '$slug', null) on conflict (id) do nothing;"
+    fi
+  done <<< "$tmp_rows"
+  sql="$sql commit;"
+
+  if ! printf "%s" "$sql" | docker compose -p "$LOCAL_DB_PROJECT" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+      psql -U postgres -d main -v ON_ERROR_STOP=1 -q 2>/dev/null; then
+    warn "v2_projects insert failed — canvas project list starts with defaults"
+    step_skipped "Seed v2 projects (insert failed)"
+    return 0
+  fi
+
+  success "v2_projects seeded from host.db ($(printf "%s\n" "$tmp_rows" | grep -c .) projects)"
+  return 0
+}
+
 local_write_env() {
   echo "📝 Writing workspace .env (DB URLs + ports)..."
   if [ -z "${SUPERSET_PORT_BASE:-}" ] || [ -z "$LOCAL_NEON_PROXY_PORT" ]; then
@@ -516,6 +600,7 @@ local_setup_main() {
   local_seed_dev_account || step_failed "Seed dev account"
   local_seed_host_state || step_failed "Seed host state"
   local_seed_app_projects || step_failed "Seed app projects"
+  local_seed_v2_projects || step_failed "Seed v2 projects"
   local_write_config_overlay || step_failed "Write config overlay"
 
   print_summary "Local setup"
