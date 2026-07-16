@@ -250,6 +250,56 @@ export function planWindowPlacements({
 }
 
 /**
+ * Camera that brings `bbox` fully into the viewport with `padding` screen
+ * pixels of breathing room, moving as little as possible: keeps the current
+ * zoom and pans the minimum distance when the box already fits at that zoom,
+ * zooms out (never in) and centers when it doesn't. Returns `camera`
+ * unchanged when the box is already contained or the viewport is unmeasured.
+ */
+export function getContainCamera(
+	bbox: CanvasRect,
+	camera: CanvasCamera,
+	viewport: ViewportSize,
+	padding = 48,
+): CanvasCamera {
+	if (viewport.width <= 0 || viewport.height <= 0) return camera;
+	const availableWidth = Math.max(1, viewport.width - padding * 2);
+	const availableHeight = Math.max(1, viewport.height - padding * 2);
+	const fitZoom = Math.min(
+		availableWidth / bbox.width,
+		availableHeight / bbox.height,
+	);
+	if (fitZoom < camera.zoom) {
+		// Too big for the current zoom — zoom out to fit and center. The min
+		// clamp can leave it larger than the viewport; centered is still best.
+		const zoom = clampZoom(fitZoom);
+		return {
+			zoom,
+			x: viewport.width / 2 - (bbox.x + bbox.width / 2) * zoom,
+			y: viewport.height / 2 - (bbox.y + bbox.height / 2) * zoom,
+		};
+	}
+	// Fits at the current zoom — pan the minimum distance that contains it.
+	// It fits, so at most one edge per axis can be out of bounds.
+	const left = bbox.x * camera.zoom + camera.x;
+	const top = bbox.y * camera.zoom + camera.y;
+	const right = left + bbox.width * camera.zoom;
+	const bottom = top + bbox.height * camera.zoom;
+	let dx = 0;
+	if (left < padding) dx = padding - left;
+	else if (right > viewport.width - padding) {
+		dx = viewport.width - padding - right;
+	}
+	let dy = 0;
+	if (top < padding) dy = padding - top;
+	else if (bottom > viewport.height - padding) {
+		dy = viewport.height - padding - bottom;
+	}
+	if (dx === 0 && dy === 0) return camera;
+	return { zoom: camera.zoom, x: camera.x + dx, y: camera.y + dy };
+}
+
+/**
  * Camera that frames every window with `padding` screen pixels on each side,
  * zoom clamped to [MIN_CANVAS_ZOOM, 1] (fit never magnifies).
  */

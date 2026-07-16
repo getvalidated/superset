@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	canvasToScreen,
 	clampZoom,
+	getContainCamera,
 	getVisibleWindowIds,
 	getWindowsBoundingBox,
 	getZoomToFitCamera,
@@ -182,5 +183,83 @@ describe("getZoomToFitCamera", () => {
 		const camera = getZoomToFitCamera([makeWindow("tiny", 0, 0, 50)], VIEWPORT);
 		expect(camera.zoom).toBe(1);
 		expect(getZoomToFitCamera([], VIEWPORT)).toEqual({ x: 0, y: 0, zoom: 1 });
+	});
+});
+
+describe("getContainCamera", () => {
+	const PADDING = 48;
+
+	function screenRect(
+		bbox: { x: number; y: number; width: number; height: number },
+		camera: { x: number; y: number; zoom: number },
+	) {
+		const topLeft = canvasToScreen({ x: bbox.x, y: bbox.y }, camera);
+		return {
+			left: topLeft.x,
+			top: topLeft.y,
+			right: topLeft.x + bbox.width * camera.zoom,
+			bottom: topLeft.y + bbox.height * camera.zoom,
+		};
+	}
+
+	it("returns the camera unchanged when the box is already contained", () => {
+		const camera = { x: 0, y: 0, zoom: 1 };
+		const bbox = { x: 100, y: 100, width: 400, height: 300 };
+		expect(getContainCamera(bbox, camera, VIEWPORT, PADDING)).toBe(camera);
+	});
+
+	it("pans the minimum distance on the offending axis only", () => {
+		const camera = { x: 0, y: 0, zoom: 1 };
+		const bbox = { x: -500, y: 100, width: 400, height: 300 };
+		const next = getContainCamera(bbox, camera, VIEWPORT, PADDING);
+		expect(next.zoom).toBe(1);
+		// Left edge lands exactly on the padding; y untouched.
+		expect(screenRect(bbox, next).left).toBeCloseTo(PADDING, 6);
+		expect(next.y).toBe(camera.y);
+	});
+
+	it("pans left when the box hangs off the right edge", () => {
+		const camera = { x: 0, y: 0, zoom: 1 };
+		const bbox = { x: 1000, y: 900, width: 400, height: 300 };
+		const next = getContainCamera(bbox, camera, VIEWPORT, PADDING);
+		expect(next.zoom).toBe(1);
+		const rect = screenRect(bbox, next);
+		expect(rect.right).toBeCloseTo(VIEWPORT.width - PADDING, 6);
+		expect(rect.bottom).toBeCloseTo(VIEWPORT.height - PADDING, 6);
+	});
+
+	it("keeps the current zoom even when far below 1x", () => {
+		const camera = { x: 0, y: 0, zoom: 0.5 };
+		const bbox = { x: 5000, y: 5000, width: 400, height: 300 };
+		const next = getContainCamera(bbox, camera, VIEWPORT, PADDING);
+		expect(next.zoom).toBe(0.5);
+	});
+
+	it("zooms out and centers when the box cannot fit at the current zoom", () => {
+		const camera = { x: 0, y: 0, zoom: 1 };
+		const bbox = { x: 0, y: 0, width: 2400, height: 600 };
+		const next = getContainCamera(bbox, camera, VIEWPORT, PADDING);
+		expect(next.zoom).toBeLessThan(1);
+		const rect = screenRect(bbox, next);
+		expect(rect.left).toBeGreaterThanOrEqual(PADDING - 1e-6);
+		expect(rect.right).toBeLessThanOrEqual(VIEWPORT.width - PADDING + 1e-6);
+		const centerX = (rect.left + rect.right) / 2;
+		expect(centerX).toBeCloseTo(VIEWPORT.width / 2, 4);
+	});
+
+	it("clamps the fit zoom to the minimum", () => {
+		const camera = { x: 0, y: 0, zoom: 1 };
+		const bbox = { x: 0, y: 0, width: 500000, height: 500000 };
+		expect(getContainCamera(bbox, camera, VIEWPORT, PADDING).zoom).toBe(
+			MIN_CANVAS_ZOOM,
+		);
+	});
+
+	it("is a no-op on an unmeasured viewport", () => {
+		const camera = { x: 12, y: 34, zoom: 0.7 };
+		const bbox = { x: 9000, y: 9000, width: 400, height: 300 };
+		expect(
+			getContainCamera(bbox, camera, { width: 0, height: 0 }, PADDING),
+		).toBe(camera);
 	});
 });
