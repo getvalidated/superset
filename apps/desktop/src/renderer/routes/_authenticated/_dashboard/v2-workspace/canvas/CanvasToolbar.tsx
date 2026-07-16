@@ -1,16 +1,12 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import {
-	Columns3,
-	Globe,
 	Hand,
 	Maximize,
 	Minus,
 	MousePointer2,
 	Plus,
 	Redo2,
-	Search,
-	Settings,
 	Slash,
 	Square,
 	Type,
@@ -65,21 +61,10 @@ export function CanvasToolbar({
 	store,
 	onZoomStep,
 	onZoomToFit,
-	onOpenBrowser,
-	onOpenSearch,
-	searchDisabled = false,
-	onOpenSettings,
-	onExit,
 }: {
 	store: StoreApi<CanvasStore>;
 	onZoomStep: (factor: number) => void;
 	onZoomToFit: () => void;
-	onOpenBrowser: () => void;
-	onOpenSearch: () => void;
-	/** No workspace on the canvas or route to scope a search window to. */
-	searchDisabled?: boolean;
-	onOpenSettings: () => void;
-	onExit: () => void;
 }) {
 	const zoom = useStore(store, (state) => state.camera.zoom);
 	const activeTool = useStore(store, (state) => state.activeTool);
@@ -167,24 +152,6 @@ export function CanvasToolbar({
 			</ToolbarButton>
 			<ToolbarButton label="Zoom to fit" onClick={onZoomToFit}>
 				<Maximize className="size-3.5" />
-			</ToolbarButton>
-			<div className="mx-0.5 h-3.5 w-px bg-border" />
-			<ToolbarButton label="New browser window" onClick={onOpenBrowser}>
-				<Globe className="size-3.5" />
-			</ToolbarButton>
-			<ToolbarButton
-				label="New search window"
-				onClick={onOpenSearch}
-				disabled={searchDisabled}
-			>
-				<Search className="size-3.5" />
-			</ToolbarButton>
-			<ToolbarButton label="Settings window" onClick={onOpenSettings}>
-				<Settings className="size-3.5" />
-			</ToolbarButton>
-			<div className="mx-0.5 h-3.5 w-px bg-border" />
-			<ToolbarButton label="Back to tabs" onClick={onExit}>
-				<Columns3 className="size-3.5" />
 			</ToolbarButton>
 		</div>
 	);
