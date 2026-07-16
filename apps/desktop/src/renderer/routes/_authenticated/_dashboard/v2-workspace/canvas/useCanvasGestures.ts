@@ -1,7 +1,14 @@
 import { type RefObject, useEffect, useRef } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
-import { clampZoom, zoomAtPoint } from "./canvasGeometry";
+import {
+	clampZoom,
+	getShapeBounds,
+	rectFromPoints,
+	rectsIntersect,
+	screenToCanvas,
+	zoomAtPoint,
+} from "./canvasGeometry";
 import type { CanvasStore } from "./canvasStore";
 
 const WHEEL_GESTURE_END_MS = 250;
@@ -14,11 +21,12 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Pan/zoom gestures for the canvas viewport:
+ * Pan/zoom/selection gestures for the canvas viewport:
  * - two-finger scroll pans (except over a window body, where it scrolls the
  *   terminal buffer / page)
  * - ctrl/cmd + wheel (= trackpad pinch in Chromium) zooms at the cursor
  * - middle-button drag, space-held drag, and background left-drag pan
+ * - shift + background left-drag marquee-selects windows and shapes
  *
  * Camera writes go through the store; the view applies them imperatively.
  * While any gesture is active, webview pointer events are passed through so
@@ -49,6 +57,16 @@ export function useCanvasGestures({
 			cameraX: number;
 			cameraY: number;
 		} | null = null;
+		let marqueePointerId: number | null = null;
+		/** Marquee anchor in viewport (screen) coordinates. */
+		let marqueeStart: { x: number; y: number } | null = null;
+
+		const resetMarquee = () => {
+			if (marqueePointerId === null) return;
+			marqueePointerId = null;
+			marqueeStart = null;
+			store.getState().setMarquee(null);
+		};
 
 		const beginGesture = () => {
 			if (!store.getState().gestureActive) {
@@ -113,9 +131,9 @@ export function useCanvasGestures({
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
-			if (panPointerId !== null) return;
-			// Floating canvas chrome (toolbar) is neither a window nor pannable
-			// background — let its buttons receive the click.
+			if (panPointerId !== null || marqueePointerId !== null) return;
+			// Floating canvas chrome (toolbar, draw overlay) is neither a window
+			// nor pannable background — let it receive the click.
 			if (
 				event.target instanceof HTMLElement &&
 				event.target.closest("[data-canvas-ui]")
@@ -125,13 +143,40 @@ export function useCanvasGestures({
 			const overWindow =
 				event.target instanceof HTMLElement &&
 				Boolean(event.target.closest("[data-canvas-window]"));
+			// Shapes run their own select/drag gestures on bubble — this
+			// capture-phase listener must leave their pointerdowns alone.
+			const overShape =
+				event.target instanceof HTMLElement &&
+				Boolean(event.target.closest("[data-canvas-shape]"));
+			const overBackground = !overWindow && !overShape;
+			if (
+				event.button === 0 &&
+				event.shiftKey &&
+				overBackground &&
+				!spaceDown
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				const rect = viewport.getBoundingClientRect();
+				marqueePointerId = event.pointerId;
+				marqueeStart = {
+					x: event.clientX - rect.left,
+					y: event.clientY - rect.top,
+				};
+				viewport.setPointerCapture(event.pointerId);
+				beginGesture();
+				return;
+			}
 			const wantsPan =
 				event.button === 1 ||
-				(event.button === 0 && (spaceDown || !overWindow));
+				(event.button === 0 && (spaceDown || overBackground));
 			if (!wantsPan) return;
 			event.preventDefault();
 			event.stopPropagation();
-			if (!overWindow) store.getState().setFocusedWindow(null);
+			if (overBackground) {
+				store.getState().setFocusedWindow(null);
+				store.getState().clearSelection();
+			}
 			const { camera } = store.getState();
 			panPointerId = event.pointerId;
 			panStart = {
@@ -145,6 +190,40 @@ export function useCanvasGestures({
 		};
 
 		const handlePointerMove = (event: PointerEvent) => {
+			if (event.pointerId === marqueePointerId && marqueeStart) {
+				const rect = viewport.getBoundingClientRect();
+				const current = {
+					x: event.clientX - rect.left,
+					y: event.clientY - rect.top,
+				};
+				const marquee = rectFromPoints(marqueeStart, current);
+				const state = store.getState();
+				state.setMarquee(marquee);
+				const selection = rectFromPoints(
+					screenToCanvas({ x: marquee.x, y: marquee.y }, state.camera),
+					screenToCanvas(
+						{ x: marquee.x + marquee.width, y: marquee.y + marquee.height },
+						state.camera,
+					),
+				);
+				const windowIds = Object.values(state.windows)
+					.filter((window) => rectsIntersect(selection, window))
+					.map((window) => window.id);
+				const shapeIds = Object.values(state.shapes)
+					.filter((shape) => {
+						// Inflate so zero-extent bounds (straight lines) still hit.
+						const bounds = getShapeBounds(shape);
+						return rectsIntersect(selection, {
+							x: bounds.x - 1,
+							y: bounds.y - 1,
+							width: bounds.width + 2,
+							height: bounds.height + 2,
+						});
+					})
+					.map((shape) => shape.id);
+				state.setSelection(windowIds, shapeIds);
+				return;
+			}
 			if (event.pointerId !== panPointerId || !panStart) return;
 			const { camera } = store.getState();
 			store.getState().setCamera({
@@ -155,6 +234,16 @@ export function useCanvasGestures({
 		};
 
 		const handlePointerEnd = (event: PointerEvent) => {
+			if (event.pointerId === marqueePointerId) {
+				resetMarquee();
+				try {
+					viewport.releasePointerCapture(event.pointerId);
+				} catch {
+					// Capture already released.
+				}
+				endGesture();
+				return;
+			}
 			if (event.pointerId !== panPointerId) return;
 			panPointerId = null;
 			panStart = null;
@@ -189,6 +278,7 @@ export function useCanvasGestures({
 		const handleWindowBlur = () => {
 			spaceDown = false;
 			viewport.style.cursor = "";
+			resetMarquee();
 			endGesture();
 		};
 

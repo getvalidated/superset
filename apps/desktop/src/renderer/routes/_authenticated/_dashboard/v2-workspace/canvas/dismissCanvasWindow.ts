@@ -7,12 +7,23 @@ import type { FilePaneData } from "../$workspaceId/types";
 import type { CanvasStore, CanvasWindow } from "./canvasStore";
 import type { CanvasTerminalData } from "./useCanvasSeeding";
 
-function dismissWindow(store: StoreApi<CanvasStore>, window: CanvasWindow) {
+function dismissWindow(
+	store: StoreApi<CanvasStore>,
+	window: CanvasWindow,
+	options?: DismissOptions,
+) {
 	if (window.kind === "terminal") {
 		const { terminalId } = window.data as CanvasTerminalData;
 		terminalRuntimeRegistry.release(terminalId, window.id);
 	}
+	// Batch deletes (multi-select) push one history entry themselves.
+	if (!options?.skipHistory) store.getState().pushHistory();
 	store.getState().removeWindows([window.id], { dismiss: true });
+}
+
+interface DismissOptions {
+	/** Caller already pushed an undo snapshot covering this removal. */
+	skipHistory?: boolean;
 }
 
 /**
@@ -24,6 +35,7 @@ function dismissWindow(store: StoreApi<CanvasStore>, window: CanvasWindow) {
 export function requestDismissCanvasWindow(
 	store: StoreApi<CanvasStore>,
 	window: CanvasWindow,
+	options?: DismissOptions,
 ): void {
 	if (window.kind === "file") {
 		const { filePath } = window.data as FilePaneData;
@@ -39,13 +51,15 @@ export function requestDismissCanvasWindow(
 						onClick: async () => {
 							const current = getDocument(window.workspaceId, filePath);
 							if (!current) {
-								dismissWindow(store, window);
+								dismissWindow(store, window, options);
 								return;
 							}
 							const result = await current.save();
 							// Keep the window open on a failed save so the user can
 							// see the conflict / error state and retry.
-							if (result.status === "saved") dismissWindow(store, window);
+							if (result.status === "saved") {
+								dismissWindow(store, window, options);
+							}
 						},
 					},
 					{
@@ -54,7 +68,7 @@ export function requestDismissCanvasWindow(
 						onClick: async () => {
 							const current = getDocument(window.workspaceId, filePath);
 							if (current) await current.reload();
-							dismissWindow(store, window);
+							dismissWindow(store, window, options);
 						},
 					},
 					{ label: "Cancel", variant: "ghost", onClick: () => {} },
@@ -63,5 +77,5 @@ export function requestDismissCanvasWindow(
 			return;
 		}
 	}
-	dismissWindow(store, window);
+	dismissWindow(store, window, options);
 }

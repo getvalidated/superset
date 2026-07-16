@@ -67,6 +67,7 @@ export function useGlobalCanvasLayout(store: StoreApi<CanvasStore>): void {
 					draft.camera = nextRow.camera;
 					draft.windows = nextRow.windows;
 					draft.zOrder = nextRow.zOrder;
+					draft.shapes = nextRow.shapes;
 				});
 			} else {
 				collections.v2GlobalCanvas.insert(nextRow);
@@ -79,7 +80,9 @@ export function useGlobalCanvasLayout(store: StoreApi<CanvasStore>): void {
 			const persistedChanged =
 				state.camera !== prevState.camera ||
 				state.windows !== prevState.windows ||
-				state.zOrder !== prevState.zOrder;
+				state.zOrder !== prevState.zOrder ||
+				state.shapes !== prevState.shapes ||
+				state.shapeOrder !== prevState.shapeOrder;
 			const gestureEnded = prevState.gestureActive && !state.gestureActive;
 			if (!persistedChanged && !gestureEnded) return;
 			if (state.gestureActive) return;

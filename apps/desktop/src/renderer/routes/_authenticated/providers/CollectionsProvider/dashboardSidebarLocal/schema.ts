@@ -125,6 +125,38 @@ const canvasCameraSchema = z.object({
 
 export type CanvasCamera = z.infer<typeof canvasCameraSchema>;
 
+// Freehand annotations drawn on the canvas plane. Geometry is in canvas
+// (unzoomed) coordinates, like windows.
+export const canvasShapeSchema = z.discriminatedUnion("type", [
+	z.object({
+		id: z.string(),
+		type: z.literal("line"),
+		x1: z.number().finite(),
+		y1: z.number().finite(),
+		x2: z.number().finite(),
+		y2: z.number().finite(),
+	}),
+	z.object({
+		id: z.string(),
+		type: z.literal("box"),
+		x: z.number().finite(),
+		y: z.number().finite(),
+		width: z.number().positive().finite(),
+		height: z.number().positive().finite(),
+	}),
+	z.object({
+		id: z.string(),
+		type: z.literal("text"),
+		x: z.number().finite(),
+		y: z.number().finite(),
+		width: z.number().positive().finite(),
+		height: z.number().positive().finite(),
+		text: z.string(),
+	}),
+]);
+
+export type CanvasShapeRow = z.infer<typeof canvasShapeSchema>;
+
 export const V2_GLOBAL_CANVAS_ID = "canvas" as const;
 
 export const globalCanvasLayoutSchema = z.object({
@@ -133,6 +165,8 @@ export const globalCanvasLayoutSchema = z.object({
 	camera: canvasCameraSchema,
 	windows: z.array(canvasWindowSchema),
 	zOrder: z.array(z.string()),
+	// Absent on rows written before shapes existed; healed to [] on read.
+	shapes: z.array(canvasShapeSchema).default([]),
 });
 
 export type GlobalCanvasLayoutRow = z.infer<typeof globalCanvasLayoutSchema>;
@@ -145,6 +179,7 @@ export const DEFAULT_GLOBAL_CANVAS_LAYOUT: GlobalCanvasLayoutRow = {
 	camera: DEFAULT_CANVAS_CAMERA,
 	windows: [],
 	zOrder: [],
+	shapes: [],
 };
 
 /**
@@ -177,12 +212,19 @@ export function sanitizeGlobalCanvasLayout(
 		...windows.map((window) => window.id).filter((id) => !zOrdered.has(id)),
 	];
 	const camera = canvasCameraSchema.safeParse(value.camera);
+	const shapes = Array.isArray(value.shapes)
+		? value.shapes.flatMap((shape): CanvasShapeRow[] => {
+				const parsed = canvasShapeSchema.safeParse(shape);
+				return parsed.success ? [parsed.data] : [];
+			})
+		: [];
 	return {
 		id: V2_GLOBAL_CANVAS_ID,
 		version: 1,
 		camera: camera.success ? camera.data : DEFAULT_CANVAS_CAMERA,
 		windows,
 		zOrder,
+		shapes,
 	};
 }
 

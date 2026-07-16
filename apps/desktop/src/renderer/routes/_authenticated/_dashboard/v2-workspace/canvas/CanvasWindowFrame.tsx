@@ -27,6 +27,7 @@ import {
 	MIN_CANVAS_WINDOW_WIDTH,
 } from "./canvasGeometry";
 import type { CanvasStore, CanvasWindow } from "./canvasStore";
+import { beginCanvasTranslationGesture } from "./canvasTranslationGesture";
 import { requestDismissCanvasWindow } from "./dismissCanvasWindow";
 import type {
 	CanvasSubagentData,
@@ -125,6 +126,7 @@ export function CanvasWindowFrame({
 	store,
 	zIndex,
 	isFocused,
+	isSelected = false,
 	workspaceLabel,
 	headerExtras,
 	children,
@@ -133,6 +135,8 @@ export function CanvasWindowFrame({
 	store: StoreApi<CanvasStore>;
 	zIndex: number;
 	isFocused: boolean;
+	/** Part of the multi-select set (moves/deletes as a group). */
+	isSelected?: boolean;
 	workspaceLabel: string;
 	/** Extra controls rendered in the title bar before the close button. */
 	headerExtras?: ReactNode;
@@ -172,12 +176,13 @@ export function CanvasWindowFrame({
 			const pointerId = event.pointerId;
 			const startX = event.clientX;
 			const startY = event.clientY;
-			let latest = {
+			const initial = {
 				x: window.x,
 				y: window.y,
 				width: window.width,
 				height: window.height,
 			};
+			let latest = initial;
 			target.setPointerCapture(pointerId);
 			store.getState().setGestureActive(true);
 			browserRuntimeRegistry.setShellInteractionPassthrough(true);
@@ -209,7 +214,15 @@ export function CanvasWindowFrame({
 					// Capture already released.
 				}
 				browserRuntimeRegistry.setShellInteractionPassthrough(false);
-				if (commit) store.getState().setWindowGeometry(window.id, latest);
+				const moved =
+					latest.x !== initial.x ||
+					latest.y !== initial.y ||
+					latest.width !== initial.width ||
+					latest.height !== initial.height;
+				if (commit && moved) {
+					store.getState().pushHistory();
+					store.getState().setWindowGeometry(window.id, latest);
+				}
 				store.getState().setGestureActive(false);
 				requestAnimationFrame(() => browserRuntimeRegistry.relayoutAll());
 			};
@@ -227,6 +240,32 @@ export function CanvasWindowFrame({
 
 	const handleTitleBarPointerDown = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
+			// Shift-click toggles multi-select membership instead of dragging.
+			if (event.button === 0 && event.shiftKey) {
+				event.preventDefault();
+				event.stopPropagation();
+				store.getState().toggleWindowSelection(window.id);
+				return;
+			}
+			const state = store.getState();
+			// Grabbing a selected window drags the whole selection as a group.
+			if (
+				event.button === 0 &&
+				state.selectedWindowIds.has(window.id) &&
+				state.selectedWindowIds.size + state.selectedShapeIds.size > 1
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				focusWindow();
+				gestureCleanupRef.current = beginCanvasTranslationGesture({
+					store,
+					event: event.nativeEvent,
+					captureTarget: event.currentTarget,
+					windowIds: [...state.selectedWindowIds],
+					shapeIds: [...state.selectedShapeIds],
+				});
+				return;
+			}
 			const { x, y, width, height } = window;
 			beginGeometryGesture(event, (dx, dy) => ({
 				x: x + dx,
@@ -235,7 +274,7 @@ export function CanvasWindowFrame({
 				height,
 			}));
 		},
-		[beginGeometryGesture, window],
+		[beginGeometryGesture, focusWindow, store, window],
 	);
 
 	const makeResizeHandler = useCallback(
@@ -282,6 +321,7 @@ export function CanvasWindowFrame({
 			className={cn(
 				"absolute flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
 				isFocused ? "border-primary/60 shadow-xl" : "border-border",
+				isSelected && "ring-2 ring-primary/50",
 			)}
 			style={{
 				left: window.x,
@@ -290,7 +330,17 @@ export function CanvasWindowFrame({
 				height: window.height,
 				zIndex,
 			}}
-			onPointerDownCapture={focusWindow}
+			onPointerDownCapture={(event) => {
+				// A plain click on an unselected window drops the old selection —
+				// shift-clicks (toggles) and clicks inside the selection keep it.
+				if (
+					!event.shiftKey &&
+					!store.getState().selectedWindowIds.has(window.id)
+				) {
+					store.getState().clearSelection();
+				}
+				focusWindow();
+			}}
 			onContextMenu={(event) => event.stopPropagation()}
 		>
 			{/* z-20 keeps title-bar controls (close, presets) above the absolute

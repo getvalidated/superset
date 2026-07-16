@@ -1,5 +1,6 @@
 import type {
 	CanvasCamera,
+	CanvasShapeRow,
 	CanvasWindowRow,
 	GlobalCanvasLayoutRow,
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
@@ -8,9 +9,12 @@ import {
 	V2_GLOBAL_CANVAS_ID,
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { clampZoom } from "./canvasGeometry";
+import { type CanvasRect, clampZoom } from "./canvasGeometry";
 
 export type CanvasWindow = CanvasWindowRow;
+export type CanvasShape = CanvasShapeRow;
+
+export type CanvasTool = "select" | "line" | "box" | "text";
 
 export interface CanvasWindowGeometry {
 	x: number;
@@ -19,13 +23,39 @@ export interface CanvasWindowGeometry {
 	height: number;
 }
 
+/** The user-editable document portion of the store — what undo/redo restores. */
+interface CanvasHistorySnapshot {
+	windows: Record<string, CanvasWindow>;
+	zOrder: string[];
+	shapes: Record<string, CanvasShape>;
+	shapeOrder: string[];
+	dismissedWindowIds: Set<string>;
+}
+
+const MAX_HISTORY_ENTRIES = 100;
+
 export interface CanvasStore {
 	camera: CanvasCamera;
 	windows: Record<string, CanvasWindow>;
 	/** Last entry renders topmost. Always holds exactly the window ids. */
 	zOrder: string[];
+	/** Drawn annotations (lines/boxes/text), keyed by id. */
+	shapes: Record<string, CanvasShape>;
+	/** Render + serialization order. Always holds exactly the shape ids. */
+	shapeOrder: string[];
 	// --- volatile (not persisted) ---
 	focusedWindowId: string | null;
+	/** Multi-select for group move/delete. Windows and shapes select together. */
+	selectedWindowIds: ReadonlySet<string>;
+	selectedShapeIds: ReadonlySet<string>;
+	/** Active toolbar tool; non-select tools arm the drawing overlay. */
+	activeTool: CanvasTool;
+	/** Text shape currently being edited in place. */
+	editingShapeId: string | null;
+	/** Shift-drag selection rectangle in viewport (screen) coordinates. */
+	marquee: CanvasRect | null;
+	undoStack: CanvasHistorySnapshot[];
+	redoStack: CanvasHistorySnapshot[];
 	gestureActive: boolean;
 	/** True once the persisted row's first live-query emission has been applied
 	 *  (or its absence confirmed). Seeding and persistence wait for this so
@@ -45,6 +75,30 @@ export interface CanvasStore {
 	setWindowGeometry: (id: string, geometry: CanvasWindowGeometry) => void;
 	bringToFront: (id: string) => void;
 	setFocusedWindow: (id: string | null) => void;
+	upsertShapes: (shapes: CanvasShape[]) => void;
+	removeShapes: (ids: string[]) => void;
+	setShapeText: (id: string, text: string) => void;
+	/** Move the given windows and shapes by a canvas-coordinate delta. */
+	translateItems: (
+		windowIds: string[],
+		shapeIds: string[],
+		dx: number,
+		dy: number,
+	) => void;
+	setSelection: (
+		windowIds: Iterable<string>,
+		shapeIds: Iterable<string>,
+	) => void;
+	toggleWindowSelection: (id: string) => void;
+	toggleShapeSelection: (id: string) => void;
+	clearSelection: () => void;
+	setActiveTool: (tool: CanvasTool) => void;
+	setEditingShape: (id: string | null) => void;
+	setMarquee: (rect: CanvasRect | null) => void;
+	/** Snapshot the document before a user mutation so ⌘Z can restore it. */
+	pushHistory: () => void;
+	undo: () => void;
+	redo: () => void;
 	setCamera: (camera: CanvasCamera) => void;
 	setGestureActive: (active: boolean) => void;
 	setViewportSize: (size: { width: number; height: number }) => void;
@@ -53,20 +107,54 @@ export interface CanvasStore {
 	toPersistedRow: () => GlobalCanvasLayoutRow;
 }
 
-function normalizedZOrder(
-	zOrder: string[],
-	windows: Record<string, CanvasWindow>,
+function normalizedOrder(
+	order: string[],
+	items: Record<string, unknown>,
 ): string[] {
 	const seen = new Set<string>();
-	const next = zOrder.filter((id) => {
-		if (seen.has(id) || !windows[id]) return false;
+	const next = order.filter((id) => {
+		if (seen.has(id) || !items[id]) return false;
 		seen.add(id);
 		return true;
 	});
-	for (const id of Object.keys(windows)) {
+	for (const id of Object.keys(items)) {
 		if (!seen.has(id)) next.push(id);
 	}
 	return next;
+}
+
+function captureSnapshot(state: CanvasStore): CanvasHistorySnapshot {
+	return {
+		windows: state.windows,
+		zOrder: state.zOrder,
+		shapes: state.shapes,
+		shapeOrder: state.shapeOrder,
+		dismissedWindowIds: state.dismissedWindowIds,
+	};
+}
+
+/** Restore a snapshot, pruning volatile references to ids it no longer has. */
+function applySnapshot(
+	snapshot: CanvasHistorySnapshot,
+	state: CanvasStore,
+): Partial<CanvasStore> {
+	const keepWindows = (ids: ReadonlySet<string>) =>
+		new Set([...ids].filter((id) => snapshot.windows[id]));
+	const keepShapes = (ids: ReadonlySet<string>) =>
+		new Set([...ids].filter((id) => snapshot.shapes[id]));
+	return {
+		...snapshot,
+		focusedWindowId:
+			state.focusedWindowId && snapshot.windows[state.focusedWindowId]
+				? state.focusedWindowId
+				: null,
+		selectedWindowIds: keepWindows(state.selectedWindowIds),
+		selectedShapeIds: keepShapes(state.selectedShapeIds),
+		editingShapeId:
+			state.editingShapeId && snapshot.shapes[state.editingShapeId]
+				? state.editingShapeId
+				: null,
+	};
 }
 
 export function createCanvasStore(): StoreApi<CanvasStore> {
@@ -74,7 +162,16 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		camera: DEFAULT_CANVAS_CAMERA,
 		windows: {},
 		zOrder: [],
+		shapes: {},
+		shapeOrder: [],
 		focusedWindowId: null,
+		selectedWindowIds: new Set<string>(),
+		selectedShapeIds: new Set<string>(),
+		activeTool: "select",
+		editingShapeId: null,
+		marquee: null,
+		undoStack: [],
+		redoStack: [],
 		gestureActive: false,
 		hydrated: false,
 		dismissedWindowIds: new Set(),
@@ -91,7 +188,7 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 						? { ...existing, data: window.data }
 						: window;
 				}
-				return { windows, zOrder: normalizedZOrder(state.zOrder, windows) };
+				return { windows, zOrder: normalizedOrder(state.zOrder, windows) };
 			});
 		},
 
@@ -111,6 +208,9 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 						state.focusedWindowId && removed.has(state.focusedWindowId)
 							? null
 							: state.focusedWindowId,
+					selectedWindowIds: new Set(
+						[...state.selectedWindowIds].filter((id) => !removed.has(id)),
+					),
 					dismissedWindowIds,
 				};
 			});
@@ -150,6 +250,170 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 			);
 		},
 
+		upsertShapes: (incoming) => {
+			if (incoming.length === 0) return;
+			set((state) => {
+				const shapes = { ...state.shapes };
+				for (const shape of incoming) shapes[shape.id] = shape;
+				return {
+					shapes,
+					shapeOrder: normalizedOrder(state.shapeOrder, shapes),
+				};
+			});
+		},
+
+		removeShapes: (ids) => {
+			if (ids.length === 0) return;
+			set((state) => {
+				const removed = new Set(ids);
+				const shapes = { ...state.shapes };
+				for (const id of ids) delete shapes[id];
+				return {
+					shapes,
+					shapeOrder: state.shapeOrder.filter((id) => !removed.has(id)),
+					selectedShapeIds: new Set(
+						[...state.selectedShapeIds].filter((id) => !removed.has(id)),
+					),
+					editingShapeId:
+						state.editingShapeId && removed.has(state.editingShapeId)
+							? null
+							: state.editingShapeId,
+				};
+			});
+		},
+
+		setShapeText: (id, text) => {
+			set((state) => {
+				const shape = state.shapes[id];
+				if (!shape || shape.type !== "text" || shape.text === text) {
+					return state;
+				}
+				return { shapes: { ...state.shapes, [id]: { ...shape, text } } };
+			});
+		},
+
+		translateItems: (windowIds, shapeIds, dx, dy) => {
+			if ((dx === 0 && dy === 0) || (!windowIds.length && !shapeIds.length)) {
+				return;
+			}
+			set((state) => {
+				const windows = { ...state.windows };
+				for (const id of windowIds) {
+					const window = windows[id];
+					if (!window) continue;
+					windows[id] = { ...window, x: window.x + dx, y: window.y + dy };
+				}
+				const shapes = { ...state.shapes };
+				for (const id of shapeIds) {
+					const shape = shapes[id];
+					if (!shape) continue;
+					shapes[id] =
+						shape.type === "line"
+							? {
+									...shape,
+									x1: shape.x1 + dx,
+									y1: shape.y1 + dy,
+									x2: shape.x2 + dx,
+									y2: shape.y2 + dy,
+								}
+							: { ...shape, x: shape.x + dx, y: shape.y + dy };
+				}
+				return { windows, shapes };
+			});
+		},
+
+		setSelection: (windowIds, shapeIds) => {
+			set((state) => ({
+				selectedWindowIds: new Set(
+					[...windowIds].filter((id) => state.windows[id]),
+				),
+				selectedShapeIds: new Set(
+					[...shapeIds].filter((id) => state.shapes[id]),
+				),
+			}));
+		},
+
+		toggleWindowSelection: (id) => {
+			set((state) => {
+				if (!state.windows[id]) return state;
+				const next = new Set(state.selectedWindowIds);
+				if (next.has(id)) next.delete(id);
+				else next.add(id);
+				return { selectedWindowIds: next };
+			});
+		},
+
+		toggleShapeSelection: (id) => {
+			set((state) => {
+				if (!state.shapes[id]) return state;
+				const next = new Set(state.selectedShapeIds);
+				if (next.has(id)) next.delete(id);
+				else next.add(id);
+				return { selectedShapeIds: next };
+			});
+		},
+
+		clearSelection: () => {
+			set((state) =>
+				state.selectedWindowIds.size === 0 && state.selectedShapeIds.size === 0
+					? state
+					: {
+							selectedWindowIds: new Set<string>(),
+							selectedShapeIds: new Set<string>(),
+						},
+			);
+		},
+
+		setActiveTool: (tool) => {
+			set((state) =>
+				state.activeTool === tool ? state : { activeTool: tool },
+			);
+		},
+
+		setEditingShape: (id) => {
+			set((state) =>
+				state.editingShapeId === id ? state : { editingShapeId: id },
+			);
+		},
+
+		setMarquee: (rect) => {
+			set({ marquee: rect });
+		},
+
+		pushHistory: () => {
+			set((state) => ({
+				undoStack: [
+					...state.undoStack.slice(-(MAX_HISTORY_ENTRIES - 1)),
+					captureSnapshot(state),
+				],
+				redoStack: [],
+			}));
+		},
+
+		undo: () => {
+			set((state) => {
+				const snapshot = state.undoStack[state.undoStack.length - 1];
+				if (!snapshot) return state;
+				return {
+					...applySnapshot(snapshot, state),
+					undoStack: state.undoStack.slice(0, -1),
+					redoStack: [...state.redoStack, captureSnapshot(state)],
+				};
+			});
+		},
+
+		redo: () => {
+			set((state) => {
+				const snapshot = state.redoStack[state.redoStack.length - 1];
+				if (!snapshot) return state;
+				return {
+					...applySnapshot(snapshot, state),
+					redoStack: state.redoStack.slice(0, -1),
+					undoStack: [...state.undoStack, captureSnapshot(state)],
+				};
+			});
+		},
+
 		setCamera: (camera) => {
 			set({ camera: { ...camera, zoom: clampZoom(camera.zoom) } });
 		},
@@ -176,10 +440,14 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		replaceState: (row) => {
 			const windows: Record<string, CanvasWindow> = {};
 			for (const window of row.windows) windows[window.id] = window;
+			const shapes: Record<string, CanvasShape> = {};
+			for (const shape of row.shapes ?? []) shapes[shape.id] = shape;
 			set({
 				camera: { ...row.camera, zoom: clampZoom(row.camera.zoom) },
 				windows,
-				zOrder: normalizedZOrder(row.zOrder, windows),
+				zOrder: normalizedOrder(row.zOrder, windows),
+				shapes,
+				shapeOrder: (row.shapes ?? []).map((shape) => shape.id),
 			});
 		},
 
@@ -194,6 +462,9 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 					.map((id) => state.windows[id])
 					.filter((window): window is CanvasWindow => Boolean(window)),
 				zOrder: state.zOrder,
+				shapes: state.shapeOrder
+					.map((id) => state.shapes[id])
+					.filter((shape): shape is CanvasShape => Boolean(shape)),
 			};
 		},
 	}));

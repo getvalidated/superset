@@ -1,4 +1,7 @@
-import type { CanvasCamera } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
+import type {
+	CanvasCamera,
+	CanvasShapeRow,
+} from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 
 export interface CanvasPoint {
 	x: number;
@@ -93,6 +96,26 @@ function getViewportCanvasRect(
 		width: width * (1 + marginPct * 2),
 		height: height * (1 + marginPct * 2),
 	};
+}
+
+/** Axis-aligned rect spanning two corner points (any drag direction). */
+export function rectFromPoints(a: CanvasPoint, b: CanvasPoint): CanvasRect {
+	return {
+		x: Math.min(a.x, b.x),
+		y: Math.min(a.y, b.y),
+		width: Math.abs(a.x - b.x),
+		height: Math.abs(a.y - b.y),
+	};
+}
+
+export function getShapeBounds(shape: CanvasShapeRow): CanvasRect {
+	if (shape.type === "line") {
+		return rectFromPoints(
+			{ x: shape.x1, y: shape.y1 },
+			{ x: shape.x2, y: shape.y2 },
+		);
+	}
+	return { x: shape.x, y: shape.y, width: shape.width, height: shape.height };
 }
 
 export function rectsIntersect(a: CanvasRect, b: CanvasRect): boolean {
