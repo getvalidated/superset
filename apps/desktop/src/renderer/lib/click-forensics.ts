@@ -1,4 +1,5 @@
 import { env } from "renderer/env.renderer";
+import { recordLocalTelemetry } from "./local-telemetry";
 
 /**
  * Dead-click forensics (dev tool). Watches every primary-button press and,
@@ -396,6 +397,21 @@ class ClickForensics {
 	private report(cause: string, rec: PressRecord): void {
 		this.reports.push({ cause, record: rec });
 		if (this.reports.length > MAX_REPORTS) this.reports.shift();
+		recordLocalTelemetry("click-forensics", {
+			event: "$forensics_dead_click",
+			timestamp: new Date().toISOString(),
+			properties: {
+				cause,
+				on: rec.interactiveDescription ?? rec.pressDescription,
+				point: rec.point,
+				hit_stack: rec.hitStack,
+				seen_targets: rec.seenTargets,
+				mutations: rec.mutations,
+				interventions: rec.interventions,
+				captures: rec.captures,
+				click_target: rec.clickTarget,
+			},
+		});
 		console.groupCollapsed(
 			`%c${TAG} DEAD CLICK%c on ${rec.interactiveDescription ?? rec.pressDescription} — ${cause}`,
 			"color:#fff;background:#c0392b;padding:1px 4px;border-radius:2px",
@@ -459,6 +475,15 @@ class ClickForensics {
 						`${TAG} webview overlay is covering clickable host UI at (${Math.round(x)}, ${Math.round(y)}): ${describe(under)} — clicks there go to the guest page and die silently`,
 						{ webview, under },
 					);
+					recordLocalTelemetry("click-forensics", {
+						event: "$forensics_webview_occlusion",
+						timestamp: new Date().toISOString(),
+						properties: {
+							webview: describe(webview),
+							covered: describe(under),
+							point: { x: Math.round(x), y: Math.round(y) },
+						},
+					});
 				}
 			}
 		}
