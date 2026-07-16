@@ -34,6 +34,7 @@ import { useWorkspaceInitStore } from "renderer/stores/workspace-init";
 import { MOCK_ORG_ID, NOTIFICATION_EVENTS } from "shared/constants";
 import { AgentHooks } from "./components/AgentHooks";
 import { DockBadgeController } from "./components/DockBadgeController";
+import { EditMenuListener } from "./components/EditMenuListener";
 import { FileMenuListener } from "./components/FileMenuListener";
 import { GlobalBrowserLifecycle } from "./components/GlobalBrowserLifecycle";
 import { TeardownLogsDialog } from "./components/TeardownLogsDialog";
@@ -220,6 +221,7 @@ function AuthenticatedLayout() {
 							>
 								<DiffThemeSync />
 								<AgentHooks />
+								<EditMenuListener />
 								<FileMenuListener />
 								<V2NotificationController />
 								<DockBadgeController />

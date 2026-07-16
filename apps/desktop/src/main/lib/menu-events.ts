@@ -17,4 +17,6 @@ export interface OpenWorkspaceEvent {
 	workspaceId: string;
 }
 
+export type EditCommand = "undo" | "redo";
+
 export const menuEmitter = new EventEmitter();

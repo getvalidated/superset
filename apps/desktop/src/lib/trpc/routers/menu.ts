@@ -1,5 +1,6 @@
 import { observable } from "@trpc/server/observable";
 import {
+	type EditCommand,
 	menuEmitter,
 	type OpenSettingsEvent,
 	type OpenWorkspaceEvent,
@@ -11,7 +12,8 @@ type MenuEvent =
 	| { type: "open-settings"; data: OpenSettingsEvent }
 	| { type: "open-workspace"; data: OpenWorkspaceEvent }
 	| { type: "open-project" }
-	| { type: "toggle-presets-bar" };
+	| { type: "toggle-presets-bar" }
+	| { type: "edit-command"; data: { command: EditCommand } };
 
 export const createMenuRouter = () => {
 	return router({
@@ -33,16 +35,22 @@ export const createMenuRouter = () => {
 					emit.next({ type: "toggle-presets-bar" });
 				};
 
+				const onEditCommand = (command: EditCommand) => {
+					emit.next({ type: "edit-command", data: { command } });
+				};
+
 				menuEmitter.on("open-settings", onOpenSettings);
 				menuEmitter.on("open-workspace", onOpenWorkspace);
 				menuEmitter.on("open-project", onOpenProject);
 				menuEmitter.on("toggle-presets-bar", onTogglePresetsBar);
+				menuEmitter.on("edit-command", onEditCommand);
 
 				return () => {
 					menuEmitter.off("open-settings", onOpenSettings);
 					menuEmitter.off("open-workspace", onOpenWorkspace);
 					menuEmitter.off("open-project", onOpenProject);
 					menuEmitter.off("toggle-presets-bar", onTogglePresetsBar);
+					menuEmitter.off("edit-command", onEditCommand);
 				};
 			});
 		}),

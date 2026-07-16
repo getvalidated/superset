@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { type CanvasWindow, createCanvasStore } from "./canvasStore";
+import {
+	type CanvasShape,
+	type CanvasWindow,
+	createCanvasStore,
+} from "./canvasStore";
 
 function makeWindow(
 	id: string,
@@ -16,6 +20,14 @@ function makeWindow(
 		data: { terminalId: id },
 		...overrides,
 	};
+}
+
+function makeBox(id: string): CanvasShape {
+	return { id, type: "box", x: 10, y: 10, width: 100, height: 80 };
+}
+
+function makeLine(id: string): CanvasShape {
+	return { id, type: "line", x1: 0, y1: 0, x2: 50, y2: 20 };
 }
 
 describe("canvasStore", () => {
@@ -91,6 +103,7 @@ describe("canvasStore", () => {
 			camera: { x: 0, y: 0, zoom: 1 },
 			windows: [makeWindow("a"), makeWindow("b")],
 			zOrder: ["b"],
+			shapes: [],
 		});
 		expect(store.getState().zOrder).toEqual(["b", "a"]);
 	});
@@ -99,5 +112,108 @@ describe("canvasStore", () => {
 		const store = createCanvasStore();
 		store.getState().setCamera({ x: 0, y: 0, zoom: 50 });
 		expect(store.getState().camera.zoom).toBe(2);
+	});
+
+	it("round-trips shapes through toPersistedRow / replaceState", () => {
+		const store = createCanvasStore();
+		store.getState().upsertShapes([makeBox("s1"), makeLine("s2")]);
+		const row = store.getState().toPersistedRow();
+		expect(row.shapes.map((shape) => shape.id)).toEqual(["s1", "s2"]);
+
+		const restored = createCanvasStore();
+		restored.getState().replaceState(row);
+		expect(restored.getState().shapeOrder).toEqual(["s1", "s2"]);
+		expect(restored.getState().shapes.s1).toEqual(store.getState().shapes.s1);
+	});
+
+	it("removeShapes prunes selection and editing state", () => {
+		const store = createCanvasStore();
+		store.getState().upsertShapes([makeBox("s1"), makeBox("s2")]);
+		store.getState().setSelection([], ["s1", "s2"]);
+		store.getState().setEditingShape("s1");
+		store.getState().removeShapes(["s1"]);
+		expect(store.getState().shapeOrder).toEqual(["s2"]);
+		expect([...store.getState().selectedShapeIds]).toEqual(["s2"]);
+		expect(store.getState().editingShapeId).toBeNull();
+	});
+
+	it("translateItems moves windows and shapes by the delta", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().upsertShapes([makeBox("s1"), makeLine("s2")]);
+		store.getState().translateItems(["a"], ["s1", "s2"], 10, -5);
+		expect(store.getState().windows.a.x).toBe(10);
+		expect(store.getState().windows.a.y).toBe(-5);
+		const box = store.getState().shapes.s1;
+		expect(box.type === "box" && box.x).toBe(20);
+		const line = store.getState().shapes.s2;
+		expect(line.type === "line" && line.x1).toBe(10);
+		expect(line.type === "line" && line.y2).toBe(15);
+	});
+
+	it("setSelection drops ids that don't exist", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().setSelection(["a", "ghost"], ["ghost"]);
+		expect([...store.getState().selectedWindowIds]).toEqual(["a"]);
+		expect(store.getState().selectedShapeIds.size).toBe(0);
+	});
+
+	it("undo/redo restore document changes and clear on new mutations", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+
+		store.getState().pushHistory();
+		store
+			.getState()
+			.setWindowGeometry("a", { x: 100, y: 0, width: 400, height: 300 });
+		store.getState().pushHistory();
+		store.getState().upsertShapes([makeBox("s1")]);
+
+		store.getState().undo();
+		expect(store.getState().shapes.s1).toBeUndefined();
+		expect(store.getState().windows.a.x).toBe(100);
+
+		store.getState().undo();
+		expect(store.getState().windows.a.x).toBe(0);
+
+		store.getState().redo();
+		expect(store.getState().windows.a.x).toBe(100);
+		expect(store.getState().shapes.s1).toBeUndefined();
+		store.getState().redo();
+		expect(store.getState().shapes.s1).toBeDefined();
+
+		// A fresh mutation invalidates the redo branch.
+		store.getState().undo();
+		store.getState().pushHistory();
+		store.getState().removeShapes(["s1"]);
+		expect(store.getState().redoStack.length).toBe(0);
+	});
+
+	it("undo of a dismissal restores the window and its dismissed marker", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().pushHistory();
+		store.getState().removeWindows(["a"], { dismiss: true });
+		expect(store.getState().dismissedWindowIds.has("a")).toBe(true);
+
+		store.getState().undo();
+		expect(store.getState().windows.a).toBeDefined();
+		expect(store.getState().dismissedWindowIds.has("a")).toBe(false);
+
+		store.getState().redo();
+		expect(store.getState().windows.a).toBeUndefined();
+		expect(store.getState().dismissedWindowIds.has("a")).toBe(true);
+	});
+
+	it("undo prunes selection and focus to surviving ids", () => {
+		const store = createCanvasStore();
+		store.getState().pushHistory();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().setFocusedWindow("a");
+		store.getState().setSelection(["a"], []);
+		store.getState().undo();
+		expect(store.getState().focusedWindowId).toBeNull();
+		expect(store.getState().selectedWindowIds.size).toBe(0);
 	});
 });

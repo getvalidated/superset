@@ -15,6 +15,10 @@ import {
 	useState,
 } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
+import {
+	EDIT_COMMAND_EVENT,
+	type EditCommandEventDetail,
+} from "renderer/routes/_authenticated/components/EditMenuListener";
 import { DEFAULT_CANVAS_CAMERA } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
@@ -25,7 +29,9 @@ import { TerminalPresetShortcuts } from "../$workspaceId/components/TerminalPres
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
 import type { BrowserPaneData } from "../$workspaceId/types";
 import { useWorkspace } from "../providers/WorkspaceProvider";
+import { CanvasDrawOverlay } from "./CanvasDrawOverlay";
 import { CanvasHostProvider } from "./CanvasHostProvider";
+import { CanvasShapeLayer } from "./CanvasShapeLayer";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasWindowContent } from "./CanvasWindowContent";
 import {
@@ -77,6 +83,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	store,
 	zIndex,
 	isFocused,
+	isSelected,
 	isVisible,
 	isLiveTerminal,
 	workspaceLabel,
@@ -88,6 +95,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	store: StoreApi<CanvasStore>;
 	zIndex: number;
 	isFocused: boolean;
+	isSelected: boolean;
 	isVisible: boolean;
 	isLiveTerminal: boolean;
 	workspaceLabel: string;
@@ -106,6 +114,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 			store={store}
 			zIndex={zIndex}
 			isFocused={isFocused}
+			isSelected={isSelected}
 			workspaceLabel={workspaceLabel}
 			headerExtras={
 				window.kind === "terminal" ? (
@@ -180,6 +189,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	const windows = useStore(store, (state) => state.windows);
 	const zOrder = useStore(store, (state) => state.zOrder);
 	const focusedWindowId = useStore(store, (state) => state.focusedWindowId);
+	const selectedWindowIds = useStore(store, (state) => state.selectedWindowIds);
 
 	// Camera → plane transform + webview relayout, no React involvement.
 	useEffect(() => {
@@ -385,11 +395,28 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		});
 	}, [store]);
 
-	// Backspace/Delete removes the selected (focused) window from the canvas —
-	// unless the user is typing (text inputs, the xterm helper textarea).
+	// Edit ▸ Undo/Redo (⌘Z/⌘⇧Z arrive as menu clicks — the accelerators never
+	// reach the renderer as keydowns; EditMenuListener re-broadcasts the ones
+	// no text field claimed).
+	useEffect(() => {
+		const handleEditCommand = (event: Event) => {
+			const { command } = (event as CustomEvent<EditCommandEventDetail>).detail;
+			if (command === "undo") store.getState().undo();
+			else store.getState().redo();
+		};
+		window.addEventListener(EDIT_COMMAND_EVENT, handleEditCommand);
+		return () =>
+			window.removeEventListener(EDIT_COMMAND_EVENT, handleEditCommand);
+	}, [store]);
+
+	// Canvas keyboard commands — skipped while the user is typing (text
+	// inputs, the xterm helper textarea):
+	// - Backspace/Delete removes the multi-selection, or else the focused window
+	// - ⌘Z / ⌘⇧Z undo/redo as a fallback, should the menu accelerator ever
+	//   let the keydown through
+	// - Escape disarms the drawing tool, then clears the selection
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Backspace" && event.key !== "Delete") return;
 			if (isTextEntryTarget(event.target)) return;
 			if (
 				event.target instanceof HTMLElement &&
@@ -398,6 +425,36 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				return;
 			}
 			const state = store.getState();
+			if (
+				(event.metaKey || event.ctrlKey) &&
+				!event.altKey &&
+				event.key.toLowerCase() === "z"
+			) {
+				event.preventDefault();
+				if (event.shiftKey) state.redo();
+				else state.undo();
+				return;
+			}
+			if (event.key === "Escape") {
+				if (state.activeTool !== "select") state.setActiveTool("select");
+				else state.clearSelection();
+				return;
+			}
+			if (event.key !== "Backspace" && event.key !== "Delete") return;
+			const selectedShapeIds = [...state.selectedShapeIds];
+			const selectedWindows = [...state.selectedWindowIds]
+				.map((id) => state.windows[id])
+				.filter((window): window is CanvasWindow => Boolean(window));
+			if (selectedShapeIds.length > 0 || selectedWindows.length > 0) {
+				event.preventDefault();
+				// One history entry so ⌘Z restores the whole batch.
+				state.pushHistory();
+				state.removeShapes(selectedShapeIds);
+				for (const selected of selectedWindows) {
+					requestDismissCanvasWindow(store, selected, { skipHistory: true });
+				}
+				return;
+			}
 			const focused = state.focusedWindowId
 				? state.windows[state.focusedWindowId]
 				: null;
@@ -430,9 +487,11 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				>
 					<div
 						ref={planeRef}
+						data-canvas-plane
 						className="absolute left-0 top-0 h-0 w-0"
 						style={{ transformOrigin: "0 0", willChange: "transform" }}
 					>
+						<CanvasShapeLayer store={store} />
 						{zOrder.map((windowId, index) => {
 							const window = windows[windowId];
 							if (!window) return null;
@@ -444,6 +503,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 									store={store}
 									zIndex={index + 1}
 									isFocused={focusedWindowId === window.id}
+									isSelected={selectedWindowIds.has(window.id)}
 									isVisible={visibleIds.has(window.id)}
 									isLiveTerminal={liveTerminalIds.has(window.id)}
 									// Org-global windows (settings, "") carry no workspace label.
@@ -463,6 +523,8 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 							);
 						})}
 					</div>
+					<CanvasDrawOverlay store={store} />
+					<CanvasMarquee store={store} />
 					<CanvasToolbar
 						store={store}
 						onZoomStep={handleZoomStep}
@@ -496,5 +558,22 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>
+	);
+}
+
+/** Shift-drag selection rectangle, drawn in viewport coordinates. */
+function CanvasMarquee({ store }: { store: StoreApi<CanvasStore> }) {
+	const marquee = useStore(store, (state) => state.marquee);
+	if (!marquee) return null;
+	return (
+		<div
+			className="pointer-events-none absolute z-40 rounded-sm border border-primary/70 bg-primary/10"
+			style={{
+				left: marquee.x,
+				top: marquee.y,
+				width: marquee.width,
+				height: marquee.height,
+			}}
+		/>
 	);
 }

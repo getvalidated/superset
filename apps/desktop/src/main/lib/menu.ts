@@ -44,8 +44,24 @@ export function createApplicationMenu() {
 		{
 			label: "Edit",
 			submenu: [
-				{ role: "undo" },
-				{ role: "redo" },
+				// Explicit click handlers (not `role: "undo"`/`role: "redo"`) — the
+				// roles' implicit accelerators swallow ⌘Z/⌘⇧Z before the renderer
+				// sees them. EditMenuListener dispatches to the focused text field /
+				// webview, or to app-level undo (e.g. the canvas history).
+				{
+					label: "Undo",
+					accelerator: "CmdOrCtrl+Z",
+					click: () => {
+						menuEmitter.emit("edit-command", "undo");
+					},
+				},
+				{
+					label: "Redo",
+					accelerator: "Shift+CmdOrCtrl+Z",
+					click: () => {
+						menuEmitter.emit("edit-command", "redo");
+					},
+				},
 				{ type: "separator" },
 				{ role: "cut" },
 				{ role: "copy" },

@@ -341,6 +341,31 @@ describe("sanitizeGlobalCanvasLayout", () => {
 		});
 		expect(healed.camera).toEqual(DEFAULT_CANVAS_CAMERA);
 	});
+
+	it("heals missing shapes to [] and drops corrupt ones", () => {
+		const withoutShapes = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 1 },
+			windows: [validWindow],
+			zOrder: ["term:abc"],
+		});
+		expect(withoutShapes.shapes).toEqual([]);
+
+		const healed = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 1 },
+			windows: [],
+			zOrder: [],
+			shapes: [
+				{ id: "s1", type: "box", x: 0, y: 0, width: 10, height: 10 },
+				{ id: "bad", type: "box", x: 0, y: 0, width: -1, height: 10 },
+				{ id: "s2", type: "line", x1: 0, y1: 0, x2: 5, y2: 5 },
+				{ id: "s3", type: "text", x: 0, y: 0, width: 10, height: 10 },
+			],
+		});
+		// The text shape is missing its text field, the box has a negative size.
+		expect(healed.shapes.map((shape) => shape.id)).toEqual(["s1", "s2"]);
+	});
 });
 
 describe("displayMode preference", () => {
