@@ -19,7 +19,9 @@ function getSnapshot(row: GlobalCanvasLayoutRow): string {
  * Bidirectional sync between the volatile canvas store and the persisted
  * v2GlobalCanvas singleton row (snapshot-diff pattern, cf.
  * useV2WorkspacePaneLayout). Writes are debounced and suppressed while a
- * pan/zoom/drag gesture is active — persisting settled state only.
+ * pan/zoom/drag gesture is active — persisting settled state only. On
+ * pagehide (quit, reload) the pending write flushes synchronously so drawings
+ * made inside the debounce window survive.
  */
 export function useGlobalCanvasLayout(store: StoreApi<CanvasStore>): void {
 	const collections = useCollections();
@@ -54,10 +56,15 @@ export function useGlobalCanvasLayout(store: StoreApi<CanvasStore>): void {
 
 	// Store → row, debounced, gesture-gated.
 	useEffect(() => {
-		const flush = () => {
+		// Once the window starts tearing down (quit, reload), debounced timers
+		// never fire and React cleanup doesn't run — writes must go through
+		// synchronously or the last WRITE_DEBOUNCE_MS of changes is lost.
+		let unloading = false;
+
+		const flush = (options?: { force?: boolean }) => {
 			const state = store.getState();
 			if (!state.hydrated) return;
-			if (state.gestureActive) return;
+			if (state.gestureActive && !options?.force) return;
 			const nextRow = state.toPersistedRow();
 			const nextSnapshot = getSnapshot(nextRow);
 			if (nextSnapshot === lastSyncedSnapshotRef.current) return;
@@ -85,12 +92,31 @@ export function useGlobalCanvasLayout(store: StoreApi<CanvasStore>): void {
 				state.shapeOrder !== prevState.shapeOrder;
 			const gestureEnded = prevState.gestureActive && !state.gestureActive;
 			if (!persistedChanged && !gestureEnded) return;
+			if (unloading) {
+				// Late mutations during teardown (e.g. a text note committing its
+				// in-progress edit on pagehide) can't wait for a timer.
+				flush({ force: true });
+				return;
+			}
 			if (state.gestureActive) return;
 			if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
 			writeTimerRef.current = setTimeout(flush, WRITE_DEBOUNCE_MS);
 		});
 
+		const handlePagehide = () => {
+			unloading = true;
+			if (writeTimerRef.current) {
+				clearTimeout(writeTimerRef.current);
+				writeTimerRef.current = null;
+			}
+			// Force past the gesture gate: the store holds the last committed
+			// document, which beats dropping the pending write entirely.
+			flush({ force: true });
+		};
+		window.addEventListener("pagehide", handlePagehide);
+
 		return () => {
+			window.removeEventListener("pagehide", handlePagehide);
 			unsubscribe();
 			if (writeTimerRef.current) {
 				clearTimeout(writeTimerRef.current);

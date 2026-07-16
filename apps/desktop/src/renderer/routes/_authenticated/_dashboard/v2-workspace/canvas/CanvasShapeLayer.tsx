@@ -215,6 +215,8 @@ function TextShapeBody({
 	interactive: boolean;
 	onPointerDown: (event: ReactPointerEvent<Element>) => void;
 }) {
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
 	const commitText = useCallback(
 		(value: string) => {
 			const state = store.getState();
@@ -235,9 +237,23 @@ function TextShapeBody({
 		[shape.id, shape.text, store],
 	);
 
+	// Quitting mid-edit never blurs the textarea, so without this the typed
+	// text would vanish with the window. The persistence hook's own pagehide
+	// flush picks the mutation up synchronously.
+	useEffect(() => {
+		if (!isEditing) return;
+		const handlePagehide = () => {
+			const textarea = textareaRef.current;
+			if (textarea) commitText(textarea.value);
+		};
+		window.addEventListener("pagehide", handlePagehide);
+		return () => window.removeEventListener("pagehide", handlePagehide);
+	}, [isEditing, commitText]);
+
 	if (isEditing) {
 		return (
 			<textarea
+				ref={textareaRef}
 				// biome-ignore lint/a11y/noAutofocus: editing starts from an explicit user action (draw or double-click)
 				autoFocus
 				defaultValue={shape.text}
