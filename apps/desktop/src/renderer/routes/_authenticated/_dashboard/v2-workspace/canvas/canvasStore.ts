@@ -91,6 +91,13 @@ export interface CanvasStore {
 		dx: number,
 		dy: number,
 	) => void;
+	/** Lock or unlock windows/shapes. Locked items ignore move/resize and
+	 *  drop out of (and can't rejoin) the selection until unlocked. */
+	setItemsLocked: (
+		windowIds: string[],
+		shapeIds: string[],
+		locked: boolean,
+	) => void;
 	setSelection: (
 		windowIds: Iterable<string>,
 		shapeIds: Iterable<string>,
@@ -235,7 +242,7 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		setWindowGeometry: (id, geometry) => {
 			set((state) => {
 				const window = state.windows[id];
-				if (!window) return state;
+				if (!window || window.locked) return state;
 				return {
 					windows: { ...state.windows, [id]: { ...window, ...geometry } },
 				};
@@ -308,13 +315,13 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 				const windows = { ...state.windows };
 				for (const id of windowIds) {
 					const window = windows[id];
-					if (!window) continue;
+					if (!window || window.locked) continue;
 					windows[id] = { ...window, x: window.x + dx, y: window.y + dy };
 				}
 				const shapes = { ...state.shapes };
 				for (const id of shapeIds) {
 					const shape = shapes[id];
-					if (!shape) continue;
+					if (!shape || shape.locked) continue;
 					shapes[id] =
 						shape.type === "line"
 							? {
@@ -330,20 +337,58 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 			});
 		},
 
+		setItemsLocked: (windowIds, shapeIds, locked) => {
+			set((state) => {
+				const windows = { ...state.windows };
+				for (const id of windowIds) {
+					const window = windows[id];
+					if (!window || Boolean(window.locked) === locked) continue;
+					windows[id] = { ...window, locked };
+				}
+				const shapes = { ...state.shapes };
+				for (const id of shapeIds) {
+					const shape = shapes[id];
+					if (!shape || Boolean(shape.locked) === locked) continue;
+					shapes[id] = { ...shape, locked };
+				}
+				// Freshly locked items leave the selection — a group drag must
+				// not appear to grab them.
+				const lockedWindowIds = new Set(locked ? windowIds : []);
+				const lockedShapeIds = new Set(locked ? shapeIds : []);
+				return {
+					windows,
+					shapes,
+					selectedWindowIds: new Set(
+						[...state.selectedWindowIds].filter(
+							(id) => !lockedWindowIds.has(id),
+						),
+					),
+					selectedShapeIds: new Set(
+						[...state.selectedShapeIds].filter((id) => !lockedShapeIds.has(id)),
+					),
+				};
+			});
+		},
+
 		setSelection: (windowIds, shapeIds) => {
 			set((state) => ({
 				selectedWindowIds: new Set(
-					[...windowIds].filter((id) => state.windows[id]),
+					[...windowIds].filter(
+						(id) => state.windows[id] && !state.windows[id].locked,
+					),
 				),
 				selectedShapeIds: new Set(
-					[...shapeIds].filter((id) => state.shapes[id]),
+					[...shapeIds].filter(
+						(id) => state.shapes[id] && !state.shapes[id].locked,
+					),
 				),
 			}));
 		},
 
 		toggleWindowSelection: (id) => {
 			set((state) => {
-				if (!state.windows[id]) return state;
+				const window = state.windows[id];
+				if (!window || window.locked) return state;
 				const next = new Set(state.selectedWindowIds);
 				if (next.has(id)) next.delete(id);
 				else next.add(id);
@@ -353,7 +398,8 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 
 		toggleShapeSelection: (id) => {
 			set((state) => {
-				if (!state.shapes[id]) return state;
+				const shape = state.shapes[id];
+				if (!shape || shape.locked) return state;
 				const next = new Set(state.selectedShapeIds);
 				if (next.has(id)) next.delete(id);
 				else next.add(id);

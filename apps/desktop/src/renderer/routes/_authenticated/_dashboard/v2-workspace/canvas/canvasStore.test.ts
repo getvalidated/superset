@@ -206,6 +206,73 @@ describe("canvasStore", () => {
 		expect(store.getState().dismissedWindowIds.has("a")).toBe(true);
 	});
 
+	it("locked windows ignore geometry writes and translation", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a"), makeWindow("b")]);
+		store.getState().setItemsLocked(["a"], [], true);
+		store
+			.getState()
+			.setWindowGeometry("a", { x: 99, y: 99, width: 500, height: 400 });
+		expect(store.getState().windows.a.x).toBe(0);
+		store.getState().translateItems(["a", "b"], [], 10, 10);
+		expect(store.getState().windows.a.x).toBe(0);
+		expect(store.getState().windows.b.x).toBe(10);
+	});
+
+	it("locked shapes ignore translation", () => {
+		const store = createCanvasStore();
+		store.getState().upsertShapes([makeBox("s1"), makeLine("s2")]);
+		store.getState().setItemsLocked([], ["s1"], true);
+		store.getState().translateItems([], ["s1", "s2"], 5, 5);
+		const box = store.getState().shapes.s1;
+		expect(box.type === "box" && box.x).toBe(10);
+		const line = store.getState().shapes.s2;
+		expect(line.type === "line" && line.x1).toBe(5);
+	});
+
+	it("locking drops items from the selection and blocks re-selection", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().upsertShapes([makeBox("s1")]);
+		store.getState().setSelection(["a"], ["s1"]);
+		store.getState().setItemsLocked(["a"], ["s1"], true);
+		expect(store.getState().selectedWindowIds.size).toBe(0);
+		expect(store.getState().selectedShapeIds.size).toBe(0);
+		store.getState().setSelection(["a"], ["s1"]);
+		expect(store.getState().selectedWindowIds.size).toBe(0);
+		store.getState().toggleWindowSelection("a");
+		store.getState().toggleShapeSelection("s1");
+		expect(store.getState().selectedWindowIds.size).toBe(0);
+		expect(store.getState().selectedShapeIds.size).toBe(0);
+		store.getState().setItemsLocked(["a"], ["s1"], false);
+		store.getState().setSelection(["a"], ["s1"]);
+		expect([...store.getState().selectedWindowIds]).toEqual(["a"]);
+		expect([...store.getState().selectedShapeIds]).toEqual(["s1"]);
+	});
+
+	it("locked state persists through toPersistedRow / replaceState", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().upsertShapes([makeBox("s1")]);
+		store.getState().setItemsLocked(["a"], ["s1"], true);
+		const restored = createCanvasStore();
+		restored.getState().replaceState(store.getState().toPersistedRow());
+		expect(restored.getState().windows.a.locked).toBe(true);
+		expect(restored.getState().shapes.s1.locked).toBe(true);
+	});
+
+	it("lock toggles are undoable", () => {
+		const store = createCanvasStore();
+		store.getState().upsertWindows([makeWindow("a")]);
+		store.getState().pushHistory();
+		store.getState().setItemsLocked(["a"], [], true);
+		expect(store.getState().windows.a.locked).toBe(true);
+		store.getState().undo();
+		expect(store.getState().windows.a.locked).toBeUndefined();
+		store.getState().redo();
+		expect(store.getState().windows.a.locked).toBe(true);
+	});
+
 	it("interactionMode defaults to drag and switches without churning state", () => {
 		const store = createCanvasStore();
 		expect(store.getState().interactionMode).toBe("drag");

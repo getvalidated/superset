@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { defaultWorktreesRoot, safeResolveWorktreePath } from "./worktree-paths";
+import {
+	defaultWorktreesRoot,
+	safeResolveWorktreePath,
+} from "./worktree-paths";
 
 const ORIGINAL_WORKSPACE_NAME = process.env.SUPERSET_WORKSPACE_NAME;
 
