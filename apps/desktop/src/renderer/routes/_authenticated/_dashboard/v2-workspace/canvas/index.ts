@@ -7,3 +7,7 @@ export {
 	canvasWindowIds,
 	openCanvasWindow,
 } from "./openCanvasWindow";
+export {
+	openWorkspaceTerminalOnCanvas,
+	workspaceHasCanvasTerminal,
+} from "./openWorkspaceTerminal";
