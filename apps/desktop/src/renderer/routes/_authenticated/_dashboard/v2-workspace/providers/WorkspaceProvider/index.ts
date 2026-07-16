@@ -1,1 +1,5 @@
-export { useWorkspace, WorkspaceProvider } from "./WorkspaceProvider";
+export {
+	useWorkspace,
+	useWorkspaceOptional,
+	WorkspaceProvider,
+} from "./WorkspaceProvider";

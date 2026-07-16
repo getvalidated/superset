@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
+import { CanvasView } from "../v2-workspace/canvas";
 import { V2WorkspacesHeader } from "./components/V2WorkspacesHeader";
 import { V2WorkspacesList } from "./components/V2WorkspacesList";
 import { useAccessibleV2Workspaces } from "./hooks/useAccessibleV2Workspaces";
@@ -33,6 +35,18 @@ function V2WorkspacesPage() {
 			deviceFilter,
 			projectFilter,
 		});
+
+	const { preferences } = useV2UserPreferences();
+	// The canvas display mode is global, not workspace-bound — it shows here
+	// too, so toggling to canvas works with no workspace selected. Older
+	// persisted rows read displayMode as undefined; treat that as tabs.
+	if ((preferences.displayMode ?? "tabs") === "canvas") {
+		return (
+			<div className="flex h-full w-full flex-1 flex-col overflow-hidden">
+				<CanvasView />
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex h-full w-full flex-1 flex-col overflow-hidden">

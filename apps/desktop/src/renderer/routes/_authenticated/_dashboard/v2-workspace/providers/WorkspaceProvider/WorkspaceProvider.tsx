@@ -59,3 +59,11 @@ export function useWorkspace(): WorkspaceContextValue {
 	}
 	return ctx;
 }
+
+/**
+ * Like useWorkspace, but null outside a workspace route — for org-global
+ * surfaces (the canvas) that are merely enriched by a route workspace.
+ */
+export function useWorkspaceOptional(): WorkspaceContextValue | null {
+	return useContext(WorkspaceContext);
+}

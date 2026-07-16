@@ -23,6 +23,7 @@ import { useZoomFactor } from "renderer/hooks/useZoomFactor";
 import { useHotkeyDisplay } from "renderer/hotkeys";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
+import { CanvasModeToggle } from "renderer/routes/_authenticated/_dashboard/components/CanvasModeToggle";
 import { NavigationControls } from "renderer/routes/_authenticated/_dashboard/components/NavigationControls";
 import { SidebarToggle } from "renderer/routes/_authenticated/_dashboard/components/SidebarToggle";
 import { OrganizationDropdown } from "renderer/routes/_authenticated/_dashboard/components/TopBar/components/OrganizationDropdown";
@@ -273,8 +274,12 @@ export function DashboardSidebarHeader({
 					<SidebarToggle />
 					<NavigationControls />
 				</ZoomStable>
-				<ZoomStable enabled={isMac} className="ml-auto">
+				<ZoomStable
+					enabled={isMac}
+					className="ml-auto flex items-center gap-1.5"
+				>
 					<ResourceConsumption surface="v2" />
+					<CanvasModeToggle />
 				</ZoomStable>
 			</div>
 			<OrganizationDropdown variant="expanded" />
