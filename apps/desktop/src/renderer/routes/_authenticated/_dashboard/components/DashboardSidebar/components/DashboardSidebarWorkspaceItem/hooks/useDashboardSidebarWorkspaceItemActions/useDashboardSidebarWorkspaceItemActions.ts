@@ -5,6 +5,7 @@ import {
 	useMarkWorkspaceTerminalsSeen,
 	useV2WorkspaceIsUnread,
 } from "renderer/hooks/host-service/useV2NotificationStatus";
+import { useWorkspaceHostUrl } from "renderer/hooks/host-service/useWorkspaceHostUrl";
 import { useCopyToClipboard } from "renderer/hooks/useCopyToClipboard";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { showHostServiceUnavailableToast } from "renderer/lib/host-service-unavailable";
@@ -13,6 +14,8 @@ import { useDashboardSidebarSectionRename } from "renderer/routes/_authenticated
 import {
 	fitCanvasCameraToWorkspace,
 	getGlobalCanvasStore,
+	openWorkspaceTerminalOnCanvas,
+	workspaceHasCanvasTerminal,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspace/canvas";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/hooks/useOptimisticCollectionActions";
@@ -20,6 +23,8 @@ import { useCollections } from "renderer/routes/_authenticated/providers/Collect
 import { V2_USER_PREFERENCES_ID } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useRemoveFromSidebarIntent } from "renderer/stores/remove-workspace-from-sidebar-intent";
+import { useTheme } from "renderer/stores/theme";
+import { resolveTerminalThemeType } from "renderer/stores/theme/utils";
 import { useV2NotificationStore } from "renderer/stores/v2-notifications";
 
 interface UseDashboardSidebarWorkspaceItemActionsOptions {
@@ -49,6 +54,8 @@ export function useDashboardSidebarWorkspaceItemActions({
 	const clearManualUnread = useV2NotificationStore((s) => s.clearManualUnread);
 	const markWorkspaceTerminalsSeen = useMarkWorkspaceTerminalsSeen(workspaceId);
 	const isUnread = useV2WorkspaceIsUnread(workspaceId);
+	const workspaceHostUrl = useWorkspaceHostUrl(workspaceId);
+	const activeTheme = useTheme();
 
 	const clearWorkspaceAttention = () => {
 		clearManualUnread(workspaceId);
@@ -77,10 +84,28 @@ export function useDashboardSidebarWorkspaceItemActions({
 			collections.v2UserPreferences.get(V2_USER_PREFERENCES_ID)?.displayMode ??
 			"tabs";
 		if (displayMode === "canvas") {
-			fitCanvasCameraToWorkspace(
-				getGlobalCanvasStore(activeOrganizationId ?? "default"),
-				workspaceId,
+			const canvasStore = getGlobalCanvasStore(
+				activeOrganizationId ?? "default",
 			);
+			if (workspaceHasCanvasTerminal(canvasStore, workspaceId)) {
+				fitCanvasCameraToWorkspace(canvasStore, workspaceId);
+			} else if (workspaceHostUrl) {
+				// No terminal on the canvas for this workspace — open a fresh one
+				// where the user is looking instead of panning to whatever other
+				// windows (browser panes) the workspace happens to have.
+				void openWorkspaceTerminalOnCanvas({
+					store: canvasStore,
+					workspaceId,
+					hostUrl: workspaceHostUrl,
+					themeType: resolveTerminalThemeType({
+						activeThemeType: activeTheme?.type,
+					}),
+				});
+			} else {
+				showHostServiceUnavailableToast(hostService, {
+					action: "open a terminal",
+				});
+			}
 		}
 		navigate({
 			to: "/v2-workspace/$workspaceId",
