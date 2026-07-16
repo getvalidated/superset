@@ -248,9 +248,17 @@ class BrowserRuntimeRegistryImpl {
 		if (!entry) return;
 		const clamped = Math.min(5, Math.max(0.25, zoomFactor));
 		try {
+			// Chromium stores zoom per-HOST across the whole persist:superset
+			// partition — which the app window itself lives in. Zooming a
+			// guest on the app's own host (localhost in dev) would rescale
+			// the entire app chrome. Those guests keep 1× content; their
+			// frame still scales with the canvas.
+			const guestHost = new URL(entry.webview.getURL()).hostname;
+			if (guestHost === window.location.hostname) return;
 			entry.webview.setZoomFactor(clamped);
 		} catch {
-			// Webview not attached yet.
+			// Webview not attached yet (getURL/setZoomFactor throw before
+			// the first dom-ready); the caller retries on next gesture end.
 		}
 	}
 
