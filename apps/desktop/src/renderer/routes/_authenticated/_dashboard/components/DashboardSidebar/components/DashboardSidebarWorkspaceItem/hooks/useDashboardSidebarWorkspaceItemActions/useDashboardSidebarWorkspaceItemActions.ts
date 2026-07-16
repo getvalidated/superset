@@ -10,8 +10,14 @@ import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { showHostServiceUnavailableToast } from "renderer/lib/host-service-unavailable";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useDashboardSidebarSectionRename } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarSectionRenameContext";
+import {
+	fitCanvasCameraToWorkspace,
+	getGlobalCanvasStore,
+} from "renderer/routes/_authenticated/_dashboard/v2-workspace/canvas";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useOptimisticCollectionActions } from "renderer/routes/_authenticated/hooks/useOptimisticCollectionActions";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { V2_USER_PREFERENCES_ID } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useRemoveFromSidebarIntent } from "renderer/stores/remove-workspace-from-sidebar-intent";
 import { useV2NotificationStore } from "renderer/stores/v2-notifications";
@@ -34,7 +40,8 @@ export function useDashboardSidebarWorkspaceItemActions({
 	const navigate = useNavigate();
 	const matchRoute = useMatchRoute();
 	const hostService = useLocalHostService();
-	const { activeHostUrl } = hostService;
+	const { activeHostUrl, activeOrganizationId } = hostService;
+	const collections = useCollections();
 	const { copyToClipboard } = useCopyToClipboard();
 	const { v2Workspaces: workspaceActions } = useOptimisticCollectionActions();
 	const { requestSectionRename } = useDashboardSidebarSectionRename();
@@ -63,6 +70,18 @@ export function useDashboardSidebarWorkspaceItemActions({
 	const handleClick = () => {
 		if (isRenaming) return;
 		clearWorkspaceAttention();
+		// In canvas display mode the route change keeps showing the same global
+		// canvas — also glide the camera to the clicked workspace's windows.
+		// Read at click time so sidebar rows don't each subscribe to prefs.
+		const displayMode =
+			collections.v2UserPreferences.get(V2_USER_PREFERENCES_ID)?.displayMode ??
+			"tabs";
+		if (displayMode === "canvas") {
+			fitCanvasCameraToWorkspace(
+				getGlobalCanvasStore(activeOrganizationId ?? "default"),
+				workspaceId,
+			);
+		}
 		navigate({
 			to: "/v2-workspace/$workspaceId",
 			params: { workspaceId },

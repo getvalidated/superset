@@ -66,6 +66,9 @@ import {
 } from "./useCanvasSeeding";
 import { useGlobalCanvasLayout } from "./useGlobalCanvasLayout";
 
+/** Quiet period after a non-gesture camera write before culling resyncs. */
+const CAMERA_SETTLE_MS = 120;
+
 /**
  * One canvas window, memoized so a single-window store change (a title
  * refresh from the 15s reconcile, another window's drag commit, a focus flip)
@@ -191,7 +194,15 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	const focusedWindowId = useStore(store, (state) => state.focusedWindowId);
 	const selectedWindowIds = useStore(store, (state) => state.selectedWindowIds);
 
+	// Assigned below once handleGestureEnd exists; the camera effect only
+	// calls it asynchronously, well after first render.
+	const handleGestureEndRef = useRef<() => void>(() => {});
+
 	// Camera → plane transform + webview relayout, no React involvement.
+	// Camera writes that never pass through the gesture hook (the sidebar's
+	// fit-to-workspace glide, anything else driving the store directly) get a
+	// debounced settle callback of their own so culling and browser content
+	// zoom catch up once the camera stops moving.
 	useEffect(() => {
 		const apply = () => {
 			const plane = planeRef.current;
@@ -201,9 +212,21 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 			browserRuntimeRegistry.relayoutAll();
 		};
 		apply();
-		return store.subscribe((state, prevState) => {
-			if (state.camera !== prevState.camera) apply();
+		let settleTimer: ReturnType<typeof setTimeout> | null = null;
+		const unsubscribe = store.subscribe((state, prevState) => {
+			if (state.camera === prevState.camera) return;
+			apply();
+			if (settleTimer) clearTimeout(settleTimer);
+			if (state.gestureActive) return;
+			settleTimer = setTimeout(() => {
+				// A gesture that started meanwhile ends with its own resync.
+				if (!store.getState().gestureActive) handleGestureEndRef.current();
+			}, CAMERA_SETTLE_MS);
 		});
+		return () => {
+			unsubscribe();
+			if (settleTimer) clearTimeout(settleTimer);
+		};
 	}, [store]);
 
 	// Window mounts/geometry commits move placeholders without resizing the
@@ -249,6 +272,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		setCullTick((tick) => tick + 1);
 		applyBrowserContentZoom();
 	}, [applyBrowserContentZoom]);
+	handleGestureEndRef.current = handleGestureEnd;
 
 	useCanvasGestures({ viewportRef, store, onGestureEnd: handleGestureEnd });
 
