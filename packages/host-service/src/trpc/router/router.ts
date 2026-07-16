@@ -3,6 +3,7 @@ import { acpSessionsRouter } from "./acp-sessions";
 import { agentsRouter } from "./agents";
 import { attachmentsRouter } from "./attachments";
 import { authRouter } from "./auth";
+import { browserRouter } from "./browser";
 import { chatRouter } from "./chat";
 import { cloudRouter } from "./cloud";
 import { configRouter } from "./config";
@@ -30,6 +31,7 @@ export const appRouter = router({
 	agents: agentsRouter,
 	attachments: attachmentsRouter,
 	auth: authRouter,
+	browser: browserRouter,
 	health: healthRouter,
 	host: hostRouter,
 	chat: chatRouter,

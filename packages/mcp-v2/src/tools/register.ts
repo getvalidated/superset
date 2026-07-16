@@ -17,6 +17,9 @@ import * as automationsResume from "./automations/resume";
 import * as automationsRun from "./automations/run";
 import * as automationsSetPrompt from "./automations/set_prompt";
 import * as automationsUpdate from "./automations/update";
+import * as browserReload from "./browser/reload";
+import * as browserScreenshot from "./browser/screenshot";
+import * as browserWindowsList from "./browser/windows_list";
 import * as hostsList from "./hosts/list";
 import * as organizationMembersList from "./organization/members/list";
 import * as projectsList from "./projects/list";
@@ -60,6 +63,9 @@ const REGISTRARS = [
 	terminalsCreate,
 	projectsList,
 	hostsList,
+	browserWindowsList,
+	browserScreenshot,
+	browserReload,
 ];
 
 export interface RegisterToolsOptions {

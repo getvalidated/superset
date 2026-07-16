@@ -5,6 +5,7 @@ import { handleAuthCallback } from "lib/trpc/routers/auth/utils/auth-functions";
 import { NOTIFICATION_EVENTS } from "shared/constants";
 import { env } from "shared/env.shared";
 import type { AgentLifecycleEvent } from "shared/notification-types";
+import { registerBrowserControlRoutes } from "../browser/browser-control-routes";
 import { HOOK_PROTOCOL_VERSION } from "../terminal/env";
 import { mapEventType } from "./map-event-type";
 import { resolvePaneId } from "./resolve-pane-id";
@@ -173,6 +174,8 @@ app.get("/auth/callback", async (req, res) => {
 </div>
 </body></html>`);
 });
+
+registerBrowserControlRoutes(app);
 
 // 404
 app.use((_req, res) => {
