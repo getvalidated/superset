@@ -16,6 +16,10 @@ export type CanvasShape = CanvasShapeRow;
 
 export type CanvasTool = "select" | "line" | "box" | "text";
 
+/** How a background left-drag behaves: "drag" pans the camera (hand tool),
+ *  "select" draws a marquee (Figma-style pointer). */
+export type CanvasInteractionMode = "drag" | "select";
+
 export interface CanvasWindowGeometry {
 	x: number;
 	y: number;
@@ -50,6 +54,8 @@ export interface CanvasStore {
 	selectedShapeIds: ReadonlySet<string>;
 	/** Active toolbar tool; non-select tools arm the drawing overlay. */
 	activeTool: CanvasTool;
+	/** Drag (pan) vs select (marquee) behavior for background drags. */
+	interactionMode: CanvasInteractionMode;
 	/** Text shape currently being edited in place. */
 	editingShapeId: string | null;
 	/** Shift-drag selection rectangle in viewport (screen) coordinates. */
@@ -93,6 +99,7 @@ export interface CanvasStore {
 	toggleShapeSelection: (id: string) => void;
 	clearSelection: () => void;
 	setActiveTool: (tool: CanvasTool) => void;
+	setInteractionMode: (mode: CanvasInteractionMode) => void;
 	setEditingShape: (id: string | null) => void;
 	setMarquee: (rect: CanvasRect | null) => void;
 	/** Snapshot the document before a user mutation so ⌘Z can restore it. */
@@ -168,6 +175,7 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		selectedWindowIds: new Set<string>(),
 		selectedShapeIds: new Set<string>(),
 		activeTool: "select",
+		interactionMode: "drag",
 		editingShapeId: null,
 		marquee: null,
 		undoStack: [],
@@ -367,6 +375,12 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		setActiveTool: (tool) => {
 			set((state) =>
 				state.activeTool === tool ? state : { activeTool: tool },
+			);
+		},
+
+		setInteractionMode: (mode) => {
+			set((state) =>
+				state.interactionMode === mode ? state : { interactionMode: mode },
 			);
 		},
 
