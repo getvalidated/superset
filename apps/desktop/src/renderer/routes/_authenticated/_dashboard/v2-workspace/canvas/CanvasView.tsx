@@ -229,24 +229,6 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		};
 	}, [store]);
 
-	// Chromium's built-in ctrl/cmd+wheel page zoom (trackpad pinch arrives as
-	// ctrl+wheel) rescales the whole window, sidebar included, and main.ts
-	// persists that zoom level. The viewport wheel handler already swallows
-	// it over the canvas; while the canvas is mounted, cancel it over the
-	// rest of the chrome too — camera zoom is the only wheel zoom in canvas
-	// mode. Menu zoom (Cmd+= / Cmd+−) is unaffected. Capture-phase so it runs
-	// before the viewport handler, which it never blocks (no stopPropagation).
-	useEffect(() => {
-		const blockPageZoom = (event: WheelEvent) => {
-			if (event.ctrlKey || event.metaKey) event.preventDefault();
-		};
-		window.addEventListener("wheel", blockPageZoom, {
-			capture: true,
-			passive: false,
-		});
-		return () => window.removeEventListener("wheel", blockPageZoom, true);
-	}, []);
-
 	// Window mounts/geometry commits move placeholders without resizing the
 	// viewport — re-sync webviews after the React commit paints.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: windows/zOrder are re-run triggers, not effect inputs

@@ -298,12 +298,14 @@ export async function MainWindow() {
 	};
 	window.on("move", debouncedSave);
 	window.on("resize", debouncedSave);
-	window.webContents.on("zoom-changed", () => {
-		setTimeout(() => {
-			if (window.isDestroyed()) return;
-			persistedZoomLevel = window.webContents.getZoomLevel();
-			debouncedSave();
-		}, 0);
+	// Chromium applies ctrl/cmd+wheel (and trackpad-pinch) page zoom in the
+	// browser process — a renderer preventDefault cannot cancel it, only this
+	// event can. Wheel zoom rescales the entire chrome, which is never what a
+	// wheel gesture means in this app (the canvas zooms its own camera), so
+	// block it everywhere. Menu zoom (Cmd+= / Cmd+0 / Cmd+−) doesn't fire
+	// this event and still works; it's persisted by the close handler.
+	window.webContents.on("zoom-changed", (event) => {
+		event.preventDefault();
 	});
 
 	window.webContents.on("did-finish-load", () => {
