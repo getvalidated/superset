@@ -22,12 +22,16 @@ function makeWindow(
 	};
 }
 
-function makeBox(id: string): CanvasShape {
+function makeBox(id: string): Extract<CanvasShape, { type: "box" }> {
 	return { id, type: "box", x: 10, y: 10, width: 100, height: 80 };
 }
 
-function makeLine(id: string): CanvasShape {
+function makeLine(id: string): Extract<CanvasShape, { type: "line" }> {
 	return { id, type: "line", x1: 0, y1: 0, x2: 50, y2: 20 };
+}
+
+function makeText(id: string): Extract<CanvasShape, { type: "text" }> {
+	return { id, type: "text", x: 0, y: 0, width: 200, height: 100, text: "hi" };
 }
 
 describe("canvasStore", () => {
@@ -293,5 +297,105 @@ describe("canvasStore", () => {
 		store.getState().undo();
 		expect(store.getState().focusedWindowId).toBeNull();
 		expect(store.getState().selectedWindowIds.size).toBe(0);
+	});
+
+	it("setDrawStyle merges partial updates over the defaults", () => {
+		const store = createCanvasStore();
+		expect(store.getState().drawStyle).toEqual({
+			color: "default",
+			fill: false,
+			fontSize: 14,
+			bold: false,
+			italic: false,
+		});
+		store.getState().setDrawStyle({ color: "red" });
+		store.getState().setDrawStyle({ fill: true, bold: true });
+		expect(store.getState().drawStyle).toEqual({
+			color: "red",
+			fill: true,
+			fontSize: 14,
+			bold: true,
+			italic: false,
+		});
+	});
+
+	it("setShapesStyle recolors every shape but scopes per-type fields", () => {
+		const store = createCanvasStore();
+		store
+			.getState()
+			.upsertShapes([makeBox("b1"), makeLine("l1"), makeText("t1")]);
+		store.getState().setShapesStyle(["b1", "l1", "t1"], {
+			color: "red",
+			fill: true,
+			fontSize: 20,
+			bold: true,
+		});
+		const { shapes } = store.getState();
+		expect(shapes.b1).toEqual({ ...makeBox("b1"), color: "red", fill: true });
+		expect(shapes.l1).toEqual({ ...makeLine("l1"), color: "red" });
+		expect(shapes.t1).toEqual({
+			...makeText("t1"),
+			color: "red",
+			fontSize: 20,
+			bold: true,
+		});
+	});
+
+	it("setShapesStyle clears fields when restyled back to defaults", () => {
+		const store = createCanvasStore();
+		store.getState().upsertShapes([makeBox("b1"), makeText("t1")]);
+		store.getState().setShapesStyle(["b1", "t1"], {
+			color: "blue",
+			fill: true,
+			fontSize: 20,
+			bold: true,
+			italic: true,
+		});
+		store.getState().setShapesStyle(["b1", "t1"], {
+			color: "default",
+			fill: false,
+			fontSize: 14,
+			bold: false,
+			italic: false,
+		});
+		// Byte-identical to never-styled rows, so persistence stays stable.
+		expect(store.getState().shapes.b1).toEqual(makeBox("b1"));
+		expect(store.getState().shapes.t1).toEqual(makeText("t1"));
+	});
+
+	it("setShapesStyle skips locked shapes and is undoable", () => {
+		const store = createCanvasStore();
+		store.getState().upsertShapes([makeBox("b1"), makeBox("b2")]);
+		store.getState().setItemsLocked([], ["b2"], true);
+		store.getState().pushHistory();
+		store.getState().setShapesStyle(["b1", "b2"], { color: "green" });
+		expect(store.getState().shapes.b1.color).toBe("green");
+		expect(store.getState().shapes.b2.color).toBeUndefined();
+		store.getState().undo();
+		expect(store.getState().shapes.b1.color).toBeUndefined();
+		store.getState().redo();
+		expect(store.getState().shapes.b1.color).toBe("green");
+	});
+
+	it("styled shapes round-trip through toPersistedRow / replaceState", () => {
+		const store = createCanvasStore();
+		const styled: CanvasShape = {
+			id: "s1",
+			type: "text",
+			x: 0,
+			y: 0,
+			width: 200,
+			height: 100,
+			text: "hi",
+			color: "blue",
+			fontSize: 20,
+			bold: true,
+		};
+		store.getState().upsertShapes([styled, makeBox("s2")]);
+		const row = store.getState().toPersistedRow();
+		const restored = createCanvasStore();
+		restored.getState().replaceState(row);
+		expect(restored.getState().shapes.s1).toEqual(styled);
+		expect(restored.getState().shapes.s2).toEqual(makeBox("s2"));
 	});
 });

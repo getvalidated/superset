@@ -10,11 +10,36 @@ import {
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal/schema";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { type CanvasRect, clampZoom } from "./canvasGeometry";
+import {
+	DEFAULT_CANVAS_TEXT_SIZE_PX,
+	resolveCanvasShapeColor,
+} from "./canvasShapeStyle";
 
 export type CanvasWindow = CanvasWindowRow;
 export type CanvasShape = CanvasShapeRow;
 
 export type CanvasTool = "select" | "line" | "box" | "text";
+
+/** Styling applied to the next drawn shape, edited via the toolbar's second
+ *  row while a drawing tool is armed. `color` is a palette key from
+ *  CANVAS_SHAPE_COLORS; per-kind fields are ignored by the other tools. */
+export interface CanvasDrawStyle {
+	color: string;
+	/** Box tool: fill the rect with a tint of the stroke color. */
+	fill: boolean;
+	/** Text tool: font size in px. */
+	fontSize: number;
+	bold: boolean;
+	italic: boolean;
+}
+
+export const DEFAULT_CANVAS_DRAW_STYLE: CanvasDrawStyle = {
+	color: "default",
+	fill: false,
+	fontSize: DEFAULT_CANVAS_TEXT_SIZE_PX,
+	bold: false,
+	italic: false,
+};
 
 /** How a background left-drag behaves: "drag" pans the camera (hand tool),
  *  "select" draws a marquee (Figma-style pointer). */
@@ -54,6 +79,9 @@ export interface CanvasStore {
 	selectedShapeIds: ReadonlySet<string>;
 	/** Active toolbar tool; non-select tools arm the drawing overlay. */
 	activeTool: CanvasTool;
+	/** Styling for the next drawn shape. Tool state, not document state — it
+	 *  is neither persisted nor part of undo history. */
+	drawStyle: CanvasDrawStyle;
 	/** Drag (pan) vs select (marquee) behavior for background drags. */
 	interactionMode: CanvasInteractionMode;
 	/** Text shape currently being edited in place. */
@@ -84,6 +112,11 @@ export interface CanvasStore {
 	upsertShapes: (shapes: CanvasShape[]) => void;
 	removeShapes: (ids: string[]) => void;
 	setShapeText: (id: string, text: string) => void;
+	/** Restyle already-drawn shapes. Fields inapplicable to a shape's type are
+	 *  ignored, and default values clear the persisted field so restyled-back
+	 *  shapes stay byte-identical to never-styled rows. Locked shapes are
+	 *  skipped. Callers push history first. */
+	setShapesStyle: (ids: string[], style: Partial<CanvasDrawStyle>) => void;
 	/** Move the given windows and shapes by a canvas-coordinate delta. */
 	translateItems: (
 		windowIds: string[],
@@ -106,6 +139,7 @@ export interface CanvasStore {
 	toggleShapeSelection: (id: string) => void;
 	clearSelection: () => void;
 	setActiveTool: (tool: CanvasTool) => void;
+	setDrawStyle: (style: Partial<CanvasDrawStyle>) => void;
 	setInteractionMode: (mode: CanvasInteractionMode) => void;
 	setEditingShape: (id: string | null) => void;
 	setMarquee: (rect: CanvasRect | null) => void;
@@ -182,6 +216,7 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 		selectedWindowIds: new Set<string>(),
 		selectedShapeIds: new Set<string>(),
 		activeTool: "select",
+		drawStyle: DEFAULT_CANVAS_DRAW_STYLE,
 		interactionMode: "drag",
 		editingShapeId: null,
 		marquee: null,
@@ -307,6 +342,47 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 			});
 		},
 
+		setShapesStyle: (ids, style) => {
+			if (ids.length === 0) return;
+			set((state) => {
+				const shapes = { ...state.shapes };
+				for (const id of ids) {
+					const shape = shapes[id];
+					if (!shape || shape.locked) continue;
+					const next = { ...shape };
+					if (style.color !== undefined) {
+						// Unknown keys resolve to null, same as "default" — clear rather
+						// than persist a key the renderer would ignore anyway.
+						if (resolveCanvasShapeColor(style.color)) next.color = style.color;
+						else delete next.color;
+					}
+					if (next.type === "box" && style.fill !== undefined) {
+						if (style.fill) next.fill = true;
+						else delete next.fill;
+					}
+					if (next.type === "text") {
+						if (style.fontSize !== undefined) {
+							if (style.fontSize !== DEFAULT_CANVAS_TEXT_SIZE_PX) {
+								next.fontSize = style.fontSize;
+							} else {
+								delete next.fontSize;
+							}
+						}
+						if (style.bold !== undefined) {
+							if (style.bold) next.bold = true;
+							else delete next.bold;
+						}
+						if (style.italic !== undefined) {
+							if (style.italic) next.italic = true;
+							else delete next.italic;
+						}
+					}
+					shapes[id] = next;
+				}
+				return { shapes };
+			});
+		},
+
 		translateItems: (windowIds, shapeIds, dx, dy) => {
 			if ((dx === 0 && dy === 0) || (!windowIds.length && !shapeIds.length)) {
 				return;
@@ -422,6 +498,10 @@ export function createCanvasStore(): StoreApi<CanvasStore> {
 			set((state) =>
 				state.activeTool === tool ? state : { activeTool: tool },
 			);
+		},
+
+		setDrawStyle: (style) => {
+			set((state) => ({ drawStyle: { ...state.drawStyle, ...style } }));
 		},
 
 		setInteractionMode: (mode) => {
