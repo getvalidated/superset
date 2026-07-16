@@ -179,20 +179,21 @@ local_seed_dev_account() {
   return 0
 }
 
-local_seed_host_presets() {
-  echo "🎛️  Carrying host agent presets into superset-dev-data/host/..."
+local_seed_host_state() {
+  echo "🎛️  Carrying host agent presets + projects into superset-dev-data/host/..."
 
-  # Host agent presets (terminal agent configs) live in a per-org SQLite DB at
+  # Host agent presets (terminal agent configs), registered projects, and
+  # host-wide settings live in a per-org SQLite DB at
   # $SUPERSET_HOME_DIR/host/<orgId>/host.db. Every local workspace seeds a
   # fresh Postgres, so db:seed-dev mints a NEW random org id — host-service
-  # then finds no host.db for it and re-seeds the bundled default presets,
-  # resurrecting ones the user deleted and dropping custom ones. Pre-place a
-  # host.db (presets only) under the new org id so customizations follow the
-  # user into each new workspace.
+  # then finds no host.db for it, re-seeds the bundled default presets, and
+  # starts with zero projects, so the user has to re-add everything. Pre-place
+  # a host.db (presets + projects + settings only) under the new org id so
+  # that state follows the user into each new workspace.
 
   if ! command -v sqlite3 &> /dev/null; then
     warn "sqlite3 not found — dev app will seed bundled default presets"
-    step_skipped "Seed host presets (no sqlite3)"
+    step_skipped "Seed host state (no sqlite3)"
     return 0
   fi
 
@@ -205,15 +206,15 @@ local_seed_host_presets() {
     2>/dev/null | tr -d '[:space:]')"
   if [ -z "$org_id" ]; then
     warn "Could not resolve dev org id — dev app will seed bundled default presets"
-    step_skipped "Seed host presets (no dev org)"
+    step_skipped "Seed host state (no dev org)"
     return 0
   fi
 
   local dest_dir="superset-dev-data/host/$org_id"
   local dest_db="$dest_dir/host.db"
   if [ -f "$dest_db" ]; then
-    warn "Host DB already exists at $dest_db — leaving presets as-is"
-    step_skipped "Seed host presets (host.db exists)"
+    warn "Host DB already exists at $dest_db — leaving it as-is"
+    step_skipped "Seed host state (host.db exists)"
     return 0
   fi
 
@@ -233,7 +234,7 @@ local_seed_host_presets() {
 
   if [ -z "$source_db" ]; then
     warn "No prior host.db with presets found — dev app will seed bundled defaults"
-    step_skipped "Seed host presets (no source)"
+    step_skipped "Seed host state (no source)"
     return 0
   fi
 
@@ -255,17 +256,20 @@ local_seed_host_presets() {
   done
   sqlite3 "$dest_db" "PRAGMA wal_checkpoint(TRUNCATE);" &> /dev/null || true
 
-  # Keep ONLY the presets (plus drizzle's migration journal so host-service
-  # migrations stay aligned): the copy also carries the source instance's
-  # workspaces/projects/sessions, which belong to that instance, not this one.
+  # Keep ONLY host-level state — presets, projects, host settings (plus
+  # drizzle's migration journal so host-service migrations stay aligned).
+  # The copy also carries the source instance's workspaces/terminal sessions/
+  # pull requests, which belong to that instance, not this one: workspace rows
+  # in particular point at the other instance's worktrees on disk, and
+  # workspace cleanup acting on them could delete real work.
   local table
   while IFS= read -r table; do
     sqlite3 "$dest_db" "delete from \"$table\";" 2>/dev/null || true
   done < <(sqlite3 "$dest_db" \
-    "select name from sqlite_master where type='table' and name not in ('host_agent_configs','__drizzle_migrations');")
+    "select name from sqlite_master where type='table' and name not in ('host_agent_configs','projects','host_settings','__drizzle_migrations');")
   sqlite3 "$dest_db" "vacuum;" &> /dev/null || true
 
-  success "Presets carried over from $source_db (org $org_id)"
+  success "Presets + projects carried over from $source_db (org $org_id)"
   return 0
 }
 
@@ -430,7 +434,7 @@ local_setup_main() {
   local_db_up || step_failed "Start local DB stack"
   local_migrate || step_failed "Apply migrations"
   local_seed_dev_account || step_failed "Seed dev account"
-  local_seed_host_presets || step_failed "Seed host presets"
+  local_seed_host_state || step_failed "Seed host state"
   local_write_config_overlay || step_failed "Write config overlay"
 
   print_summary "Local setup"
