@@ -273,6 +273,86 @@ local_seed_host_state() {
   return 0
 }
 
+local_seed_app_projects() {
+  echo "🗂️  Carrying app project list into superset-dev-data/local.db..."
+
+  # The Electron main process keeps the PROJECT LIST the UI shows (plus
+  # per-project settings: color, tab order, branch prefix, default app) in
+  # $SUPERSET_HOME_DIR/local.db — separate from host.db, which only holds the
+  # host-service pairing. A fresh workspace starts with an empty local.db, so
+  # the sidebar/workspace-creation modal shows no projects even after the
+  # host.db carry-over. Pre-place a local.db (projects + settings only) from
+  # the newest prior instance; the production v1 app's ~/.superset/local.db
+  # shares the same schema lineage and works as first-run fallback.
+
+  if ! command -v sqlite3 &> /dev/null; then
+    warn "sqlite3 not found — project list starts empty"
+    step_skipped "Seed app projects (no sqlite3)"
+    return 0
+  fi
+
+  local dest_db="superset-dev-data/local.db"
+  if [ -f "$dest_db" ]; then
+    warn "local.db already exists — leaving it as-is"
+    step_skipped "Seed app projects (local.db exists)"
+    return 0
+  fi
+
+  local source_db="" candidate count
+  while IFS= read -r candidate; do
+    count="$(sqlite3 "file:$candidate?mode=ro" \
+      "select count(*) from projects;" 2>/dev/null || echo 0)"
+    if [ "${count:-0}" -gt 0 ] 2>/dev/null; then
+      source_db="$candidate"
+      break
+    fi
+  done < <(ls -t \
+    "$(dirname "$ROOT_DIR")"/*/superset-dev-data/local.db \
+    "$HOME/.superset/local.db" 2>/dev/null)
+
+  if [ -z "$source_db" ]; then
+    warn "No prior local.db with projects found — project list starts empty"
+    step_skipped "Seed app projects (no source)"
+    return 0
+  fi
+
+  mkdir -p superset-dev-data
+  chmod 700 superset-dev-data
+
+  local ext
+  for ext in "" "-shm" "-wal"; do
+    if [ -f "${source_db}${ext}" ]; then
+      if ! cp "${source_db}${ext}" "${dest_db}${ext}"; then
+        error "Failed to copy ${source_db}${ext}"
+        rm -f "$dest_db" "${dest_db}-shm" "${dest_db}-wal"
+        return 1
+      fi
+      chmod 600 "${dest_db}${ext}"
+    fi
+  done
+  sqlite3 "$dest_db" "PRAGMA wal_checkpoint(TRUNCATE);" &> /dev/null || true
+
+  # Keep the project list + app settings; prune instance-scoped tables
+  # (workspaces/worktrees point at the source instance's checkouts on disk,
+  # orgs/users belong to the source instance's auth) and drop projects whose
+  # repo directory no longer exists.
+  local table
+  while IFS= read -r table; do
+    sqlite3 "$dest_db" "delete from \"$table\";" 2>/dev/null || true
+  done < <(sqlite3 "$dest_db" \
+    "select name from sqlite_master where type='table' and name not in ('projects','settings','__drizzle_migrations');")
+  local pid ppath
+  while IFS='|' read -r pid ppath; do
+    if [ ! -d "$ppath" ]; then
+      sqlite3 "$dest_db" "delete from projects where id = '$pid';" 2>/dev/null || true
+    fi
+  done < <(sqlite3 "$dest_db" "select id, main_repo_path from projects;")
+  sqlite3 "$dest_db" "vacuum;" &> /dev/null || true
+
+  success "App project list carried over from $source_db ($(sqlite3 "$dest_db" 'select count(*) from projects;') projects)"
+  return 0
+}
+
 local_write_env() {
   echo "📝 Writing workspace .env (DB URLs + ports)..."
   if [ -z "${SUPERSET_PORT_BASE:-}" ] || [ -z "$LOCAL_NEON_PROXY_PORT" ]; then
@@ -435,6 +515,7 @@ local_setup_main() {
   local_migrate || step_failed "Apply migrations"
   local_seed_dev_account || step_failed "Seed dev account"
   local_seed_host_state || step_failed "Seed host state"
+  local_seed_app_projects || step_failed "Seed app projects"
   local_write_config_overlay || step_failed "Write config overlay"
 
   print_summary "Local setup"
