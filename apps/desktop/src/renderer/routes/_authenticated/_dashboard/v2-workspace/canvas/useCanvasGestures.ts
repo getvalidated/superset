@@ -114,8 +114,9 @@ export function useCanvasGestures({
 				return;
 			}
 			// Plain scroll over a window body belongs to the window content.
+			// `Element`, not `HTMLElement` — the target can be an SVG node.
 			if (
-				event.target instanceof HTMLElement &&
+				event.target instanceof Element &&
 				event.target.closest("[data-canvas-window]")
 			) {
 				return;
@@ -134,19 +135,23 @@ export function useCanvasGestures({
 			if (panPointerId !== null || marqueePointerId !== null) return;
 			// Floating canvas chrome (toolbar, draw overlay) is neither a window
 			// nor pannable background — let it receive the click.
+			// `Element`, not `HTMLElement` — line/box shapes (and window icons)
+			// are SVG nodes, which are not HTMLElement; treating them as
+			// background would make this capture-phase listener steal their
+			// pointerdowns and pan instead of select/drag.
 			if (
-				event.target instanceof HTMLElement &&
+				event.target instanceof Element &&
 				event.target.closest("[data-canvas-ui]")
 			) {
 				return;
 			}
 			const overWindow =
-				event.target instanceof HTMLElement &&
+				event.target instanceof Element &&
 				Boolean(event.target.closest("[data-canvas-window]"));
 			// Shapes run their own select/drag gestures on bubble — this
 			// capture-phase listener must leave their pointerdowns alone.
 			const overShape =
-				event.target instanceof HTMLElement &&
+				event.target instanceof Element &&
 				Boolean(event.target.closest("[data-canvas-shape]"));
 			const overBackground = !overWindow && !overShape;
 			if (

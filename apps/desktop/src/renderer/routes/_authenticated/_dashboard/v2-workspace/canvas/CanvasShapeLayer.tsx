@@ -220,8 +220,10 @@ function TextShapeBody({
 			const state = store.getState();
 			state.setEditingShape(null);
 			if (value.trim() === "") {
-				// An emptied note is a cancel — drop it. Its creation already pushed
-				// history, so undo/redo stays consistent.
+				// Emptying a never-committed note is a cancel — its creation already
+				// pushed history. Emptying a note that had text is a destructive
+				// edit and needs its own snapshot, or the text is unrecoverable.
+				if (shape.text !== "") state.pushHistory();
 				state.removeShapes([shape.id]);
 				return;
 			}
