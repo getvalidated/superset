@@ -19,4 +19,6 @@ export interface OpenWorkspaceEvent {
 
 export type EditCommand = "undo" | "redo";
 
+export type ZoomCommand = "in" | "out" | "reset";
+
 export const menuEmitter = new EventEmitter();

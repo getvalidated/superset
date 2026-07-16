@@ -5,6 +5,7 @@ import {
 	type OpenSettingsEvent,
 	type OpenWorkspaceEvent,
 	type SettingsSection,
+	type ZoomCommand,
 } from "main/lib/menu-events";
 import { publicProcedure, router } from "..";
 
@@ -13,7 +14,8 @@ type MenuEvent =
 	| { type: "open-workspace"; data: OpenWorkspaceEvent }
 	| { type: "open-project" }
 	| { type: "toggle-presets-bar" }
-	| { type: "edit-command"; data: { command: EditCommand } };
+	| { type: "edit-command"; data: { command: EditCommand } }
+	| { type: "zoom-command"; data: { command: ZoomCommand } };
 
 export const createMenuRouter = () => {
 	return router({
@@ -39,11 +41,16 @@ export const createMenuRouter = () => {
 					emit.next({ type: "edit-command", data: { command } });
 				};
 
+				const onZoomCommand = (command: ZoomCommand) => {
+					emit.next({ type: "zoom-command", data: { command } });
+				};
+
 				menuEmitter.on("open-settings", onOpenSettings);
 				menuEmitter.on("open-workspace", onOpenWorkspace);
 				menuEmitter.on("open-project", onOpenProject);
 				menuEmitter.on("toggle-presets-bar", onTogglePresetsBar);
 				menuEmitter.on("edit-command", onEditCommand);
+				menuEmitter.on("zoom-command", onZoomCommand);
 
 				return () => {
 					menuEmitter.off("open-settings", onOpenSettings);
@@ -51,6 +58,7 @@ export const createMenuRouter = () => {
 					menuEmitter.off("open-project", onOpenProject);
 					menuEmitter.off("toggle-presets-bar", onTogglePresetsBar);
 					menuEmitter.off("edit-command", onEditCommand);
+					menuEmitter.off("zoom-command", onZoomCommand);
 				};
 			});
 		}),

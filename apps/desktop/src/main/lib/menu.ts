@@ -90,9 +90,43 @@ export function createApplicationMenu() {
 				},
 				{ role: "toggleDevTools" },
 				{ type: "separator" },
-				{ role: "resetZoom" },
-				{ role: "zoomIn" },
-				{ role: "zoomOut" },
+				// Explicit click handlers (not `role: "resetZoom"/"zoomIn"/"zoomOut"`)
+				// — the roles change Electron page zoom for the whole UI in every
+				// view mode. Zoom is a canvas-only feature: the renderer applies
+				// these to the canvas camera while canvas mode is active and no one
+				// listens otherwise, so the shortcuts are inert in tabs mode.
+				{
+					label: "Actual Size",
+					accelerator: "CmdOrCtrl+0",
+					click: () => {
+						menuEmitter.emit("zoom-command", "reset");
+					},
+				},
+				{
+					label: "Zoom In",
+					accelerator: "CmdOrCtrl+Plus",
+					click: () => {
+						menuEmitter.emit("zoom-command", "in");
+					},
+				},
+				// Hidden twin so the unshifted key (⌘=) zooms in too — the roles'
+				// `Plus` accelerator only matches the shifted key.
+				{
+					label: "Zoom In",
+					accelerator: "CmdOrCtrl+=",
+					visible: false,
+					acceleratorWorksWhenHidden: true,
+					click: () => {
+						menuEmitter.emit("zoom-command", "in");
+					},
+				},
+				{
+					label: "Zoom Out",
+					accelerator: "CmdOrCtrl+-",
+					click: () => {
+						menuEmitter.emit("zoom-command", "out");
+					},
+				},
 				{ type: "separator" },
 				{
 					label: "Toggle Presets Bar",

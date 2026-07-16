@@ -92,7 +92,6 @@ app.on("child-process-gone", (_event, details) => {
 export async function MainWindow() {
 	const savedWindowState = loadWindowState();
 	const initialBounds = getInitialWindowBounds(savedWindowState);
-	let persistedZoomLevel = savedWindowState?.zoomLevel;
 
 	const isDev = env.NODE_ENV === "development";
 	const workspaceName = isDev ? getEnvWorkspaceName() : undefined;
@@ -284,34 +283,30 @@ export async function MainWindow() {
 			const bounds = isMaximized
 				? window.getNormalBounds()
 				: window.getBounds();
-			const zoomLevel = window.webContents.getZoomLevel();
 			saveWindowState({
 				x: bounds.x,
 				y: bounds.y,
 				width: bounds.width,
 				height: bounds.height,
 				isMaximized,
-				zoomLevel,
 			});
-			persistedZoomLevel = zoomLevel;
 		}, 500);
 	};
 	window.on("move", debouncedSave);
 	window.on("resize", debouncedSave);
-	window.webContents.on("zoom-changed", () => {
-		setTimeout(() => {
-			if (window.isDestroyed()) return;
-			persistedZoomLevel = window.webContents.getZoomLevel();
-			debouncedSave();
-		}, 0);
+	// Ctrl/⌘+wheel and trackpad pinch must never zoom the app UI — zoom is a
+	// canvas-only feature (the canvas viewport implements its own camera zoom
+	// in the renderer) and no other view has one.
+	window.webContents.on("zoom-changed", (event) => {
+		event.preventDefault();
 	});
 
 	window.webContents.on("did-finish-load", () => {
 		console.log("[main-window] Renderer loaded successfully");
 
-		if (persistedZoomLevel !== undefined) {
-			window.webContents.setZoomLevel(persistedZoomLevel);
-		}
+		// Page zoom is no longer user-adjustable — clear any level persisted by
+		// older builds (the persist: partition remembers per-origin zoom).
+		window.webContents.setZoomLevel(0);
 
 		if (!hasCompletedFirstLoad) {
 			if (initialBounds.isMaximized) {
@@ -350,16 +345,13 @@ export async function MainWindow() {
 		// Save window state first, before any cleanup
 		const isMaximized = window.isMaximized();
 		const bounds = isMaximized ? window.getNormalBounds() : window.getBounds();
-		const zoomLevel = window.webContents.getZoomLevel();
 		saveWindowState({
 			x: bounds.x,
 			y: bounds.y,
 			width: bounds.width,
 			height: bounds.height,
 			isMaximized,
-			zoomLevel,
 		});
-		persistedZoomLevel = zoomLevel;
 
 		browserManager.unregisterAll();
 		server.close();

@@ -14,6 +14,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import {
 	EDIT_COMMAND_EVENT,
@@ -359,6 +360,34 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 		},
 		[store, handleGestureEnd],
 	);
+
+	// View ▸ Zoom In/Out/Actual Size (⌘+/⌘−/⌘0 arrive as menu clicks — the
+	// accelerators never reach the renderer as keydowns, and the menu items no
+	// longer touch Electron page zoom). Subscribed here so the commands drive
+	// the canvas camera only while the canvas is mounted; in every other view
+	// mode nothing listens and the shortcuts are inert.
+	electronTrpc.menu.subscribe.useSubscription(undefined, {
+		onData: (event) => {
+			if (event.type !== "zoom-command") return;
+			if (event.data.command === "reset") {
+				const { camera } = store.getState();
+				const viewport = viewportSizeRef.current;
+				store
+					.getState()
+					.setCamera(
+						zoomAtPoint(
+							camera,
+							{ x: viewport.width / 2, y: viewport.height / 2 },
+							1,
+						),
+					);
+				handleGestureEnd();
+				return;
+			}
+			// Same step as the toolbar's zoom buttons.
+			handleZoomStep(event.data.command === "in" ? 1.2 : 1 / 1.2);
+		},
+	});
 
 	// Canvas-native browser windows are ephemeral: they live only on the
 	// canvas (no mirrored tab pane), so the mirror reconciler leaves them
