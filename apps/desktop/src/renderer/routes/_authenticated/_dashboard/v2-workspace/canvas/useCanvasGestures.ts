@@ -25,8 +25,9 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
  * - two-finger scroll pans (except over a window body, where it scrolls the
  *   terminal buffer / page)
  * - ctrl/cmd + wheel (= trackpad pinch in Chromium) zooms at the cursor
- * - middle-button drag, space-held drag, and background left-drag pan
- * - shift + background left-drag marquee-selects windows and shapes
+ * - middle-button drag and space-held drag pan in either interaction mode
+ * - background left-drag pans in drag mode; in select mode it marquee-selects
+ *   windows and shapes (shift + background left-drag marquees in both modes)
  *
  * Camera writes go through the store; the view applies them imperatively.
  * While any gesture is active, webview pointer events are passed through so
@@ -154,14 +155,21 @@ export function useCanvasGestures({
 				event.target instanceof Element &&
 				Boolean(event.target.closest("[data-canvas-shape]"));
 			const overBackground = !overWindow && !overShape;
-			if (
+			const wantsMarquee =
 				event.button === 0 &&
-				event.shiftKey &&
 				overBackground &&
-				!spaceDown
-			) {
+				!spaceDown &&
+				(event.shiftKey || store.getState().interactionMode === "select");
+			if (wantsMarquee) {
 				event.preventDefault();
 				event.stopPropagation();
+				// A plain (unshifted) press on empty canvas deselects immediately —
+				// a no-move click is a deselect, and the marquee rebuilds the
+				// selection from scratch as it grows.
+				if (!event.shiftKey) {
+					store.getState().setFocusedWindow(null);
+					store.getState().clearSelection();
+				}
 				const rect = viewport.getBoundingClientRect();
 				marqueePointerId = event.pointerId;
 				marqueeStart = {
@@ -172,6 +180,8 @@ export function useCanvasGestures({
 				beginGesture();
 				return;
 			}
+			// Background left-drag pans only in drag mode — select mode already
+			// claimed it for the marquee above.
 			const wantsPan =
 				event.button === 1 ||
 				(event.button === 0 && (spaceDown || overBackground));

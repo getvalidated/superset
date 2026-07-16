@@ -27,6 +27,7 @@ import {
 import { FileIcon } from "renderer/lib/fileIcons";
 import { getBaseName } from "renderer/lib/pathBasename";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
+import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
 import type { CommentPaneData, FilePaneData } from "../$workspaceId/types";
@@ -154,6 +155,7 @@ export function CanvasWindowFrame({
 	const gestureCleanupRef = useRef<(() => void) | null>(null);
 	const terminalTitle = useTerminalWindowTitle(window);
 	const locked = Boolean(window.locked);
+	const interactionMode = useStore(store, (state) => state.interactionMode);
 
 	useEffect(() => () => gestureCleanupRef.current?.(), []);
 
@@ -430,6 +432,26 @@ export function CanvasWindowFrame({
 									onPointerDown={makeResizeHandler(handle.edges)}
 								/>
 							))}
+					{interactionMode === "select" && !locked ? (
+						// Figma-style visible corner grip: a generous SE resize target so
+						// resizing is discoverable in select mode. Kept fully inside the
+						// corner — the frame's overflow-hidden would clip anything outside.
+						// z-30 beats the title-bar layer (z-20) and window content.
+						// Locked windows can't resize, so they get no grip either.
+						<div
+							className="absolute bottom-0 right-0 z-30 flex size-5 cursor-nwse-resize items-end justify-end p-1"
+							onPointerDown={makeResizeHandler({ bottom: true, right: true })}
+						>
+							<div
+								className={cn(
+									"size-2.5 rounded-[3px] border bg-background shadow-sm",
+									isFocused || isSelected
+										? "border-primary"
+										: "border-muted-foreground/60",
+								)}
+							/>
+						</div>
+					) : null}
 				</div>
 			</ContextMenuTrigger>
 			<ContextMenuContent>

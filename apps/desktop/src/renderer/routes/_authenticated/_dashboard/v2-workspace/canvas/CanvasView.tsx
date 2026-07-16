@@ -460,6 +460,7 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	// - ⌘Z / ⌘⇧Z undo/redo as a fallback, should the menu accelerator ever
 	//   let the keydown through
 	// - Escape disarms the drawing tool, then clears the selection
+	// - V / H switch to select (marquee) / drag (pan) mode, Figma-style
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (isTextEntryTarget(event.target)) return;
@@ -484,6 +485,15 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 				if (state.activeTool !== "select") state.setActiveTool("select");
 				else state.clearSelection();
 				return;
+			}
+			if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+				const key = event.key.toLowerCase();
+				if (key === "v" || key === "h") {
+					event.preventDefault();
+					state.setActiveTool("select");
+					state.setInteractionMode(key === "v" ? "select" : "drag");
+					return;
+				}
 			}
 			if (event.key !== "Backspace" && event.key !== "Delete") return;
 			const selectedShapeIds = [...state.selectedShapeIds];
@@ -608,7 +618,8 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 	);
 }
 
-/** Shift-drag selection rectangle, drawn in viewport coordinates. */
+/** Marquee selection rectangle (select-mode drag, or shift-drag), drawn in
+ *  viewport coordinates. */
 function CanvasMarquee({ store }: { store: StoreApi<CanvasStore> }) {
 	const marquee = useStore(store, (state) => state.marquee);
 	if (!marquee) return null;
