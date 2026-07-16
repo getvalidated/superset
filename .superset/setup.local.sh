@@ -179,6 +179,96 @@ local_seed_dev_account() {
   return 0
 }
 
+local_seed_host_presets() {
+  echo "🎛️  Carrying host agent presets into superset-dev-data/host/..."
+
+  # Host agent presets (terminal agent configs) live in a per-org SQLite DB at
+  # $SUPERSET_HOME_DIR/host/<orgId>/host.db. Every local workspace seeds a
+  # fresh Postgres, so db:seed-dev mints a NEW random org id — host-service
+  # then finds no host.db for it and re-seeds the bundled default presets,
+  # resurrecting ones the user deleted and dropping custom ones. Pre-place a
+  # host.db (presets only) under the new org id so customizations follow the
+  # user into each new workspace.
+
+  if ! command -v sqlite3 &> /dev/null; then
+    warn "sqlite3 not found — dev app will seed bundled default presets"
+    step_skipped "Seed host presets (no sqlite3)"
+    return 0
+  fi
+
+  # The org id db:seed-dev just created (email must match DEV_EMAIL in
+  # packages/shared/src/dev-credentials.ts).
+  local org_id
+  org_id="$(docker compose -p "$LOCAL_DB_PROJECT" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
+    psql -U postgres -d main -Atc \
+    "select m.organization_id from auth.members m join auth.users u on u.id = m.user_id where u.email = 'admin@local.test' limit 1;" \
+    2>/dev/null | tr -d '[:space:]')"
+  if [ -z "$org_id" ]; then
+    warn "Could not resolve dev org id — dev app will seed bundled default presets"
+    step_skipped "Seed host presets (no dev org)"
+    return 0
+  fi
+
+  local dest_dir="superset-dev-data/host/$org_id"
+  local dest_db="$dest_dir/host.db"
+  if [ -f "$dest_db" ]; then
+    warn "Host DB already exists at $dest_db — leaving presets as-is"
+    step_skipped "Seed host presets (host.db exists)"
+    return 0
+  fi
+
+  # Newest host.db that actually has configured presets: sibling local
+  # workspaces first (same worktree parent), then the production app's.
+  local source_db="" candidate count
+  while IFS= read -r candidate; do
+    count="$(sqlite3 "file:$candidate?mode=ro" \
+      "select count(*) from host_agent_configs;" 2>/dev/null || echo 0)"
+    if [ "${count:-0}" -gt 0 ] 2>/dev/null; then
+      source_db="$candidate"
+      break
+    fi
+  done < <(ls -t \
+    "$(dirname "$ROOT_DIR")"/*/superset-dev-data/host/*/host.db \
+    "$HOME/.superset/host"/*/host.db 2>/dev/null)
+
+  if [ -z "$source_db" ]; then
+    warn "No prior host.db with presets found — dev app will seed bundled defaults"
+    step_skipped "Seed host presets (no source)"
+    return 0
+  fi
+
+  mkdir -p "$dest_dir"
+  chmod 700 superset-dev-data superset-dev-data/host "$dest_dir"
+
+  # Copy all SQLite files so WAL contents survive a live writer, then
+  # checkpoint the copy (nothing else has it open yet).
+  local ext
+  for ext in "" "-shm" "-wal"; do
+    if [ -f "${source_db}${ext}" ]; then
+      if ! cp "${source_db}${ext}" "${dest_db}${ext}"; then
+        error "Failed to copy ${source_db}${ext}"
+        rm -f "$dest_db" "${dest_db}-shm" "${dest_db}-wal"
+        return 1
+      fi
+      chmod 600 "${dest_db}${ext}"
+    fi
+  done
+  sqlite3 "$dest_db" "PRAGMA wal_checkpoint(TRUNCATE);" &> /dev/null || true
+
+  # Keep ONLY the presets (plus drizzle's migration journal so host-service
+  # migrations stay aligned): the copy also carries the source instance's
+  # workspaces/projects/sessions, which belong to that instance, not this one.
+  local table
+  while IFS= read -r table; do
+    sqlite3 "$dest_db" "delete from \"$table\";" 2>/dev/null || true
+  done < <(sqlite3 "$dest_db" \
+    "select name from sqlite_master where type='table' and name not in ('host_agent_configs','__drizzle_migrations');")
+  sqlite3 "$dest_db" "vacuum;" &> /dev/null || true
+
+  success "Presets carried over from $source_db (org $org_id)"
+  return 0
+}
+
 local_write_env() {
   echo "📝 Writing workspace .env (DB URLs + ports)..."
   if [ -z "${SUPERSET_PORT_BASE:-}" ] || [ -z "$LOCAL_NEON_PROXY_PORT" ]; then
@@ -340,6 +430,7 @@ local_setup_main() {
   local_db_up || step_failed "Start local DB stack"
   local_migrate || step_failed "Apply migrations"
   local_seed_dev_account || step_failed "Seed dev account"
+  local_seed_host_presets || step_failed "Seed host presets"
   local_write_config_overlay || step_failed "Write config overlay"
 
   print_summary "Local setup"
