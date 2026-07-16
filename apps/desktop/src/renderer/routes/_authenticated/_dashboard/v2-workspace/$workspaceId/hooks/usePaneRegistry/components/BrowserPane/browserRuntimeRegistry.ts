@@ -27,6 +27,53 @@ interface RegistryEntry {
 	placeholder: HTMLElement | null;
 	resizeObserver: ResizeObserver | null;
 	visible: boolean;
+	clipAncestors: HTMLElement[];
+}
+
+/**
+ * Ancestors that visually clip the placeholder (any overflow other than
+ * visible). The webview is a fixed overlay on document.body, so it escapes
+ * DOM clipping entirely — without re-imposing these bounds it paints over
+ * the sidebar/header when its pane is panned past the canvas viewport edge
+ * or scrolled out of its container. Collected once per attach; the chain is
+ * stable while the placeholder stays mounted.
+ */
+function collectClipAncestors(element: HTMLElement): HTMLElement[] {
+	const ancestors: HTMLElement[] = [];
+	let node = element.parentElement;
+	while (node && node !== document.body) {
+		const style = window.getComputedStyle(node);
+		if (style.overflowX !== "visible" || style.overflowY !== "visible") {
+			ancestors.push(node);
+		}
+		node = node.parentElement;
+	}
+	return ancestors;
+}
+
+/**
+ * Inset clip-path confining the webview to the intersection of its
+ * placeholder rect and every clipping ancestor. Empty string when nothing
+ * is clipped, so the common fully-visible case skips clip compositing.
+ */
+function computeClipPath(rect: DOMRect, clipAncestors: HTMLElement[]): string {
+	let top = rect.top;
+	let left = rect.left;
+	let right = rect.right;
+	let bottom = rect.bottom;
+	for (const ancestor of clipAncestors) {
+		const a = ancestor.getBoundingClientRect();
+		if (a.top > top) top = a.top;
+		if (a.left > left) left = a.left;
+		if (a.right < right) right = a.right;
+		if (a.bottom < bottom) bottom = a.bottom;
+	}
+	const insetTop = Math.max(0, top - rect.top);
+	const insetLeft = Math.max(0, left - rect.left);
+	const insetRight = Math.max(0, rect.right - right);
+	const insetBottom = Math.max(0, rect.bottom - bottom);
+	if (!insetTop && !insetLeft && !insetRight && !insetBottom) return "";
+	return `inset(${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px)`;
 }
 
 const EMPTY_STATE: BrowserRuntimeState = Object.freeze({
@@ -146,11 +193,13 @@ class BrowserRuntimeRegistryImpl {
 	private updateLayout(entry: RegistryEntry) {
 		if (!entry.placeholder) return;
 		const rect = entry.placeholder.getBoundingClientRect();
+		const clipPath = computeClipPath(rect, entry.clipAncestors);
 		const w = entry.webview;
 		w.style.top = `${rect.top}px`;
 		w.style.left = `${rect.left}px`;
 		w.style.width = `${rect.width}px`;
 		w.style.height = `${rect.height}px`;
+		w.style.clipPath = clipPath;
 	}
 
 	/**
@@ -162,22 +211,29 @@ class BrowserRuntimeRegistryImpl {
 	 */
 	relayoutAll(): void {
 		// This runs per pan/zoom frame on the canvas. Read every placeholder
-		// rect before writing any webview style — interleaving forces a full
-		// layout pass per entry.
-		const measured: Array<{ webview: Electron.WebviewTag; rect: DOMRect }> = [];
+		// and clip-ancestor rect before writing any webview style —
+		// interleaving forces a full layout pass per entry.
+		const measured: Array<{
+			webview: Electron.WebviewTag;
+			rect: DOMRect;
+			clipPath: string;
+		}> = [];
 		for (const entry of this.entries.values()) {
 			if (entry.visible && entry.placeholder) {
+				const rect = entry.placeholder.getBoundingClientRect();
 				measured.push({
 					webview: entry.webview,
-					rect: entry.placeholder.getBoundingClientRect(),
+					rect,
+					clipPath: computeClipPath(rect, entry.clipAncestors),
 				});
 			}
 		}
-		for (const { webview, rect } of measured) {
+		for (const { webview, rect, clipPath } of measured) {
 			webview.style.top = `${rect.top}px`;
 			webview.style.left = `${rect.left}px`;
 			webview.style.width = `${rect.width}px`;
 			webview.style.height = `${rect.height}px`;
+			webview.style.clipPath = clipPath;
 		}
 	}
 
@@ -257,6 +313,7 @@ class BrowserRuntimeRegistryImpl {
 			placeholder: null,
 			resizeObserver: null,
 			visible: false,
+			clipAncestors: [],
 		};
 
 		const firePersist = () => {
@@ -425,6 +482,7 @@ class BrowserRuntimeRegistryImpl {
 		}
 		entry.onPersist = onPersist;
 		entry.placeholder = placeholder;
+		entry.clipAncestors = collectClipAncestors(placeholder);
 		entry.visible = true;
 
 		entry.resizeObserver?.disconnect();
@@ -444,6 +502,7 @@ class BrowserRuntimeRegistryImpl {
 		if (!entry) return;
 		entry.onPersist = null;
 		entry.placeholder = null;
+		entry.clipAncestors = [];
 		entry.resizeObserver?.disconnect();
 		entry.resizeObserver = null;
 		entry.visible = false;
