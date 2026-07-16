@@ -1,8 +1,16 @@
+import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from "@superset/ui/context-menu";
 import { cn } from "@superset/ui/utils";
 import {
 	Bot,
 	GitCompareArrows,
 	Globe,
+	Lock,
+	LockOpen,
 	MessageSquare,
 	Search,
 	Settings,
@@ -145,6 +153,7 @@ export function CanvasWindowFrame({
 	const frameRef = useRef<HTMLDivElement | null>(null);
 	const gestureCleanupRef = useRef<(() => void) | null>(null);
 	const terminalTitle = useTerminalWindowTitle(window);
+	const locked = Boolean(window.locked);
 
 	useEffect(() => () => gestureCleanupRef.current?.(), []);
 
@@ -166,7 +175,7 @@ export function CanvasWindowFrame({
 				height: number;
 			},
 		) => {
-			if (event.button !== 0) return;
+			if (event.button !== 0 || locked) return;
 			event.preventDefault();
 			event.stopPropagation();
 			focusWindow();
@@ -235,11 +244,14 @@ export function CanvasWindowFrame({
 			target.addEventListener("pointerup", handleEnd);
 			target.addEventListener("pointercancel", handleEnd);
 		},
-		[focusWindow, store, window],
+		[focusWindow, store, window, locked],
 	);
 
 	const handleTitleBarPointerDown = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
+			// A locked window never drags or joins the selection — the click
+			// still focuses it via the frame's capture handler.
+			if (locked) return;
 			// Shift-click toggles multi-select membership instead of dragging.
 			if (event.button === 0 && event.shiftKey) {
 				event.preventDefault();
@@ -274,7 +286,7 @@ export function CanvasWindowFrame({
 				height,
 			}));
 		},
-		[beginGeometryGesture, focusWindow, store, window],
+		[beginGeometryGesture, focusWindow, store, window, locked],
 	);
 
 	const makeResizeHandler = useCallback(
@@ -313,89 +325,124 @@ export function CanvasWindowFrame({
 		requestDismissCanvasWindow(store, window);
 	}, [store, window]);
 
+	const handleToggleLock = useCallback(() => {
+		store.getState().pushHistory();
+		store.getState().setItemsLocked([window.id], [], !locked);
+	}, [store, window.id, locked]);
+
 	return (
-		// biome-ignore lint/a11y/noStaticElementInteractions: right-click inside a window must not open the canvas background menu
-		<div
-			ref={frameRef}
-			data-canvas-window={window.id}
-			className={cn(
-				"absolute flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
-				isFocused ? "border-primary/60 shadow-xl" : "border-border",
-				isSelected && "ring-2 ring-primary/50",
-			)}
-			style={{
-				left: window.x,
-				top: window.y,
-				width: window.width,
-				height: window.height,
-				zIndex,
-			}}
-			onPointerDownCapture={(event) => {
-				// A plain click on an unselected window drops the old selection —
-				// shift-clicks (toggles) and clicks inside the selection keep it.
-				if (
-					!event.shiftKey &&
-					!store.getState().selectedWindowIds.has(window.id)
-				) {
-					store.getState().clearSelection();
-				}
-				focusWindow();
-			}}
-			onContextMenu={(event) => event.stopPropagation()}
-		>
-			{/* z-20 keeps title-bar controls (close, presets) above the absolute
-			    resize handles (z-10) — the ne corner handle otherwise swallows
-			    most of the close button's hit area. Edge-resize still works from
-			    the handle strip outside the bar. */}
-			<div
-				className="relative z-20 flex h-8 shrink-0 cursor-grab select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 active:cursor-grabbing"
-				onPointerDown={handleTitleBarPointerDown}
-			>
-				<WindowIcon window={window} />
-				<span className="min-w-0 truncate text-xs text-foreground">
-					{window.kind === "terminal" ? terminalTitle : windowTitle(window)}
-				</span>
-				<span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground">
-					{workspaceLabel}
-				</span>
-				{headerExtras ? (
-					<div
-						className="flex shrink-0 items-center"
-						onPointerDown={(event) => event.stopPropagation()}
-					>
-						{headerExtras}
-					</div>
-				) : null}
-				<button
-					type="button"
-					className="ml-0.5 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-					onPointerDown={(event) => event.stopPropagation()}
-					onClick={handleDismiss}
-					title="Remove from canvas"
-				>
-					<svg
-						aria-hidden="true"
-						viewBox="0 0 12 12"
-						className="size-3"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.5"
-					>
-						<path d="M3 3l6 6M9 3l-6 6" />
-					</svg>
-				</button>
-			</div>
-			<div data-canvas-window-body className="min-h-0 flex-1">
-				{children}
-			</div>
-			{RESIZE_HANDLES.map((handle) => (
+		<ContextMenu>
+			<ContextMenuTrigger asChild>
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: right-click inside a window must not open the canvas background menu */}
 				<div
-					key={handle.key}
-					className={cn("absolute z-10", handle.className)}
-					onPointerDown={makeResizeHandler(handle.edges)}
-				/>
-			))}
-		</div>
+					ref={frameRef}
+					data-canvas-window={window.id}
+					className={cn(
+						"absolute flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
+						isFocused ? "border-primary/60 shadow-xl" : "border-border",
+						isSelected && "ring-2 ring-primary/50",
+					)}
+					style={{
+						left: window.x,
+						top: window.y,
+						width: window.width,
+						height: window.height,
+						zIndex,
+					}}
+					onPointerDownCapture={(event) => {
+						// A plain click on an unselected window drops the old selection —
+						// shift-clicks (toggles) and clicks inside the selection keep it.
+						if (
+							!event.shiftKey &&
+							!store.getState().selectedWindowIds.has(window.id)
+						) {
+							store.getState().clearSelection();
+						}
+						focusWindow();
+					}}
+					onContextMenu={(event) => event.stopPropagation()}
+				>
+					{/* z-20 keeps title-bar controls (close, presets) above the absolute
+					    resize handles (z-10) — the ne corner handle otherwise swallows
+					    most of the close button's hit area. Edge-resize still works from
+					    the handle strip outside the bar. */}
+					<div
+						className={cn(
+							"relative z-20 flex h-8 shrink-0 select-none items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2",
+							!locked && "cursor-grab active:cursor-grabbing",
+						)}
+						onPointerDown={handleTitleBarPointerDown}
+					>
+						<WindowIcon window={window} />
+						<span className="min-w-0 truncate text-xs text-foreground">
+							{window.kind === "terminal" ? terminalTitle : windowTitle(window)}
+						</span>
+						<span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground">
+							{workspaceLabel}
+						</span>
+						{locked ? (
+							<button
+								type="button"
+								className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+								onPointerDown={(event) => event.stopPropagation()}
+								onClick={handleToggleLock}
+								title="Unlock"
+							>
+								<Lock aria-hidden="true" className="size-3" />
+							</button>
+						) : null}
+						{headerExtras ? (
+							<div
+								className="flex shrink-0 items-center"
+								onPointerDown={(event) => event.stopPropagation()}
+							>
+								{headerExtras}
+							</div>
+						) : null}
+						<button
+							type="button"
+							className="ml-0.5 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={handleDismiss}
+							title="Remove from canvas"
+						>
+							<svg
+								aria-hidden="true"
+								viewBox="0 0 12 12"
+								className="size-3"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.5"
+							>
+								<path d="M3 3l6 6M9 3l-6 6" />
+							</svg>
+						</button>
+					</div>
+					<div data-canvas-window-body className="min-h-0 flex-1">
+						{children}
+					</div>
+					{locked
+						? null
+						: RESIZE_HANDLES.map((handle) => (
+								<div
+									key={handle.key}
+									className={cn("absolute z-10", handle.className)}
+									onPointerDown={makeResizeHandler(handle.edges)}
+								/>
+							))}
+				</div>
+			</ContextMenuTrigger>
+			<ContextMenuContent>
+				<ContextMenuItem onSelect={handleToggleLock}>
+					{locked ? (
+						<LockOpen className="mr-2 size-4" />
+					) : (
+						<Lock className="mr-2 size-4" />
+					)}
+					{locked ? "Unlock" : "Lock"}
+				</ContextMenuItem>
+			</ContextMenuContent>
+		</ContextMenu>
 	);
 }
 

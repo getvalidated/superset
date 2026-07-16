@@ -39,7 +39,7 @@ export function beginCanvasTranslationGesture({
 		const element = plane.querySelector<HTMLElement>(
 			`[data-canvas-window="${CSS.escape(id)}"]`,
 		);
-		if (!window || !element) continue;
+		if (!window || window.locked || !element) continue;
 		members.push({ element, startX: window.x, startY: window.y });
 	}
 	for (const id of shapeIds) {
@@ -47,7 +47,7 @@ export function beginCanvasTranslationGesture({
 		const element = plane.querySelector<HTMLElement>(
 			`[data-canvas-shape="${CSS.escape(id)}"]`,
 		);
-		if (!shape || !element) continue;
+		if (!shape || shape.locked || !element) continue;
 		const bounds = getShapeBounds(shape);
 		members.push({ element, startX: bounds.x, startY: bounds.y });
 	}

@@ -503,7 +503,9 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 			const focused = state.focusedWindowId
 				? state.windows[state.focusedWindowId]
 				: null;
-			if (!focused) return;
+			// Locked windows can't be removed by a stray Backspace — unlock first
+			// (the title-bar ✕ remains an explicit way out).
+			if (!focused || focused.locked) return;
 			event.preventDefault();
 			requestDismissCanvasWindow(store, focused);
 		};

@@ -1,4 +1,11 @@
+import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from "@superset/ui/context-menu";
 import { cn } from "@superset/ui/utils";
+import { Lock, LockOpen } from "lucide-react";
 import {
 	memo,
 	type PointerEvent as ReactPointerEvent,
@@ -61,10 +68,13 @@ const CanvasShapeItem = memo(function CanvasShapeItem({
 }) {
 	const gestureCleanupRef = useRef<(() => void) | null>(null);
 	useEffect(() => () => gestureCleanupRef.current?.(), []);
+	const locked = Boolean(shape.locked);
 
 	const handlePointerDown = useCallback(
 		(event: ReactPointerEvent<Element>) => {
-			if (event.button !== 0 || !interactive) return;
+			// Locked shapes ignore select/drag but keep pointer events on so the
+			// context menu can still reach them to unlock.
+			if (event.button !== 0 || !interactive || locked) return;
 			event.preventDefault();
 			event.stopPropagation();
 			const state = store.getState();
@@ -84,42 +94,65 @@ const CanvasShapeItem = memo(function CanvasShapeItem({
 				shapeIds: [...current.selectedShapeIds],
 			});
 		},
-		[interactive, shape.id, store],
+		[interactive, locked, shape.id, store],
 	);
+
+	const handleToggleLock = useCallback(() => {
+		store.getState().pushHistory();
+		store.getState().setItemsLocked([], [shape.id], !locked);
+	}, [store, shape.id, locked]);
 
 	const bounds = getShapeBounds(shape);
 	return (
-		<div
-			data-canvas-shape={shape.id}
-			className="absolute"
-			style={{
-				left: bounds.x,
-				top: bounds.y,
-				width: Math.max(bounds.width, 1),
-				height: Math.max(bounds.height, 1),
-				zIndex: 0,
-				pointerEvents: "none",
-			}}
-		>
-			{shape.type === "text" ? (
-				<TextShapeBody
-					shape={shape}
-					store={store}
-					isSelected={isSelected}
-					isEditing={isEditing}
-					interactive={interactive}
-					onPointerDown={handlePointerDown}
-				/>
-			) : (
-				<StrokeShapeBody
-					shape={shape}
-					bounds={bounds}
-					isSelected={isSelected}
-					interactive={interactive}
-					onPointerDown={handlePointerDown}
-				/>
-			)}
-		</div>
+		<ContextMenu>
+			<ContextMenuTrigger asChild>
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: right-click on a shape must not open the canvas background menu */}
+				<div
+					data-canvas-shape={shape.id}
+					className="absolute"
+					style={{
+						left: bounds.x,
+						top: bounds.y,
+						width: Math.max(bounds.width, 1),
+						height: Math.max(bounds.height, 1),
+						zIndex: 0,
+						pointerEvents: "none",
+					}}
+					onContextMenu={(event) => event.stopPropagation()}
+				>
+					{shape.type === "text" ? (
+						<TextShapeBody
+							shape={shape}
+							store={store}
+							isSelected={isSelected}
+							isEditing={isEditing}
+							interactive={interactive}
+							locked={locked}
+							onPointerDown={handlePointerDown}
+						/>
+					) : (
+						<StrokeShapeBody
+							shape={shape}
+							bounds={bounds}
+							isSelected={isSelected}
+							interactive={interactive}
+							locked={locked}
+							onPointerDown={handlePointerDown}
+						/>
+					)}
+				</div>
+			</ContextMenuTrigger>
+			<ContextMenuContent>
+				<ContextMenuItem onSelect={handleToggleLock}>
+					{locked ? (
+						<LockOpen className="mr-2 size-4" />
+					) : (
+						<Lock className="mr-2 size-4" />
+					)}
+					{locked ? "Unlock" : "Lock"}
+				</ContextMenuItem>
+			</ContextMenuContent>
+		</ContextMenu>
 	);
 });
 
@@ -128,12 +161,14 @@ function StrokeShapeBody({
 	bounds,
 	isSelected,
 	interactive,
+	locked,
 	onPointerDown,
 }: {
 	shape: Extract<CanvasShape, { type: "line" | "box" }>;
 	bounds: { x: number; y: number; width: number; height: number };
 	isSelected: boolean;
 	interactive: boolean;
+	locked: boolean;
 	onPointerDown: (event: ReactPointerEvent<Element>) => void;
 }) {
 	const strokeClass = isSelected ? "stroke-primary" : "stroke-foreground/60";
@@ -141,7 +176,7 @@ function StrokeShapeBody({
 		stroke: "transparent",
 		style: {
 			pointerEvents: interactive ? ("stroke" as const) : ("none" as const),
-			cursor: "move",
+			cursor: locked ? "default" : "move",
 		},
 		onPointerDown,
 	};
@@ -206,6 +241,7 @@ function TextShapeBody({
 	isSelected,
 	isEditing,
 	interactive,
+	locked,
 	onPointerDown,
 }: {
 	shape: Extract<CanvasShape, { type: "text" }>;
@@ -213,6 +249,7 @@ function TextShapeBody({
 	isSelected: boolean;
 	isEditing: boolean;
 	interactive: boolean;
+	locked: boolean;
 	onPointerDown: (event: ReactPointerEvent<Element>) => void;
 }) {
 	const commitText = useCallback(
@@ -269,12 +306,13 @@ function TextShapeBody({
 			)}
 			style={{
 				pointerEvents: interactive ? "auto" : "none",
-				cursor: "move",
+				cursor: locked ? "default" : "move",
 			}}
 			onPointerDown={onPointerDown}
 			onDoubleClick={(event) => {
 				event.stopPropagation();
-				store.getState().setEditingShape(shape.id);
+				// Locked notes are read-only until unlocked.
+				if (!locked) store.getState().setEditingShape(shape.id);
 			}}
 		>
 			{shape.text}

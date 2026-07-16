@@ -113,6 +113,8 @@ const canvasWindowSchema = z.object({
 	/** Canvas-only window (e.g. webview popup) — not mirrored from a
 	 *  workspace layout, so reconciliation must not prune it. */
 	ephemeral: z.boolean().optional(),
+	/** Locked windows ignore move/resize/selection gestures. */
+	locked: z.boolean().optional(),
 });
 
 export type CanvasWindowRow = z.infer<typeof canvasWindowSchema>;
@@ -135,6 +137,8 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		y1: z.number().finite(),
 		x2: z.number().finite(),
 		y2: z.number().finite(),
+		/** Locked shapes ignore move/selection gestures. */
+		locked: z.boolean().optional(),
 	}),
 	z.object({
 		id: z.string(),
@@ -143,6 +147,7 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		y: z.number().finite(),
 		width: z.number().positive().finite(),
 		height: z.number().positive().finite(),
+		locked: z.boolean().optional(),
 	}),
 	z.object({
 		id: z.string(),
@@ -152,6 +157,7 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		width: z.number().positive().finite(),
 		height: z.number().positive().finite(),
 		text: z.string(),
+		locked: z.boolean().optional(),
 	}),
 ]);
 
