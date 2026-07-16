@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { useQuickOpenStore } from "renderer/commandPalette/ui/QuickOpen/quickOpenStore";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
+import { useEffectiveWorkspaceId } from "renderer/routes/_authenticated/_dashboard/hooks/useEffectiveWorkspaceId";
 import { CommandPalette } from "renderer/screens/main/components/CommandPalette";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { getV2NotificationSourcesForTab } from "renderer/stores/v2-notifications";
@@ -128,6 +129,10 @@ function V2WorkspaceContent() {
 	} = Route.useSearch();
 	const { workspace } = useWorkspace();
 	const workspaceId = workspace.id;
+	// The sidebar (files/changes/review/PR) and its git status describe the
+	// workspace the user is actually looking at — on the canvas that's the
+	// focused window's workspace, not necessarily the route's.
+	const sidebarWorkspaceId = useEffectiveWorkspaceId(workspaceId);
 
 	const {
 		preferences: v2UserPreferences,
@@ -227,9 +232,15 @@ function V2WorkspaceContent() {
 		[closeQuickOpen],
 	);
 	// Sidebar/quick-open picks open panes in the tabbed layout; in canvas mode
-	// they open free-floating windows on the global canvas instead.
-	const { openFileOnCanvas, openDiffOnCanvas, openCommentOnCanvas } =
-		useCanvasWindowOpeners({ workspaceId });
+	// they open free-floating windows on the global canvas instead. Quick-open
+	// stays scoped to the route workspace (its file list is), while sidebar
+	// picks target the workspace the sidebar is showing.
+	const { openFileOnCanvas } = useCanvasWindowOpeners({ workspaceId });
+	const {
+		openFileOnCanvas: openSidebarFileOnCanvas,
+		openDiffOnCanvas: openSidebarDiffOnCanvas,
+		openCommentOnCanvas: openSidebarCommentOnCanvas,
+	} = useCanvasWindowOpeners({ workspaceId: sidebarWorkspaceId });
 	// Picking a file from Quick Open should surface the sidebar/Files tab so
 	// the reveal (expand + highlight + scroll) is actually visible. On the
 	// canvas there's no reveal to show — just open the window.
@@ -257,32 +268,32 @@ function V2WorkspaceContent() {
 	const handleSidebarSelectFile = useCallback(
 		(...args: Parameters<typeof openFilePaneFromTreeClick>) => {
 			if (displayMode === "canvas") {
-				openFileOnCanvas(...args);
+				openSidebarFileOnCanvas(...args);
 				return;
 			}
 			openFilePaneFromTreeClick(...args);
 		},
-		[displayMode, openFileOnCanvas, openFilePaneFromTreeClick],
+		[displayMode, openSidebarFileOnCanvas, openFilePaneFromTreeClick],
 	);
 	const handleSidebarSelectDiffFile = useCallback(
 		(...args: Parameters<typeof openDiffPane>) => {
 			if (displayMode === "canvas") {
-				openDiffOnCanvas(...args);
+				openSidebarDiffOnCanvas(...args);
 				return;
 			}
 			openDiffPane(...args);
 		},
-		[displayMode, openDiffOnCanvas, openDiffPane],
+		[displayMode, openSidebarDiffOnCanvas, openDiffPane],
 	);
 	const handleSidebarOpenComment = useCallback(
 		(...args: Parameters<typeof openCommentPane>) => {
 			if (displayMode === "canvas") {
-				openCommentOnCanvas(...args);
+				openSidebarCommentOnCanvas(...args);
 				return;
 			}
 			openCommentPane(...args);
 		},
-		[displayMode, openCommentOnCanvas, openCommentPane],
+		[displayMode, openSidebarCommentOnCanvas, openCommentPane],
 	);
 
 	// Fallback for rows persisted before the rightSidebarWidth field existed —
@@ -339,7 +350,7 @@ function V2WorkspaceContent() {
 				/>
 			)}
 			<WorkspaceGitStatusProvider
-				workspaceId={workspaceId}
+				workspaceId={sidebarWorkspaceId}
 				store={store}
 				sidebarOpen={sidebarOpen}
 			>
@@ -436,7 +447,7 @@ function V2WorkspaceContent() {
 							onDoubleClickHandle={() => setRightSidebarWidth(340)}
 						>
 							<WorkspaceSidebar
-								workspaceId={workspaceId}
+								workspaceId={sidebarWorkspaceId}
 								onSelectFile={handleSidebarSelectFile}
 								onSelectDiffFile={handleSidebarSelectDiffFile}
 								onOpenComment={handleSidebarOpenComment}
