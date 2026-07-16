@@ -16,6 +16,10 @@ import {
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { getShapeBounds } from "./canvasGeometry";
+import {
+	canvasShapeFillColor,
+	resolveCanvasShapeColor,
+} from "./canvasShapeStyle";
 import type { CanvasShape, CanvasStore } from "./canvasStore";
 import { beginCanvasTranslationGesture } from "./canvasTranslationGesture";
 
@@ -171,7 +175,19 @@ function StrokeShapeBody({
 	locked: boolean;
 	onPointerDown: (event: ReactPointerEvent<Element>) => void;
 }) {
-	const strokeClass = isSelected ? "stroke-primary" : "stroke-foreground/60";
+	// Selection recolors the stroke to primary; the shape's own color returns
+	// when deselected. Fill (a tint of the shape color) shows either way.
+	const strokeCss = isSelected ? null : resolveCanvasShapeColor(shape.color);
+	const strokeClass = isSelected
+		? "stroke-primary"
+		: strokeCss
+			? undefined
+			: "stroke-foreground/60";
+	const strokeStyle = strokeCss ? { stroke: strokeCss } : undefined;
+	const fillCss =
+		shape.type === "box" && shape.fill
+			? canvasShapeFillColor(shape.color)
+			: null;
 	const hitProps = {
 		stroke: "transparent",
 		style: {
@@ -194,6 +210,7 @@ function StrokeShapeBody({
 						x2={shape.x2 - bounds.x}
 						y2={shape.y2 - bounds.y}
 						className={strokeClass}
+						style={strokeStyle}
 						strokeWidth={2}
 						strokeLinecap="round"
 					/>
@@ -215,8 +232,12 @@ function StrokeShapeBody({
 						width={Math.max(bounds.width - 2, 1)}
 						height={Math.max(bounds.height - 2, 1)}
 						rx={6}
-						fill="none"
-						className={strokeClass}
+						fill={fillCss ?? "none"}
+						className={cn(
+							strokeClass,
+							shape.fill && !fillCss && "fill-foreground/10",
+						)}
+						style={strokeStyle}
 						strokeWidth={2}
 					/>
 					<rect
@@ -253,6 +274,17 @@ function TextShapeBody({
 	onPointerDown: (event: ReactPointerEvent<Element>) => void;
 }) {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+	// Shared typography for display and editing so the note doesn't reflow
+	// when entering/leaving edit mode. Falls back to the pre-styling look
+	// (text-sm-equivalent size, theme foreground color).
+	const typographyStyle = {
+		fontSize: shape.fontSize,
+		lineHeight: shape.fontSize ? 1.4 : undefined,
+		fontWeight: shape.bold ? 600 : undefined,
+		fontStyle: shape.italic ? ("italic" as const) : undefined,
+		color: resolveCanvasShapeColor(shape.color) ?? undefined,
+	};
 
 	const commitText = useCallback(
 		(value: string) => {
@@ -296,7 +328,7 @@ function TextShapeBody({
 				defaultValue={shape.text}
 				placeholder="Type something…"
 				className="absolute inset-0 h-full w-full resize-none rounded-md border border-primary bg-background p-2 text-sm text-foreground shadow-sm outline-none"
-				style={{ pointerEvents: "auto" }}
+				style={{ pointerEvents: "auto", ...typographyStyle }}
 				onFocus={(event) => event.currentTarget.select()}
 				onBlur={(event) => commitText(event.currentTarget.value)}
 				onKeyDown={(event) => {
@@ -323,6 +355,7 @@ function TextShapeBody({
 			style={{
 				pointerEvents: interactive ? "auto" : "none",
 				cursor: locked ? "default" : "move",
+				...typographyStyle,
 			}}
 			onPointerDown={onPointerDown}
 			onDoubleClick={(event) => {

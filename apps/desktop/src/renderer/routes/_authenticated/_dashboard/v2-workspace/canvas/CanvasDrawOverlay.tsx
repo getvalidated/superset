@@ -1,3 +1,4 @@
+import { cn } from "@superset/ui/utils";
 import {
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
@@ -11,7 +12,17 @@ import {
 	rectFromPoints,
 	screenToCanvas,
 } from "./canvasGeometry";
-import type { CanvasShape, CanvasStore, CanvasTool } from "./canvasStore";
+import {
+	canvasShapeFillColor,
+	DEFAULT_CANVAS_TEXT_SIZE_PX,
+	resolveCanvasShapeColor,
+} from "./canvasShapeStyle";
+import type {
+	CanvasDrawStyle,
+	CanvasShape,
+	CanvasStore,
+	CanvasTool,
+} from "./canvasStore";
 
 /** Drags shorter than this (screen px) are treated as clicks. */
 const MIN_DRAW_DRAG_PX = 4;
@@ -92,7 +103,7 @@ function DrawSurface({
 			const dragPx =
 				Math.hypot(end.x - draft.start.x, end.y - draft.start.y) *
 				state.camera.zoom;
-			const shape = buildShape(tool, draft.start, end, dragPx);
+			const shape = buildShape(tool, draft.start, end, dragPx, state.drawStyle);
 			if (!shape) return;
 			state.pushHistory();
 			state.upsertShapes([shape]);
@@ -122,8 +133,14 @@ function buildShape(
 	start: CanvasPoint,
 	end: CanvasPoint,
 	dragPx: number,
+	style: CanvasDrawStyle,
 ): CanvasShape | null {
 	const id = crypto.randomUUID();
+	// Stamp only non-default style fields so unstyled shapes stay identical to
+	// rows written before styling existed.
+	const color = resolveCanvasShapeColor(style.color)
+		? { color: style.color }
+		: {};
 	switch (tool) {
 		case "line": {
 			if (dragPx < MIN_DRAW_DRAG_PX) return null;
@@ -134,6 +151,7 @@ function buildShape(
 				y1: start.y,
 				x2: end.x,
 				y2: end.y,
+				...color,
 			};
 		}
 		case "box": {
@@ -146,6 +164,8 @@ function buildShape(
 				y: rect.y,
 				width: Math.max(rect.width, 1),
 				height: Math.max(rect.height, 1),
+				...color,
+				...(style.fill ? { fill: true } : {}),
 			};
 		}
 		case "text": {
@@ -167,6 +187,12 @@ function buildShape(
 				width: Math.max(rect.width, MIN_TEXT_WIDTH),
 				height: Math.max(rect.height, MIN_TEXT_HEIGHT),
 				text: "",
+				...color,
+				...(style.fontSize !== DEFAULT_CANVAS_TEXT_SIZE_PX
+					? { fontSize: style.fontSize }
+					: {}),
+				...(style.bold ? { bold: true } : {}),
+				...(style.italic ? { italic: true } : {}),
 			};
 		}
 	}
@@ -183,10 +209,17 @@ function DraftPreview({
 }) {
 	// Re-rendered on every pointermove, so reading the camera imperatively
 	// keeps the preview glued to the plane without a camera subscription.
-	const camera = store.getState().camera;
+	const { camera, drawStyle } = store.getState();
 	const start = canvasToScreen(draft.start, camera);
 	const current = canvasToScreen(draft.current, camera);
 	const rect = rectFromPoints(start, current);
+	const strokeCss = resolveCanvasShapeColor(drawStyle.color);
+	const strokeClass = strokeCss ? undefined : "stroke-primary";
+	const strokeStyle = strokeCss ? { stroke: strokeCss } : undefined;
+	const fillCss =
+		tool === "box" && drawStyle.fill
+			? (canvasShapeFillColor(drawStyle.color) ?? undefined)
+			: undefined;
 	return (
 		<svg
 			className="pointer-events-none absolute inset-0 h-full w-full"
@@ -198,7 +231,8 @@ function DraftPreview({
 					y1={start.y}
 					x2={current.x}
 					y2={current.y}
-					className="stroke-primary"
+					className={strokeClass}
+					style={strokeStyle}
 					strokeWidth={2}
 					strokeLinecap="round"
 				/>
@@ -209,8 +243,15 @@ function DraftPreview({
 					width={rect.width}
 					height={rect.height}
 					rx={6}
-					fill="none"
-					className="stroke-primary"
+					fill={fillCss ?? "none"}
+					className={cn(
+						strokeClass,
+						tool === "box" &&
+							drawStyle.fill &&
+							!fillCss &&
+							"fill-foreground/10",
+					)}
+					style={strokeStyle}
 					strokeWidth={2}
 					strokeDasharray={tool === "text" ? "6 4" : undefined}
 				/>

@@ -366,6 +366,43 @@ describe("sanitizeGlobalCanvasLayout", () => {
 		// The text shape is missing its text field, the box has a negative size.
 		expect(healed.shapes.map((shape) => shape.id)).toEqual(["s1", "s2"]);
 	});
+
+	it("keeps optional shape style fields through the heal", () => {
+		const styledShapes = [
+			{ id: "s1", type: "line", x1: 0, y1: 0, x2: 5, y2: 5, color: "red" },
+			{
+				id: "s2",
+				type: "box",
+				x: 0,
+				y: 0,
+				width: 10,
+				height: 10,
+				color: "blue",
+				fill: true,
+			},
+			{
+				id: "s3",
+				type: "text",
+				x: 0,
+				y: 0,
+				width: 10,
+				height: 10,
+				text: "hi",
+				color: "green",
+				fontSize: 20,
+				bold: true,
+				italic: true,
+			},
+		];
+		const healed = sanitizeGlobalCanvasLayout({
+			version: 1,
+			camera: { x: 0, y: 0, zoom: 1 },
+			windows: [],
+			zOrder: [],
+			shapes: styledShapes,
+		});
+		expect(healed.shapes).toEqual(styledShapes as typeof healed.shapes);
+	});
 });
 
 describe("displayMode preference", () => {

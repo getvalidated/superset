@@ -129,6 +129,11 @@ export type CanvasCamera = z.infer<typeof canvasCameraSchema>;
 
 // Freehand annotations drawn on the canvas plane. Geometry is in canvas
 // (unzoomed) coordinates, like windows.
+//
+// Style fields are optional and absent on shapes drawn before styling
+// existed; renderers fall back to theme defaults. `color` is a palette key
+// (see canvasShapeStyle.ts), not a raw CSS value, so unknown keys degrade to
+// the default color instead of failing the parse.
 export const canvasShapeSchema = z.discriminatedUnion("type", [
 	z.object({
 		id: z.string(),
@@ -137,6 +142,7 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		y1: z.number().finite(),
 		x2: z.number().finite(),
 		y2: z.number().finite(),
+		color: z.string().optional(),
 		/** Locked shapes ignore move/selection gestures. */
 		locked: z.boolean().optional(),
 	}),
@@ -147,6 +153,9 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		y: z.number().finite(),
 		width: z.number().positive().finite(),
 		height: z.number().positive().finite(),
+		color: z.string().optional(),
+		/** Fill the box with a tint of its stroke color. */
+		fill: z.boolean().optional(),
 		locked: z.boolean().optional(),
 	}),
 	z.object({
@@ -157,6 +166,11 @@ export const canvasShapeSchema = z.discriminatedUnion("type", [
 		width: z.number().positive().finite(),
 		height: z.number().positive().finite(),
 		text: z.string(),
+		color: z.string().optional(),
+		/** Font size in px; absent means the default note size. */
+		fontSize: z.number().positive().finite().optional(),
+		bold: z.boolean().optional(),
+		italic: z.boolean().optional(),
 		locked: z.boolean().optional(),
 	}),
 ]);
