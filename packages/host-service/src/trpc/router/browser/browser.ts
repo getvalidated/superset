@@ -78,7 +78,6 @@ export const browserRouter = router({
 		.input(
 			z.object({
 				window: windowInput,
-				outputPath: z.string().optional(),
 			}),
 		)
 		.mutation(({ input }) =>

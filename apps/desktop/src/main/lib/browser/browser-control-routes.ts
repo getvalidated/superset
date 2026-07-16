@@ -87,6 +87,20 @@ export const BROWSER_SCREENSHOTS_DIR = path.join(
  * reload browser windows on behalf of MCP tools.
  */
 export function registerBrowserControlRoutes(app: Express): void {
+	// The notifications server answers CORS preflights with
+	// `Access-Control-Allow-Origin: *`, so any web page could otherwise read
+	// these responses (pane titles/URLs) with a simple fetch to this port.
+	// Browser-originated requests always carry an Origin header; the
+	// host-service's node fetch never does — reject the former so this
+	// surface stays local-process-only.
+	app.use("/browser", (req, res, next) => {
+		if (req.headers.origin !== undefined) {
+			res.status(403).json({ error: "Cross-origin requests are not allowed." });
+			return;
+		}
+		next();
+	});
+
 	app.get("/browser/windows", (_req, res) => {
 		res.json({ windows: browserManager.listWindows() });
 	});
@@ -103,19 +117,12 @@ export function registerBrowserControlRoutes(app: Express): void {
 		}
 
 		const { paneId, title, url } = resolution.window;
-		const requestedPath = (req.body as { outputPath?: unknown }).outputPath;
-		if (requestedPath !== undefined && typeof requestedPath !== "string") {
-			return res.status(400).json({ error: "`outputPath` must be a string." });
-		}
-		const outputPath =
-			requestedPath && path.isAbsolute(requestedPath)
-				? requestedPath
-				: path.join(BROWSER_SCREENSHOTS_DIR, `${safeFileStem(paneId)}.png`);
-		if (requestedPath && !path.isAbsolute(requestedPath)) {
-			return res
-				.status(400)
-				.json({ error: "`outputPath` must be an absolute path." });
-		}
+		// Fixed destination — never derived from request data, so this route
+		// can't be used as a write-anywhere primitive.
+		const outputPath = path.join(
+			BROWSER_SCREENSHOTS_DIR,
+			`${safeFileStem(paneId)}.png`,
+		);
 
 		const wc = browserManager.getWebContents(paneId);
 		if (!wc) {
