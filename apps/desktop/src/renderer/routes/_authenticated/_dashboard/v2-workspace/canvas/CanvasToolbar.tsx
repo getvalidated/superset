@@ -67,6 +67,7 @@ export function CanvasToolbar({
 	onZoomToFit,
 	onOpenBrowser,
 	onOpenSearch,
+	searchDisabled = false,
 	onOpenSettings,
 	onExit,
 }: {
@@ -75,6 +76,8 @@ export function CanvasToolbar({
 	onZoomToFit: () => void;
 	onOpenBrowser: () => void;
 	onOpenSearch: () => void;
+	/** No workspace on the canvas or route to scope a search window to. */
+	searchDisabled?: boolean;
 	onOpenSettings: () => void;
 	onExit: () => void;
 }) {
@@ -169,7 +172,11 @@ export function CanvasToolbar({
 			<ToolbarButton label="New browser window" onClick={onOpenBrowser}>
 				<Globe className="size-3.5" />
 			</ToolbarButton>
-			<ToolbarButton label="New search window" onClick={onOpenSearch}>
+			<ToolbarButton
+				label="New search window"
+				onClick={onOpenSearch}
+				disabled={searchDisabled}
+			>
 				<Search className="size-3.5" />
 			</ToolbarButton>
 			<ToolbarButton label="Settings window" onClick={onOpenSettings}>

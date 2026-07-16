@@ -1,8 +1,6 @@
 import { Workspace } from "@superset/panes";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { createFileRoute } from "@tanstack/react-router";
-import { LayoutDashboard } from "lucide-react";
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuickOpenStore } from "renderer/commandPalette/ui/QuickOpen/quickOpenStore";
@@ -141,7 +139,6 @@ function V2WorkspaceContent() {
 		setRightSidebarTab,
 		setRightSidebarWidth,
 		setShowPresetsBar,
-		setDisplayMode,
 	} = useV2UserPreferences();
 	const showPresetsBar = v2UserPreferences.showPresetsBar;
 	const sidebarOpen = v2UserPreferences.rightSidebarOpen;
@@ -365,7 +362,7 @@ function V2WorkspaceContent() {
 						data-workspace-id={workspaceId}
 					>
 						{displayMode === "canvas" ? (
-							<CanvasView onExit={() => setDisplayMode("tabs")} />
+							<CanvasView />
 						) : (
 							<Workspace<PaneViewerData>
 								key={workspaceId}
@@ -399,26 +396,10 @@ function V2WorkspaceContent() {
 									/>
 								)}
 								renderTabBarTrailing={() => (
-									<div className="flex items-center gap-0.5">
-										<BackgroundTerminalsButton
-											workspaceId={workspaceId}
-											store={store}
-										/>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<button
-													type="button"
-													onClick={() => setDisplayMode("canvas")}
-													className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-												>
-													<LayoutDashboard className="size-3.5" />
-												</button>
-											</TooltipTrigger>
-											<TooltipContent side="bottom" showArrow={false}>
-												Canvas view — all sessions on an infinite plane
-											</TooltipContent>
-										</Tooltip>
-									</div>
+									<BackgroundTerminalsButton
+										workspaceId={workspaceId}
+										store={store}
+									/>
 								)}
 								renderEmptyState={() => (
 									<WorkspaceEmptyState

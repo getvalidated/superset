@@ -14,6 +14,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import {
 	EDIT_COMMAND_EVENT,
@@ -28,7 +29,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { TerminalPresetShortcuts } from "../$workspaceId/components/TerminalPresetShortcuts";
 import { browserRuntimeRegistry } from "../$workspaceId/hooks/usePaneRegistry/components/BrowserPane";
 import type { BrowserPaneData } from "../$workspaceId/types";
-import { useWorkspace } from "../providers/WorkspaceProvider";
+import { useWorkspaceOptional } from "../providers/WorkspaceProvider";
 import { CanvasDrawOverlay } from "./CanvasDrawOverlay";
 import { CanvasHostProvider } from "./CanvasHostProvider";
 import { CanvasShapeLayer } from "./CanvasShapeLayer";
@@ -164,11 +165,13 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
  * pan/zoom never re-renders the React tree; window geometry only changes on
  * gesture commit.
  */
-export function CanvasView({ onExit }: { onExit: () => void }) {
+export function CanvasView() {
 	const { activeOrganizationId } = useLocalHostService();
-	// The canvas is org-global but always hosted by a workspace page; toolbar
-	// windows that need a workspace scope (search) bind to the route workspace.
-	const { workspace: routeWorkspace } = useWorkspace();
+	// The canvas is org-global — hosted by a workspace page or the workspaces
+	// list. Toolbar windows that need a workspace scope (search) prefer the
+	// route workspace when one is present.
+	const routeWorkspace = useWorkspaceOptional()?.workspace ?? null;
+	const { setDisplayMode } = useV2UserPreferences();
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
 	const store = useMemo(
 		() => getGlobalCanvasStore(activeOrganizationId ?? "default"),
@@ -407,26 +410,41 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 
 	// Canvas-native browser windows are ephemeral: they live only on the
 	// canvas (no mirrored tab pane), so the mirror reconciler leaves them
-	// alone and dismissal tears the webview down outright.
+	// alone and dismissal tears the webview down outright. "" marks an
+	// org-global window, same as settings.
+	const routeWorkspaceId = routeWorkspace?.id ?? null;
 	const handleOpenBrowser = useCallback(() => {
 		openCanvasWindow(store, {
 			id: `browser:${crypto.randomUUID()}`,
 			kind: "browser",
-			workspaceId: routeWorkspace.id,
+			workspaceId: routeWorkspaceId ?? "",
 			data: { url: "about:blank" } satisfies BrowserPaneData,
 			ephemeral: true,
 		});
-	}, [store, routeWorkspace.id]);
+	}, [store, routeWorkspaceId]);
+
+	// Search is workspace-scoped (its file index is). Without a route
+	// workspace (the workspaces-list host), scope it to the workspace the
+	// user is looking at — the focused window's, else any window's.
+	const focusedWorkspaceId = focusedWindowId
+		? windows[focusedWindowId]?.workspaceId
+		: undefined;
+	const searchWorkspaceId =
+		routeWorkspaceId ??
+		(focusedWorkspaceId ||
+			windowList.find((window) => window.workspaceId)?.workspaceId ||
+			null);
 
 	const handleOpenSearch = useCallback(() => {
+		if (!searchWorkspaceId) return;
 		openCanvasWindow(store, {
 			id: `search:${crypto.randomUUID()}`,
 			kind: "search",
-			workspaceId: routeWorkspace.id,
+			workspaceId: searchWorkspaceId,
 			data: {} satisfies CanvasSearchData,
 			ephemeral: true,
 		});
-	}, [store, routeWorkspace.id]);
+	}, [store, searchWorkspaceId]);
 
 	const handleOpenSettings = useCallback(() => {
 		openCanvasWindow(store, {
@@ -588,8 +606,9 @@ export function CanvasView({ onExit }: { onExit: () => void }) {
 						onZoomToFit={handleZoomToFit}
 						onOpenBrowser={handleOpenBrowser}
 						onOpenSearch={handleOpenSearch}
+						searchDisabled={!searchWorkspaceId}
 						onOpenSettings={handleOpenSettings}
-						onExit={onExit}
+						onExit={() => setDisplayMode("tabs")}
 					/>
 					{windowList.length === 0 ? (
 						<div className="pointer-events-none absolute inset-0 flex items-center justify-center">

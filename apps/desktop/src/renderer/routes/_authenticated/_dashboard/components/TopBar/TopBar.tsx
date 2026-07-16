@@ -6,6 +6,7 @@ import { useOnlineStatus } from "renderer/hooks/useOnlineStatus";
 import { useZoomFactor } from "renderer/hooks/useZoomFactor";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useWorkspaceSidebarStore } from "renderer/stores/workspace-sidebar-state";
+import { CanvasModeToggle } from "../CanvasModeToggle";
 import { NavigationControls } from "../NavigationControls";
 import { SidebarToggle } from "../SidebarToggle";
 import { OpenInMenuButton } from "./components/OpenInMenuButton";
@@ -76,7 +77,10 @@ export function TopBar() {
 
 			<div className="flex items-center gap-3 h-full pr-4 shrink-0">
 				{!sidebarHostsChrome && isV2CloudEnabled && (
-					<ResourceConsumption surface="v2" />
+					<div className="flex items-center gap-1.5">
+						<ResourceConsumption surface="v2" />
+						<CanvasModeToggle />
+					</div>
 				)}
 				{!isOnline && (
 					<div className="no-drag flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
