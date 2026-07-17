@@ -10,6 +10,7 @@ import {
 } from "renderer/hooks/host-service/useDestroyWorkspace";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences/useV2UserPreferences";
 import { useNavigateAwayFromWorkspace } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/hooks/useNavigateAwayFromWorkspace";
+import { removeWorkspaceWindowsFromCanvases } from "renderer/routes/_authenticated/_dashboard/v2-workspace/canvas";
 import { useDeletingWorkspaces } from "renderer/routes/_authenticated/providers/DeletingWorkspacesProvider";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 
@@ -136,6 +137,10 @@ export function useDestroyDialogState({
 				if (hostId) {
 					hostWorkspacesCache.removeWorkspace(hostId, workspaceId);
 				}
+				// Drop the workspace's canvas windows now instead of leaving them
+				// for the 15s orphan sweep — in canvas mode they're the visible
+				// representation of the workspace, so they must go with the row.
+				removeWorkspaceWindowsFromCanvases(workspaceId);
 				for (const warning of result.warnings) toast.warning(warning);
 				onDeleted?.();
 			} catch (err) {
