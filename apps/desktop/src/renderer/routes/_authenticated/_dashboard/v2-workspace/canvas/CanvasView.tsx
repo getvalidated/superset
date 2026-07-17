@@ -51,7 +51,10 @@ import {
 	type CanvasWindow,
 	getGlobalCanvasStore,
 } from "./canvasStore";
-import { requestDismissCanvasWindow } from "./dismissCanvasWindow";
+import {
+	requestDismissCanvasWindow,
+	requestDismissCanvasWindows,
+} from "./dismissCanvasWindow";
 import {
 	type CanvasSearchData,
 	type CanvasSettingsData,
@@ -64,6 +67,10 @@ import {
 	type CanvasTerminalData,
 	useCanvasBrowserMirror,
 } from "./useCanvasSeeding";
+import {
+	type CanvasTerminalLifecycle,
+	useCanvasTerminalLifecycle,
+} from "./useCanvasTerminalLifecycle";
 import { useGlobalCanvasLayout } from "./useGlobalCanvasLayout";
 
 /** Quiet period after a non-gesture camera write before culling resyncs. */
@@ -93,6 +100,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	hostId,
 	organizationId,
 	projectId,
+	terminalLifecycle,
 }: {
 	window: CanvasWindow;
 	store: StoreApi<CanvasStore>;
@@ -106,6 +114,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 	organizationId: string;
 	/** Owning workspace's project, for preset matching. */
 	projectId: string | null;
+	terminalLifecycle: CanvasTerminalLifecycle;
 }) {
 	const culled =
 		window.kind === "terminal"
@@ -119,6 +128,7 @@ const CanvasWindowItem = memo(function CanvasWindowItem({
 			isFocused={isFocused}
 			isSelected={isSelected}
 			workspaceLabel={workspaceLabel}
+			terminalLifecycle={terminalLifecycle}
 			headerExtras={
 				window.kind === "terminal" ? (
 					<CanvasHostProvider hostId={hostId} organizationId={organizationId}>
@@ -177,6 +187,9 @@ export function CanvasView() {
 	);
 	useGlobalCanvasLayout(store);
 	useCanvasBrowserMirror(store);
+	// Closing a canvas terminal kills its host session (the shared source of
+	// truth with tabs mode) instead of just hiding the window.
+	const terminalLifecycle = useCanvasTerminalLifecycle();
 
 	const { workspaces } = useHostWorkspaces();
 	const workspacesById = useMemo(() => {
@@ -521,9 +534,10 @@ export function CanvasView() {
 				// One history entry so ⌘Z restores the whole batch.
 				state.pushHistory();
 				state.removeShapes(selectedShapeIds);
-				for (const selected of selectedWindows) {
-					requestDismissCanvasWindow(store, selected, { skipHistory: true });
-				}
+				requestDismissCanvasWindows(store, selectedWindows, {
+					skipHistory: true,
+					terminalLifecycle,
+				});
 				return;
 			}
 			const focused = state.focusedWindowId
@@ -533,11 +547,11 @@ export function CanvasView() {
 			// (the title-bar ✕ remains an explicit way out).
 			if (!focused || focused.locked) return;
 			event.preventDefault();
-			requestDismissCanvasWindow(store, focused);
+			requestDismissCanvasWindow(store, focused, { terminalLifecycle });
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [store]);
+	}, [store, terminalLifecycle]);
 
 	const handleZoomToFit = useCallback(() => {
 		store
@@ -592,6 +606,7 @@ export function CanvasView() {
 										workspace?.organizationId ?? activeOrganizationId ?? ""
 									}
 									projectId={workspace?.projectId ?? null}
+									terminalLifecycle={terminalLifecycle}
 								/>
 							);
 						})}

@@ -1,7 +1,7 @@
 import type { WorkspaceState } from "@superset/panes";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { AppCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider/collections";
@@ -237,12 +237,56 @@ export function reconcileTerminalWindows({
 	if (toRefresh.length > 0) state.upsertWindows(toRefresh);
 }
 
+/**
+ * Remove terminal windows that outlived their workspace: the workspace row is
+ * gone from every host and no host claims the session anymore. Per-host
+ * reconciliation can't reach these — a closed workspace is in no host's
+ * scope, so its windows are skipped there — and the persisted canvas row
+ * would otherwise keep them forever.
+ */
+export function pruneOrphanTerminalWindows({
+	store,
+	knownWorkspaceIds,
+	claimedTerminalIds,
+}: {
+	store: StoreApi<CanvasStore>;
+	/** Workspace ids known to any host. */
+	knownWorkspaceIds: ReadonlySet<string>;
+	/** Terminal ids present (live or exited) in any host's session list. */
+	claimedTerminalIds: ReadonlySet<string>;
+}): void {
+	const state = store.getState();
+	const toRemove: CanvasWindow[] = [];
+	for (const window of Object.values(state.windows)) {
+		if (window.kind !== "terminal") continue;
+		if (knownWorkspaceIds.has(window.workspaceId)) continue;
+		const { terminalId } = window.data as CanvasTerminalData;
+		if (claimedTerminalIds.has(terminalId)) continue;
+		toRemove.push(window);
+	}
+	if (toRemove.length === 0) return;
+	for (const window of toRemove) {
+		const { terminalId } = window.data as CanvasTerminalData;
+		terminalRuntimeRegistry.release(terminalId, window.id);
+	}
+	state.removeWindows(toRemove.map((window) => window.id));
+}
+
 function HostSessionsSync({
+	hostId,
 	hostWorkspaceIds,
 	store,
+	onSessionsReport,
 }: {
+	hostId: string;
 	hostWorkspaceIds: readonly string[];
 	store: StoreApi<CanvasStore>;
+	/** Latest session terminal ids for this host (null on unmount), feeding
+	 *  the cross-host orphan sweep in CanvasSessionSeeder. */
+	onSessionsReport: (
+		hostId: string,
+		terminalIds: ReadonlySet<string> | null,
+	) => void;
 }) {
 	// Older remote host-services may not expose listAllSessions yet; the
 	// query then errors and this host simply contributes no windows.
@@ -275,6 +319,26 @@ function HostSessionsSync({
 			sessions: sessionsQuery.data.sessions,
 		});
 	}, [sessionsQuery.data, hostWorkspaceIds, store, hydrated]);
+
+	// Report this host's session claims (exited included — precise pruning is
+	// per-host reconcile's job) for the orphan sweep. An errored query reports
+	// an empty claim set: the host contributes no sessions, and windows whose
+	// workspace still exists anywhere are protected by knownWorkspaceIds.
+	const sessionsData = sessionsQuery.data;
+	const sessionsErrored = sessionsQuery.isError;
+	useEffect(() => {
+		if (sessionsData) {
+			onSessionsReport(
+				hostId,
+				new Set(sessionsData.sessions.map((session) => session.terminalId)),
+			);
+		} else if (sessionsErrored) {
+			onSessionsReport(hostId, new Set());
+		}
+	}, [sessionsData, sessionsErrored, hostId, onSessionsReport]);
+	useEffect(() => {
+		return () => onSessionsReport(hostId, null);
+	}, [hostId, onSessionsReport]);
 
 	useEffect(() => {
 		if (!hydrated) return;
@@ -317,6 +381,43 @@ export function CanvasSessionSeeder({
 		return Array.from(groups.values());
 	}, [workspaces]);
 
+	// hostId → latest reported session terminal ids. The orphan sweep needs
+	// the cross-host view: any single host's pass can't tell whether another
+	// host still owns a window's session.
+	const [sessionReports, setSessionReports] = useState<
+		ReadonlyMap<string, ReadonlySet<string>>
+	>(new Map());
+	const handleSessionsReport = useCallback(
+		(hostId: string, terminalIds: ReadonlySet<string> | null) => {
+			setSessionReports((previous) => {
+				const next = new Map(previous);
+				if (terminalIds === null) next.delete(hostId);
+				else next.set(hostId, terminalIds);
+				return next;
+			});
+		},
+		[],
+	);
+
+	const hydrated = useStore(store, (state) => state.hydrated);
+	useEffect(() => {
+		if (!hydrated) return;
+		// A transiently empty workspace list (startup) must not trigger a mass
+		// prune, and the sweep waits for every host to report so a slow host's
+		// sessions aren't mistaken for gone.
+		if (workspaces.length === 0) return;
+		if (!hostGroups.every((group) => sessionReports.has(group.hostId))) return;
+		const claimedTerminalIds = new Set<string>();
+		for (const terminalIds of sessionReports.values()) {
+			for (const terminalId of terminalIds) claimedTerminalIds.add(terminalId);
+		}
+		pruneOrphanTerminalWindows({
+			store,
+			knownWorkspaceIds: new Set(workspaces.map((workspace) => workspace.id)),
+			claimedTerminalIds,
+		});
+	}, [hydrated, workspaces, hostGroups, sessionReports, store]);
+
 	return (
 		<>
 			{hostGroups.map((group) => (
@@ -326,8 +427,10 @@ export function CanvasSessionSeeder({
 					organizationId={group.organizationId}
 				>
 					<HostSessionsSync
+						hostId={group.hostId}
 						hostWorkspaceIds={group.workspaceIds}
 						store={store}
+						onSessionsReport={handleSessionsReport}
 					/>
 				</CanvasHostProvider>
 			))}

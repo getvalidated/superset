@@ -42,6 +42,7 @@ import type {
 	CanvasSubagentData,
 	CanvasTerminalData,
 } from "./useCanvasSeeding";
+import type { CanvasTerminalLifecycle } from "./useCanvasTerminalLifecycle";
 
 interface ResizeEdges {
 	left?: boolean;
@@ -138,6 +139,7 @@ export function CanvasWindowFrame({
 	isSelected = false,
 	workspaceLabel,
 	headerExtras,
+	terminalLifecycle,
 	children,
 }: {
 	window: CanvasWindow;
@@ -149,6 +151,8 @@ export function CanvasWindowFrame({
 	workspaceLabel: string;
 	/** Extra controls rendered in the title bar before the close button. */
 	headerExtras?: ReactNode;
+	/** When set, closing a terminal window kills its host session. */
+	terminalLifecycle?: CanvasTerminalLifecycle;
 	children: ReactNode;
 }) {
 	const frameRef = useRef<HTMLDivElement | null>(null);
@@ -324,8 +328,8 @@ export function CanvasWindowFrame({
 	);
 
 	const handleDismiss = useCallback(() => {
-		requestDismissCanvasWindow(store, window);
-	}, [store, window]);
+		requestDismissCanvasWindow(store, window, { terminalLifecycle });
+	}, [store, window, terminalLifecycle]);
 
 	const handleToggleLock = useCallback(() => {
 		store.getState().pushHistory();

@@ -2,7 +2,8 @@ import type { WorkspaceState, WorkspaceStore } from "@superset/panes";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { terminalRuntimeRegistry } from "renderer/lib/terminal/terminal-runtime-registry";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { StoreApi } from "zustand/vanilla";
 import type { PaneViewerData, TerminalPaneData } from "../../types";
@@ -22,6 +23,10 @@ const SESSION_TAB_SYNC_REFETCH_INTERVAL_MS = 15_000;
  * via the persisted `backgroundTerminalIds` set, which is also pruned here
  * once those sessions die. Closing an adopted tab kills the session (regular
  * pane-close semantics), so nothing closed reappears.
+ *
+ * The reverse direction is reconciled too: a pane whose session was killed
+ * out-of-band (e.g. its canvas window was closed) is pruned, keeping the tab
+ * layout one-to-one with the host's sessions in both directions.
  */
 export function useTerminalSessionTabSync({
 	workspaceId,
@@ -102,4 +107,68 @@ export function useTerminalSessionTabSync({
 			backgroundTerminalIds.filter((id) => !liveIds.has(id)),
 		);
 	}, [sessions, localState, store, collections, workspaceId]);
+
+	// Prune panes whose session was killed out-of-band (canvas window close,
+	// MCP kill, another window of the app). Killed sessions vanish from the
+	// host's session map entirely, while naturally-exited shells linger as
+	// exited rows — so this list (exited included) distinguishes "killed"
+	// from "shell exited", and a pane keeps its inline exit notice. Absence in
+	// two consecutive payloads is required before closing, so a session
+	// created between refetches is never mistaken for dead. Older hosts
+	// without listAllSessions error out and nothing is pruned.
+	const allSessionsQuery = workspaceTrpc.terminal.listAllSessions.useQuery(
+		undefined,
+		{
+			refetchInterval: SESSION_TAB_SYNC_REFETCH_INTERVAL_MS,
+			refetchOnWindowFocus: true,
+			retry: 1,
+		},
+	);
+	const missingStrikesRef = useRef<Map<string, number>>(new Map());
+	const lastPrunePayloadRef = useRef(0);
+	const allSessionsData = allSessionsQuery.data;
+	const allSessionsUpdatedAt = allSessionsQuery.dataUpdatedAt;
+	useEffect(() => {
+		if (!allSessionsData) return;
+		// Strikes count payloads, not renders.
+		if (allSessionsUpdatedAt === lastPrunePayloadRef.current) return;
+		lastPrunePayloadRef.current = allSessionsUpdatedAt;
+
+		const known = new Set(
+			allSessionsData.sessions.map((session) => session.terminalId),
+		);
+		const strikes = missingStrikesRef.current;
+		const toClose: Array<{
+			tabId: string;
+			paneId: string;
+			terminalId: string;
+		}> = [];
+		const attachedIds = new Set<string>();
+		for (const tab of store.getState().tabs) {
+			for (const pane of Object.values(tab.panes)) {
+				if (pane.kind !== "terminal") continue;
+				const { terminalId } = pane.data as TerminalPaneData;
+				attachedIds.add(terminalId);
+				if (known.has(terminalId)) {
+					strikes.delete(terminalId);
+					continue;
+				}
+				const count = (strikes.get(terminalId) ?? 0) + 1;
+				strikes.set(terminalId, count);
+				if (count >= 2) {
+					toClose.push({ tabId: tab.id, paneId: pane.id, terminalId });
+				}
+			}
+		}
+		// Panes can close through other paths — don't let their strikes leak.
+		for (const terminalId of strikes.keys()) {
+			if (!attachedIds.has(terminalId)) strikes.delete(terminalId);
+		}
+		for (const { tabId, paneId, terminalId } of toClose) {
+			strikes.delete(terminalId);
+			// The session is already gone host-side; release renderer state only.
+			terminalRuntimeRegistry.release(terminalId);
+			store.getState().closePane({ tabId, paneId });
+		}
+	}, [allSessionsData, allSessionsUpdatedAt, store]);
 }
