@@ -1,5 +1,6 @@
 import {
 	createFileRoute,
+	Navigate,
 	Outlet,
 	useMatchRoute,
 	useNavigate,
@@ -192,7 +193,21 @@ function DashboardLayout() {
 				<div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
 					{!sidebarOutsideColumn && sidebarPanel}
 					<div className="flex flex-1 min-h-0 min-w-0">
-						{versionMismatch ? <CrossVersionMismatchState /> : <Outlet />}
+						{/* A v2 user on a v1 route (persisted history, stale link) gets
+						    sent home where the canvas can render — the static dead-end
+						    would strand them with no canvas and no context menu. The
+						    reverse direction keeps the screen: at boot a v2-only user
+						    briefly reads as v1 while the session loads, and redirecting
+						    then would throw away their persisted v2 route. */}
+						{versionMismatch ? (
+							isV2CloudEnabled ? (
+								<Navigate to="/v2-workspaces" replace />
+							) : (
+								<CrossVersionMismatchState />
+							)
+						) : (
+							<Outlet />
+						)}
 					</div>
 				</div>
 			</div>

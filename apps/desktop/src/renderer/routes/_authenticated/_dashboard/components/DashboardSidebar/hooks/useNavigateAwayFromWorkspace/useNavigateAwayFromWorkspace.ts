@@ -51,7 +51,9 @@ export function useNavigateAwayFromWorkspace() {
 				}).catch(reportRemovalNavigationError);
 				return;
 			}
-			void navigate({ to: "/", replace: true }).catch(
+			// Straight to the v2 home — bouncing through "/" lands on the v1
+			// last-viewed restore and its cross-version dead-end.
+			void navigate({ to: "/v2-workspaces", replace: true }).catch(
 				reportRemovalNavigationError,
 			);
 		},
