@@ -9,13 +9,19 @@ import type { Terminal as XTerm } from "@xterm/xterm";
  * xterm draws its WebGL canvas at layout px × devicePixelRatio and the
  * compositor then scales that bitmap by the camera zoom — blurry above 1×.
  *
- * xterm re-rasterizes (glyph atlas + canvas backing store, CSS size
- * unchanged) whenever its CoreBrowserService reports a new dpr — the
- * moved-to-another-monitor path. Swapping the service's `window` for a Proxy
- * whose devicePixelRatio is scaled by the camera zoom triggers exactly that
- * path: the service fires onDprChange when the window it's handed reports a
- * different dpr. Cell metrics in CSS px derive from font size, not dpr, so
- * nothing a ResizeObserver or the fit addon could see changes.
+ * xterm re-rasterizes (glyph atlas + canvas backing store) whenever its
+ * CoreBrowserService reports a new dpr — the moved-to-another-monitor path.
+ * Swapping the service's `window` for a Proxy whose devicePixelRatio is
+ * scaled by the camera zoom triggers exactly that path: the service fires
+ * onDprChange when the window it's handed reports a different dpr.
+ *
+ * One side effect matters: the renderer quantizes cell metrics to whole
+ * device pixels (`css cell = floor|ceil(char size × dpr) / dpr`), so a dpr
+ * change nudges the CSS cell size and the renderer resizes its canvas to
+ * cols × the new cell — under a grid fitted with the old metrics. Layout
+ * sizes don't change, so no ResizeObserver fires. Callers MUST refit after
+ * this returns true or the terminal clips (canvas grew) or leaves dead
+ * gutters (canvas shrank) until the next container resize.
  *
  * This reaches into internals (terminal._core._coreBrowserService — the same
  * path the WebGL addon uses to obtain the service) and fails soft: if the
@@ -82,14 +88,18 @@ export function renderZoomScale(zoom: number): number {
  * Idempotent per zoom value; zoom ≤ 1 restores the original window object.
  * Call after a zoom gesture settles, not per frame — each change repaints
  * the glyph atlas.
+ *
+ * Returns true when the effective dpr changed. xterm's dimension update
+ * runs synchronously inside the window setter, so on a true return the
+ * caller can refit immediately with fresh cell metrics (see module doc).
  */
-export function setTerminalRenderZoom(terminal: XTerm, zoom: number): void {
+export function setTerminalRenderZoom(terminal: XTerm, zoom: number): boolean {
 	const scale = renderZoomScale(zoom);
 	const applied = appliedRenderZoom.get(terminal);
-	if ((applied?.scale ?? 1) === scale) return;
+	if ((applied?.scale ?? 1) === scale) return false;
 
 	const service = getCoreBrowserService(terminal);
-	if (!service) return;
+	if (!service) return false;
 
 	const baseWindow = applied?.baseWindow ?? service.window;
 	try {
@@ -100,8 +110,10 @@ export function setTerminalRenderZoom(terminal: XTerm, zoom: number): void {
 			service.window = createDprScaledWindow(baseWindow, scale);
 			appliedRenderZoom.set(terminal, { baseWindow, scale });
 		}
+		return true;
 	} catch {
 		// Setter shape changed underneath us — leave the terminal on the
 		// compositor-scaled path rather than risk a broken renderer.
+		return false;
 	}
 }
