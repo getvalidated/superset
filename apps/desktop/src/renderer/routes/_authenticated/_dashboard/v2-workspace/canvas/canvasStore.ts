@@ -631,3 +631,9 @@ export function getGlobalCanvasStore(
 	}
 	return store;
 }
+
+/** Every instantiated org canvas store — for cross-cutting cleanup that
+ *  doesn't know which org owns a workspace (e.g. workspace close). */
+export function getAllCanvasStores(): Iterable<StoreApi<CanvasStore>> {
+	return canvasStoreCache.values();
+}

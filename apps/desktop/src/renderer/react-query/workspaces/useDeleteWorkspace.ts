@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { disposeHostSessionsForWorkspace } from "renderer/lib/dispose-host-sessions";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { navigateToWorkspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
+import { removeWorkspaceWindowsFromCanvases } from "renderer/routes/_authenticated/_dashboard/v2-workspace/canvas";
 import {
 	getWorkspaceFocusTargetAfterRemoval,
 	removeWorkspaceFromGroups,
@@ -92,6 +93,7 @@ export function useDeleteWorkspace(
 			// host-service terminals so backgrounded sessions don't leak.
 			if (data.success) {
 				void disposeHostSessionsForWorkspace(utils, variables.id);
+				removeWorkspaceWindowsFromCanvases(variables.id);
 			}
 			// tRPC treats { success: false } as a successful response, so roll back optimistic updates
 			if (!data.success) {
