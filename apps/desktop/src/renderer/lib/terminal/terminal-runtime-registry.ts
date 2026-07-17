@@ -6,7 +6,6 @@ import {
 	type TerminalLinkHandlers,
 	TerminalLinkManager,
 } from "./terminal-link-manager";
-import { setTerminalRenderZoom } from "./terminal-render-zoom";
 import {
 	attachToContainer,
 	createRuntime,
@@ -264,25 +263,6 @@ class TerminalRuntimeRegistryImpl {
 			if (!runtime) return;
 			sendResize(transport, runtime.terminal.cols, runtime.terminal.rows);
 		});
-	}
-
-	/**
-	 * Rendering-only compensation for an ancestor CSS scale (the canvas
-	 * camera). Re-rasterizes xterm at devicePixelRatio × zoom so CSS-upscaled
-	 * terminals stay crisp. Idempotent per zoom — call when a zoom gesture
-	 * settles, not per frame.
-	 *
-	 * Deliberately no refit here: cols/rows and the PTY must stay untouched
-	 * on camera zoom so the shell never reflows. The dpr swap only ever
-	 * shrinks the quantized cell size (render zoom clamps dpr to >= 1), so
-	 * the worst case is a sub-pixel gutter at the pane edge, never clipping.
-	 * Real devicePixelRatio changes (page zoom, monitor moves) are refit by
-	 * the dpr watcher in terminal-runtime instead.
-	 */
-	setRenderZoom(terminalId: string, zoom: number, instanceId = terminalId) {
-		const entry = this.getEntry(terminalId, instanceId);
-		if (!entry?.runtime) return;
-		setTerminalRenderZoom(entry.runtime.terminal, zoom);
 	}
 
 	private disposeEntry(
