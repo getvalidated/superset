@@ -239,20 +239,6 @@ export function CanvasWindowContent({
 		);
 	}, [window.kind, window.id, store]);
 
-	// Same for terminals: a runtime mounting here (fresh window, or culled →
-	// live revival) rasterized at 1×, and the gesture-end render-zoom pass in
-	// CanvasView ran before this mount committed. TerminalPane's mount effect
-	// runs first (child before parent), so the runtime exists by now.
-	useEffect(() => {
-		if (window.kind !== "terminal") return;
-		const { terminalId } = window.data as CanvasTerminalData;
-		terminalRuntimeRegistry.setRenderZoom(
-			terminalId,
-			store.getState().camera.zoom,
-			window.id,
-		);
-	}, [window.kind, window.id, window.data, store]);
-
 	const updateWindowData = useCallback(
 		(data: unknown) => store.getState().updateWindowData(window.id, data),
 		[store, window.id],

@@ -282,31 +282,16 @@ export function CanvasView() {
 		}
 	}, [store]);
 
-	// Terminals never reflow on camera zoom — geometry is in canvas
-	// coordinates and the camera is a pure CSS transform, so cols/rows and
-	// the PTY are untouched. This pass only re-rasterizes live xterm
-	// instances at the settled zoom so their bitmaps stay crisp above 1×.
-	// Runs on gesture end (the wheel path is already debounced 250ms), never
-	// per frame. Runtimes mounting later (culled → live) re-apply on mount
-	// in CanvasWindowContent; released runtimes drop the state with them.
-	const applyTerminalRenderZoom = useCallback(() => {
-		const state = store.getState();
-		for (const window of Object.values(state.windows)) {
-			if (window.kind !== "terminal") continue;
-			const { terminalId } = window.data as CanvasTerminalData;
-			terminalRuntimeRegistry.setRenderZoom(
-				terminalId,
-				state.camera.zoom,
-				window.id,
-			);
-		}
-	}, [store]);
-
+	// Terminals are untouched by camera zoom — geometry is in canvas
+	// coordinates and the camera is a pure CSS transform, so cols/rows, the
+	// PTY, and the raster all stay put; the compositor scales the bitmap
+	// (slightly soft above 1×). Re-rasterizing at the zoomed dpr was tried and
+	// backed out: xterm re-quantizes its cell size to the new dpr, visibly
+	// changing glyph size relative to the fixed pane and clipping content.
 	const handleGestureEnd = useCallback(() => {
 		setCullTick((tick) => tick + 1);
 		applyBrowserContentZoom();
-		applyTerminalRenderZoom();
-	}, [applyBrowserContentZoom, applyTerminalRenderZoom]);
+	}, [applyBrowserContentZoom]);
 	handleGestureEndRef.current = handleGestureEnd;
 
 	useCanvasGestures({ viewportRef, store, onGestureEnd: handleGestureEnd });
