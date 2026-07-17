@@ -1,0 +1,42 @@
+# Sandboxed Superset host — see README.md in this directory.
+#
+#   cd docker/sandbox-host
+#   cp .env.example .env   # fill in
+#   docker compose up -d --build
+#   docker exec -it superset-sandbox-host superset login   # first run only
+services:
+  sandbox-host:
+    build:
+      context: ../..
+      dockerfile: docker/sandbox-host/Dockerfile
+    image: superset-sandbox-host
+    container_name: superset-sandbox-host
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Org + auth can be omitted: `superset login` inside the container
+      # persists both to the data volume.
+      ORGANIZATION_ID: ${ORGANIZATION_ID:-}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      SUPERSET_API_URL: ${SUPERSET_API_URL:-https://api.superset.sh}
+      RELAY_URL: ${RELAY_URL:-https://relay.superset.sh}
+      # Restricted identity (superset-sandbox-host@validated-ai): can access
+      # only its allowlisted secrets — never personal gcloud credentials.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-sa.json
+      # Scope this to a fine-grained PAT limited to the repos agents work on.
+      GITHUB_TOKEN: ${SANDBOX_GITHUB_TOKEN:-}
+      ANTHROPIC_API_KEY: ${SANDBOX_ANTHROPIC_API_KEY:-}
+    volumes:
+      - sandbox_host_data:/data
+      - ${SANDBOX_GCP_KEY_FILE:-~/.superset-sandbox/gcp/superset-sandbox-host.json}:/secrets/gcp-sa.json:ro
+    ports:
+      # Local debugging only; remote dispatch goes through the relay tunnel.
+      - "127.0.0.1:${SANDBOX_HOST_PORT:-14879}:4879"
+    # Keep a runaway agent from starving the machine.
+    cpus: ${SANDBOX_CPUS:-4}
+    mem_limit: ${SANDBOX_MEM_LIMIT:-8g}
+
+volumes:
+  sandbox_host_data:
