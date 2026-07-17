@@ -3,6 +3,7 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { applyTerminalFontFamilyCssVariable } from "renderer/lib/terminal/appearance";
+import { watchDevicePixelRatio } from "renderer/lib/terminal/dpr-watcher";
 import { scheduleFontSettleRefit } from "renderer/lib/terminal/font-settle";
 import {
 	cancelParserIdleWork,
@@ -59,6 +60,8 @@ export interface CachedTerminal {
 	subscriptionErrorHandler: ((error: unknown) => void) | null;
 	/** ResizeObserver for the attached container. Managed by attach/detach. */
 	resizeObserver: ResizeObserver | null;
+	/** Stops the devicePixelRatio watcher. Managed by attach/detach. */
+	disposeDprWatcher: (() => void) | null;
 	/** Live container, when attached. */
 	container: HTMLDivElement | null;
 }
@@ -146,6 +149,7 @@ export function getOrCreate(
 		eventHandler: null,
 		subscriptionErrorHandler: null,
 		resizeObserver: null,
+		disposeDprWatcher: null,
 		container: null,
 	};
 
@@ -187,6 +191,15 @@ export function attachToContainer(
 	);
 	observer.observe(container);
 	entry.resizeObserver = observer;
+
+	// A dpr change (page zoom, monitor move) quantizes xterm's cell size to
+	// new device-pixel boundaries and resizes its canvas — with no layout
+	// change for the ResizeObserver to see. Refit a frame later so xterm's
+	// own dpr handling (re-rasterize + dimension update) lands first.
+	entry.disposeDprWatcher?.();
+	entry.disposeDprWatcher = watchDevicePixelRatio(() => {
+		requestAnimationFrame(() => scheduleFitAndRefresh(entry, onResize));
+	});
 }
 
 export function detachFromContainer(paneId: string): void {
@@ -199,6 +212,8 @@ export function detachFromContainer(paneId: string): void {
 	cancelParserIdleWork(entry.gate);
 	entry.resizeObserver?.disconnect();
 	entry.resizeObserver = null;
+	entry.disposeDprWatcher?.();
+	entry.disposeDprWatcher = null;
 	entry.container = null;
 	// Park instead of .remove() so xterm survives the React unmount —
 	// see getTerminalParkingContainer.
@@ -368,6 +383,8 @@ export function dispose(paneId: string): void {
 
 	cancelParserIdleWork(entry.gate);
 	entry.resizeObserver?.disconnect();
+	entry.disposeDprWatcher?.();
+	entry.disposeDprWatcher = null;
 	entry.subscription?.unsubscribe();
 	entry.cleanupCreation();
 	entry.wrapper.remove();

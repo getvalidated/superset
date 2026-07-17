@@ -9,6 +9,7 @@ import {
 	applyTerminalFontFamilyCssVariable,
 	type TerminalAppearance,
 } from "./appearance";
+import { watchDevicePixelRatio } from "./dpr-watcher";
 import { scheduleFontSettleRefit } from "./font-settle";
 import {
 	cancelParserIdleWork,
@@ -41,6 +42,7 @@ export interface TerminalRuntime {
 	gate: ParserIdleGate;
 	resizeObserver: ResizeObserver | null;
 	_disposeResizeObserver: (() => void) | null;
+	_disposeDprWatcher: (() => void) | null;
 	lastCols: number;
 	lastRows: number;
 	_disposeAddons: (() => void) | null;
@@ -134,7 +136,13 @@ function hostIsVisible(container: HTMLDivElement | null): boolean {
 	return container.clientWidth > 0 && container.clientHeight > 0;
 }
 
-function measureAndResize(
+/**
+ * Refit the terminal to its container (parser-idle gated) and report a
+ * dimension change through onResize. Exported for callers that change the
+ * renderer's effective dpr (canvas render zoom) — that resizes xterm's
+ * canvas without any layout change, so no ResizeObserver refits it.
+ */
+export function measureAndResize(
 	runtime: TerminalRuntime,
 	onResize?: () => void,
 ): void {
@@ -262,6 +270,7 @@ export function createRuntime(
 		gate,
 		resizeObserver: null,
 		_disposeResizeObserver: null,
+		_disposeDprWatcher: null,
 		lastCols: cols,
 		lastRows: rows,
 		_disposeAddons: addonsResult.dispose,
@@ -303,6 +312,15 @@ export function attachToContainer(
 	runtime.resizeObserver = observer;
 	runtime._disposeResizeObserver = scheduler.dispose;
 
+	// A dpr change (page zoom, monitor move) quantizes xterm's cell size to
+	// new device-pixel boundaries and resizes its canvas — with no layout
+	// change for the ResizeObserver to see. Refit a frame later so xterm's
+	// own dpr handling (re-rasterize + dimension update) lands first.
+	runtime._disposeDprWatcher?.();
+	runtime._disposeDprWatcher = watchDevicePixelRatio(() => {
+		requestAnimationFrame(() => measureAndResize(runtime, onResize));
+	});
+
 	if (options.focus !== false) {
 		runtime.terminal.focus();
 	}
@@ -313,6 +331,8 @@ export function detachFromContainer(runtime: TerminalRuntime) {
 	persistDimensions(runtime.terminalId, runtime.lastCols, runtime.lastRows);
 	runtime._disposeResizeObserver?.();
 	runtime._disposeResizeObserver = null;
+	runtime._disposeDprWatcher?.();
+	runtime._disposeDprWatcher = null;
 	runtime.resizeObserver?.disconnect();
 	runtime.resizeObserver = null;
 	cancelParserIdleWork(runtime.gate);
@@ -364,6 +384,8 @@ export function disposeRuntime(
 	runtime._disposeAddons = null;
 	runtime._disposeResizeObserver?.();
 	runtime._disposeResizeObserver = null;
+	runtime._disposeDprWatcher?.();
+	runtime._disposeDprWatcher = null;
 	runtime.resizeObserver?.disconnect();
 	runtime.resizeObserver = null;
 	cancelParserIdleWork(runtime.gate);

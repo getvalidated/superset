@@ -12,6 +12,7 @@ import {
 	createRuntime,
 	detachFromContainer,
 	disposeRuntime,
+	measureAndResize,
 	type TerminalRuntime,
 	updateRuntimeAppearance,
 } from "./terminal-runtime";
@@ -269,13 +270,26 @@ class TerminalRuntimeRegistryImpl {
 	/**
 	 * Rendering-only compensation for an ancestor CSS scale (the canvas
 	 * camera). Re-rasterizes xterm at devicePixelRatio × zoom so CSS-upscaled
-	 * terminals stay crisp; cols/rows, the PTY, and layout are untouched.
-	 * Idempotent per zoom — call when a zoom gesture settles, not per frame.
+	 * terminals stay crisp. Idempotent per zoom — call when a zoom gesture
+	 * settles, not per frame.
+	 *
+	 * The dpr swap nudges xterm's device-pixel-quantized cell size, which
+	 * resizes its canvas with no layout change for the ResizeObserver to
+	 * catch — without a refit the content clips against the pane edges.
+	 * Refit immediately: xterm updates its dimensions synchronously inside
+	 * setTerminalRenderZoom, so fresh cell metrics are already in place, and
+	 * report any cols/rows change to the PTY.
 	 */
 	setRenderZoom(terminalId: string, zoom: number, instanceId = terminalId) {
 		const entry = this.getEntry(terminalId, instanceId);
 		if (!entry?.runtime) return;
-		setTerminalRenderZoom(entry.runtime.terminal, zoom);
+		const changed = setTerminalRenderZoom(entry.runtime.terminal, zoom);
+		if (!changed) return;
+
+		const { runtime, transport } = entry;
+		measureAndResize(runtime, () => {
+			sendResize(transport, runtime.terminal.cols, runtime.terminal.rows);
+		});
 	}
 
 	private disposeEntry(

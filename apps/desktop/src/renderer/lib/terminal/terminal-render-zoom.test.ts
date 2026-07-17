@@ -136,4 +136,18 @@ describe("setTerminalRenderZoom", () => {
 		} as unknown as XTerm;
 		expect(() => setTerminalRenderZoom(noWindow, 2)).not.toThrow();
 	});
+
+	test("reports whether the effective dpr changed", () => {
+		const { terminal } = makeFakeTerminal(makeBaseWindow(2));
+
+		// Apply, no-op reapply, restore, no-op restore.
+		expect(setTerminalRenderZoom(terminal, 1.5)).toBe(true);
+		expect(setTerminalRenderZoom(terminal, 1.5)).toBe(false);
+		expect(setTerminalRenderZoom(terminal, 0.5)).toBe(true);
+		expect(setTerminalRenderZoom(terminal, 1)).toBe(false);
+	});
+
+	test("reports false when the service shape is missing", () => {
+		expect(setTerminalRenderZoom({} as unknown as XTerm, 2)).toBe(false);
+	});
 });
