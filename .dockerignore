@@ -10,3 +10,10 @@
 .idea
 *.log
 .DS_Store
+# Local state and secrets must never enter a build context.
+superset-dev-data
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
