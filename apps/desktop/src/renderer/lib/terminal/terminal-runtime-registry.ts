@@ -12,7 +12,6 @@ import {
 	createRuntime,
 	detachFromContainer,
 	disposeRuntime,
-	measureAndResize,
 	type TerminalRuntime,
 	updateRuntimeAppearance,
 } from "./terminal-runtime";
@@ -273,23 +272,17 @@ class TerminalRuntimeRegistryImpl {
 	 * terminals stay crisp. Idempotent per zoom — call when a zoom gesture
 	 * settles, not per frame.
 	 *
-	 * The dpr swap nudges xterm's device-pixel-quantized cell size, which
-	 * resizes its canvas with no layout change for the ResizeObserver to
-	 * catch — without a refit the content clips against the pane edges.
-	 * Refit immediately: xterm updates its dimensions synchronously inside
-	 * setTerminalRenderZoom, so fresh cell metrics are already in place, and
-	 * report any cols/rows change to the PTY.
+	 * Deliberately no refit here: cols/rows and the PTY must stay untouched
+	 * on camera zoom so the shell never reflows. The dpr swap only ever
+	 * shrinks the quantized cell size (render zoom clamps dpr to >= 1), so
+	 * the worst case is a sub-pixel gutter at the pane edge, never clipping.
+	 * Real devicePixelRatio changes (page zoom, monitor moves) are refit by
+	 * the dpr watcher in terminal-runtime instead.
 	 */
 	setRenderZoom(terminalId: string, zoom: number, instanceId = terminalId) {
 		const entry = this.getEntry(terminalId, instanceId);
 		if (!entry?.runtime) return;
-		const changed = setTerminalRenderZoom(entry.runtime.terminal, zoom);
-		if (!changed) return;
-
-		const { runtime, transport } = entry;
-		measureAndResize(runtime, () => {
-			sendResize(transport, runtime.terminal.cols, runtime.terminal.rows);
-		});
+		setTerminalRenderZoom(entry.runtime.terminal, zoom);
 	}
 
 	private disposeEntry(
