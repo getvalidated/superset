@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "0.78.0",
-		"@better-auth/oauth-provider": "1.6.23",
+		"@better-auth/oauth-provider": "1.6.25",
 		"@durable-streams/client": "0.2.3",
 		"@linear/sdk": "68.1.1",
 		"@modelcontextprotocol/sdk": "1.28.0",
